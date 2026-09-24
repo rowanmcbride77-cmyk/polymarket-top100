@@ -6,9 +6,7 @@
 <title>Polymarket Top 100</title>
 
 <style>
-*{
-    box-sizing:border-box;
-}
+*{box-sizing:border-box}
 
 body{
     margin:0;
@@ -37,12 +35,12 @@ h1{
 }
 
 h2{
-    margin:0 0 6px;
+    margin:0 0 5px;
     font-size:20px;
 }
 
 .sub{
-    color:#888;
+    color:#777;
     font-size:12px;
 }
 
@@ -58,17 +56,6 @@ button{
 
 button:disabled{
     opacity:.5;
-    cursor:not-allowed;
-}
-
-input,
-select{
-    background:#080808;
-    color:#fff;
-    border:1px solid #444;
-    border-radius:8px;
-    padding:9px 10px;
-    margin:5px 5px 5px 0;
 }
 
 .card{
@@ -91,12 +78,19 @@ select{
 
 .status.good{
     color:#73e294;
-    background:#102416;
 }
 
 .status.bad{
-    color:#ff8b8b;
-    background:#301010;
+    color:#ff7777;
+}
+
+input,select{
+    background:#080808;
+    color:#fff;
+    border:1px solid #444;
+    border-radius:8px;
+    padding:9px 10px;
+    margin:5px 5px 5px 0;
 }
 
 .wrap{
@@ -159,11 +153,21 @@ tr.click:hover{
 
 .badge{
     display:inline-block;
-    padding:4px 8px;
+    padding:5px 9px;
     border-radius:20px;
     font-size:11px;
     font-weight:800;
     margin:2px;
+}
+
+.team-green{
+    background:#123b20;
+    color:#72e092;
+}
+
+.team-red{
+    background:#451719;
+    color:#ff8b8f;
 }
 
 .yes{
@@ -176,14 +180,9 @@ tr.click:hover{
     color:#ff8b8f;
 }
 
-.outcome{
+.neutral{
     background:#242424;
-    color:#fff;
-}
-
-.unknown{
-    background:#242424;
-    color:#888;
+    color:#aaa;
 }
 
 .market-detail{
@@ -201,7 +200,7 @@ tr.click:hover{
 .percent{
     font-size:17px;
     font-weight:900;
-    margin-top:12px;
+    margin-top:15px;
 }
 
 .bar{
@@ -213,11 +212,11 @@ tr.click:hover{
     margin:9px 0 14px;
 }
 
-.ybar{
+.greenbar{
     background:#49a866;
 }
 
-.nbar{
+.redbar{
     background:#d45a5a;
 }
 
@@ -238,35 +237,16 @@ tr.click:hover{
     background:#151515;
     border:1px solid #292929;
     color:#aaa;
-    padding:9px;
+    padding:10px;
     border-radius:8px;
-    margin-top:10px;
+    margin-top:12px;
     font-size:12px;
 }
 
-.stat{
-    display:inline-block;
-    margin-right:18px;
-    font-weight:800;
-}
-
-.small{
-    color:#777;
-    font-size:11px;
-}
-
 @media(max-width:700px){
-    main{
-        padding:10px;
-    }
-
-    h1{
-        font-size:23px;
-    }
-
-    .card{
-        padding:12px;
-    }
+    main{padding:10px}
+    h1{font-size:23px}
+    .card{padding:12px}
 }
 </style>
 </head>
@@ -279,9 +259,8 @@ tr.click:hover{
 
 <div>
 <h1>Polymarket Top 100</h1>
-
 <div class="sub">
-Weekly P&amp;L • Volume • Win % • Active Markets
+Weekly P&amp;L • Volume • Weekly Win %
 </div>
 </div>
 
@@ -296,19 +275,16 @@ Ready.
 </div>
 
 
-<!-- ACTIVE MARKETS -->
-
 <div class="card">
 
 <h2>Active Markets</h2>
 
 <div class="sub">
 Markets currently held by the Top 100 weekly wallets.
-Click a market to see every wallet, its Top-100 rank, and its actual position.
+Click a market for the wallet breakdown.
 </div>
 
-<div style="margin-top:10px">
-
+<div>
 <input
 id="marketSearch"
 placeholder="Search markets..."
@@ -326,7 +302,6 @@ onchange="renderMarkets()"
 <option value="10">10+ wallets</option>
 
 </select>
-
 </div>
 
 <div class="wrap">
@@ -334,24 +309,18 @@ onchange="renderMarkets()"
 <table>
 
 <thead>
-
 <tr>
 <th>Market</th>
 <th>Active Wallets</th>
 <th>Position Breakdown</th>
-<th>Total Value</th>
+<th>Value</th>
 </tr>
-
 </thead>
 
 <tbody id="marketsTable">
-
 <tr>
-<td colspan="4">
-No data yet.
-</td>
+<td colspan="4">No data yet.</td>
 </tr>
-
 </tbody>
 
 </table>
@@ -366,14 +335,12 @@ class="market-detail hidden"
 </div>
 
 
-<!-- TOP 100 -->
-
 <div class="card">
 
 <h2>Top 100 Weekly</h2>
 
 <div class="sub">
-Rank • Weekly P&amp;L • Volume • Win %
+Rank • Weekly P&amp;L • Volume • Weekly Win %
 </div>
 
 <input
@@ -387,7 +354,6 @@ oninput="renderLeaderboard()"
 <table>
 
 <thead>
-
 <tr>
 <th>Rank</th>
 <th>Trader</th>
@@ -395,17 +361,12 @@ oninput="renderLeaderboard()"
 <th>Volume</th>
 <th>Win %</th>
 </tr>
-
 </thead>
 
 <tbody id="leaderboardTable">
-
 <tr>
-<td colspan="5">
-No data yet.
-</td>
+<td colspan="5">No data yet.</td>
 </tr>
-
 </tbody>
 
 </table>
@@ -414,865 +375,693 @@ No data yet.
 
 </div>
 
-
 </main>
 
 
 <script>
 
-/* =========================================================
-   POLYMARKET PROXY
-   ========================================================= */
-
 const API =
 "https://polymarket-proxy.rowanmcbride77.workers.dev";
 
+let leaderboard=[];
+let leaderboardMap=new Map();
+let walletStats=new Map();
+let allPositions=[];
+let marketMap=new Map();
+let visibleMarkets=[];
 
-/* =========================================================
-   GLOBAL DATA
-   ========================================================= */
-
-let leaderboard = [];
-
-let leaderboardMap = new Map();
-
-let allPositions = [];
-
-let marketMap = new Map();
-
-let visibleMarkets = [];
-
-
-/* =========================================================
-   BASIC HELPERS
-   ========================================================= */
 
 function $(id){
     return document.getElementById(id);
 }
 
 
-function esc(value){
-
-    return String(value ?? "")
+function esc(v){
+    return String(v ?? "")
         .replace(/&/g,"&amp;")
         .replace(/</g,"&lt;")
         .replace(/>/g,"&gt;")
         .replace(/"/g,"&quot;")
         .replace(/'/g,"&#039;");
-
 }
 
 
-function number(value){
+function money(v){
+    const n=Number(v);
+    if(!Number.isFinite(n)) return "—";
 
-    const n = Number(value);
-
-    if(!Number.isFinite(n)){
-        return "—";
-    }
-
-    return n.toLocaleString(
-        undefined,
-        {
-            maximumFractionDigits:2
-        }
-    );
-
+    return n.toLocaleString(undefined,{
+        style:"currency",
+        currency:"USD",
+        maximumFractionDigits:0
+    });
 }
 
 
-function money(value){
+function number(v){
+    const n=Number(v);
+    if(!Number.isFinite(n)) return "—";
 
-    const n = Number(value);
-
-    if(!Number.isFinite(n)){
-        return "—";
-    }
-
-    return n.toLocaleString(
-        undefined,
-        {
-            style:"currency",
-            currency:"USD",
-            maximumFractionDigits:0
-        }
-    );
-
+    return n.toLocaleString(undefined,{
+        maximumFractionDigits:2
+    });
 }
 
 
-function moneyClass(value){
+function moneyClass(v){
+    const n=Number(v);
 
-    const n = Number(value);
-
-    if(n > 0){
-        return "money-positive";
-    }
-
-    if(n < 0){
-        return "money-negative";
-    }
+    if(n>0) return "money-positive";
+    if(n<0) return "money-negative";
 
     return "";
 }
 
 
-function shortWallet(wallet){
+function shortWallet(w){
+    if(!w) return "Unknown";
+    if(w.length<=18) return w;
 
-    if(!wallet){
-        return "Unknown";
-    }
-
-    if(wallet.length <= 18){
-        return wallet;
-    }
-
-    return (
-        wallet.slice(0,8) +
-        "…" +
-        wallet.slice(-6)
-    );
-
-}
-
-
-function traderName(t){
-
-    return (
-        t?.userName ||
-        t?.username ||
-        t?.displayName ||
-        t?.name ||
-        shortWallet(
-            t?.proxyWallet ||
-            t?.proxy_wallet
-        )
-    );
-
+    return w.slice(0,8)+"…"+w.slice(-6);
 }
 
 
 function walletOfTrader(t){
-
     return (
         t?.proxyWallet ||
         t?.proxy_wallet ||
         t?.wallet ||
         ""
     ).toLowerCase();
+}
 
+
+function traderName(t){
+    return (
+        t?.userName ||
+        t?.username ||
+        t?.displayName ||
+        t?.name ||
+        shortWallet(walletOfTrader(t))
+    );
 }
 
 
 function setStatus(text,type=""){
-
-    $("status").textContent = text;
-
-    $("status").className =
-        "status " + type;
-
+    $("status").textContent=text;
+    $("status").className="status "+type;
 }
 
-
-/* =========================================================
-   API FETCH
-   ========================================================= */
 
 async function apiFetch(url){
 
-    let lastError = null;
+    let lastError=null;
 
-    for(let attempt=0; attempt<4; attempt++){
+    for(let attempt=0;attempt<5;attempt++){
 
         try{
 
-            const response =
-                await fetch(
-                    url,
-                    {
-                        method:"GET",
-                        cache:"no-store",
-                        headers:{
-                            "Accept":"application/json"
-                        }
-                    }
-                );
-
+            const response=await fetch(url,{
+                cache:"no-store",
+                headers:{
+                    "Accept":"application/json"
+                }
+            });
 
             if(response.ok){
-
                 return await response.json();
-
             }
 
+            if(response.status===429 ||
+               response.status===500 ||
+               response.status===502 ||
+               response.status===503){
 
-            if(
-                response.status === 429 ||
-                response.status === 500 ||
-                response.status === 502 ||
-                response.status === 503
-            ){
-
-                await new Promise(
-                    r => setTimeout(
-                        r,
-                        500 * (attempt + 1)
-                    )
+                await new Promise(r =>
+                    setTimeout(r,700*(attempt+1))
                 );
 
                 continue;
-
             }
 
-
-            const text =
-                await response.text();
+            const text=await response.text();
 
             throw new Error(
-                "HTTP " +
-                response.status +
-                ": " +
-                text.slice(0,250)
+                "HTTP "+response.status+" "+text.slice(0,200)
             );
 
-        }
+        }catch(e){
 
-        catch(error){
+            lastError=e;
 
-            lastError = error;
-
-            await new Promise(
-                r => setTimeout(
-                    r,
-                    400 * (attempt + 1)
-                )
+            await new Promise(r =>
+                setTimeout(r,500*(attempt+1))
             );
-
         }
-
     }
 
-
-    throw (
-        lastError ||
-        new Error("API request failed")
-    );
-
+    throw lastError || new Error("API request failed");
 }
 
 
-/* =========================================================
+/* =========================
+   WEEK WINDOW
+========================= */
+
+function getWeekWindow(){
+
+    const now=new Date();
+
+    const day=now.getUTCDay();
+
+    const daysSinceMonday=
+        day===0 ? 6 : day-1;
+
+    const start=new Date(now);
+
+    start.setUTCDate(
+        now.getUTCDate()-daysSinceMonday
+    );
+
+    start.setUTCHours(0,0,0,0);
+
+    const end=new Date(now);
+
+    return {
+        start:
+            Math.floor(start.getTime()/1000),
+
+        end:
+            Math.floor(end.getTime()/1000)
+    };
+}
+
+
+/* =========================
    LEADERBOARD
-   ========================================================= */
+========================= */
 
 async function loadLeaderboard(){
 
-    const url =
-        API +
-        "/v1/leaderboard" +
-        "?category=OVERALL" +
-        "&timePeriod=WEEK" +
-        "&orderBy=PNL" +
+    const url=
+        API+
+        "/v1/leaderboard"+
+        "?category=OVERALL"+
+        "&timePeriod=WEEK"+
+        "&orderBy=PNL"+
         "&limit=100";
 
+    const data=await apiFetch(url);
 
-    const response =
-        await apiFetch(url);
-
-
-    if(!Array.isArray(response)){
-
+    if(!Array.isArray(data)){
         throw new Error(
             "Leaderboard returned invalid data."
         );
-
     }
 
-
-    return response.slice(0,100);
-
+    return data.slice(0,100);
 }
 
 
-/* =========================================================
-   WIN RATE
-   ========================================================= */
+/* =========================
+   OPEN POSITIONS
+========================= */
 
-function getWinRate(trader){
+async function loadPositions(wallet){
 
-    const direct =
-        trader?.winRate ??
-        trader?.win_rate ??
-        trader?.winPercentage ??
-        trader?.win_percentage;
+    let rows=[];
+    let cursor=null;
 
-    if(
-        direct !== undefined &&
-        direct !== null &&
-        direct !== ""
-    ){
+    for(let page=0;page<20;page++){
 
-        let n = Number(direct);
-
-        if(Number.isFinite(n)){
-
-            if(n <= 1){
-                n *= 100;
-            }
-
-            return n;
-
-        }
-
-    }
-
-
-    const wins =
-        Number(
-            trader?.wins ??
-            trader?.winningTrades ??
-            trader?.winning_trades
-        );
-
-    const losses =
-        Number(
-            trader?.losses ??
-            trader?.losingTrades ??
-            trader?.losing_trades
-        );
-
-
-    if(
-        Number.isFinite(wins) &&
-        Number.isFinite(losses) &&
-        wins + losses > 0
-    ){
-
-        return (
-            wins /
-            (wins + losses) *
-            100
-        );
-
-    }
-
-
-    return null;
-
-}
-
-
-/* =========================================================
-   POSITIONS FOR ONE WALLET
-   ========================================================= */
-
-async function loadWalletPositions(wallet){
-
-    let rows = [];
-
-    let cursor = null;
-
-    let safety = 0;
-
-
-    while(safety < 20){
-
-        safety++;
-
-
-        let url =
-            API +
-            "/v2/positions" +
-            "?user=" +
-            encodeURIComponent(wallet) +
-            "&status=OPEN" +
-            "&limit=500" +
-            "&sort_by=CURRENT_VALUE" +
+        let url=
+            API+
+            "/v2/positions"+
+            "?user="+encodeURIComponent(wallet)+
+            "&status=OPEN"+
+            "&limit=1000"+
+            "&sort_by=CURRENT_VALUE"+
             "&sort_direction=DESC";
 
-
         if(cursor){
-
-            url +=
-                "&cursor=" +
-                encodeURIComponent(cursor);
-
+            url+="&cursor="+encodeURIComponent(cursor);
         }
 
+        const response=await apiFetch(url);
 
-        const response =
-            await apiFetch(url);
-
-
-        const page =
+        const data=
             Array.isArray(response?.data)
-                ? response.data
-                : [];
+            ? response.data
+            : [];
 
-
-        rows.push(...page);
-
-
-        const pagination =
-            response?.pagination;
-
+        rows.push(...data);
 
         if(
-            !pagination ||
-            !pagination.has_more ||
-            !pagination.next_cursor
+            !response?.pagination?.has_more ||
+            !response?.pagination?.next_cursor
         ){
-
             break;
-
         }
 
-
-        cursor =
-            pagination.next_cursor;
-
+        cursor=
+            response.pagination.next_cursor;
     }
 
+    return rows.filter(p => {
 
-    return rows.filter(position => {
+        const size=Number(
+            p.current_size ??
+            p.total_size ??
+            0
+        );
 
-        const size =
-            Number(
-                position.current_size ??
-                position.size ??
-                0
-            );
-
-        return size > 0.0001;
-
+        return size>0.0001;
     });
-
 }
 
 
-/* =========================================================
-   CONCURRENT SCANNING
-   ========================================================= */
+/* =========================
+   WEEKLY CLOSED POSITIONS
+========================= */
+
+async function loadWeeklyResults(wallet){
+
+    const week=getWeekWindow();
+
+    let rows=[];
+    let cursor=null;
+
+    for(let page=0;page<20;page++){
+
+        let url=
+            API+
+            "/v2/positions"+
+            "?user="+encodeURIComponent(wallet)+
+            "&status=CLOSED"+
+            "&limit=1000"+
+            "&sort_by=TIMESTAMP"+
+            "&sort_direction=DESC"+
+            "&start="+week.start+
+            "&end="+week.end;
+
+        if(cursor){
+            url+="&cursor="+encodeURIComponent(cursor);
+        }
+
+        const response=await apiFetch(url);
+
+        const data=
+            Array.isArray(response?.data)
+            ? response.data
+            : [];
+
+        rows.push(...data);
+
+        if(
+            !response?.pagination?.has_more ||
+            !response?.pagination?.next_cursor
+        ){
+            break;
+        }
+
+        cursor=
+            response.pagination.next_cursor;
+    }
+
+    return rows;
+}
+
+
+/* =========================
+   CONCURRENT WALLET SCAN
+========================= */
 
 async function scanWallets(wallets){
 
-    const results = new Array(wallets.length);
+    const results=
+        new Array(wallets.length);
 
-    let nextIndex = 0;
+    let next=0;
 
-    const workerCount =
-        Math.min(
-            10,
-            wallets.length
-        );
+    const workers=
+        Math.min(8,wallets.length);
 
 
     async function worker(){
 
         while(true){
 
-            const index =
-                nextIndex++;
+            const i=next++;
 
-
-            if(index >= wallets.length){
+            if(i>=wallets.length){
                 return;
             }
 
-
-            const wallet =
-                wallets[index];
-
+            const wallet=wallets[i];
 
             try{
 
-                const positions =
-                    await loadWalletPositions(
-                        wallet
-                    );
+                const [
+                    positions,
+                    weeklyResults
+                ]=await Promise.all([
+                    loadPositions(wallet),
+                    loadWeeklyResults(wallet)
+                ]);
 
-
-                results[index] = {
+                results[i]={
                     wallet,
                     positions,
+                    weeklyResults,
                     error:null
                 };
 
-            }
+            }catch(error){
 
-            catch(error){
-
-                results[index] = {
+                results[i]={
                     wallet,
                     positions:[],
+                    weeklyResults:[],
                     error
                 };
-
             }
-
         }
-
     }
 
 
     await Promise.all(
         Array.from(
-            {
-                length:workerCount
-            },
-            () => worker()
+            {length:workers},
+            worker
         )
     );
 
-
     return results;
-
 }
 
 
-/* =========================================================
-   MARKET IDENTIFIERS
-   ========================================================= */
+/* =========================
+   WEEKLY WIN %
+========================= */
 
-function getCondition(position){
+function calculateWinRate(results){
 
-    return (
-        position.condition_id ||
-        position.conditionId ||
-        position.market ||
-        position.asset ||
-        null
+    let wins=0;
+    let losses=0;
+
+    for(const position of results){
+
+        const pnl=Number(
+            position.realized_pnl ??
+            position.realizedPnl ??
+            position.total_pnl ??
+            position.totalPnl
+        );
+
+        if(!Number.isFinite(pnl)){
+            continue;
+        }
+
+        if(pnl>0){
+            wins++;
+        }
+
+        if(pnl<0){
+            losses++;
+        }
+    }
+
+    const total=wins+losses;
+
+    if(total===0){
+        return null;
+    }
+
+    return {
+        wins,
+        losses,
+        total,
+        rate:(wins/total)*100
+    };
+}
+
+
+/* =========================
+   OUTCOME
+========================= */
+
+function outcomeOf(p){
+
+    return String(
+        p.outcome ??
+        p.outcome_name ??
+        p.outcomeName ??
+        ""
+    ).trim();
+}
+
+
+/* =========================
+   TEAM COLOR
+========================= */
+
+function outcomeColor(outcome){
+
+    const text=String(outcome||"");
+
+    const upper=text.toUpperCase();
+
+    if(upper==="YES") return "yes";
+    if(upper==="NO") return "no";
+
+    /*
+      For spread markets:
+      negative spread = favorite
+      positive spread = underdog
+
+      Favorite gets green.
+      Underdog gets red.
+    */
+
+    const spread=text.match(
+        /([+-]\d+(?:\.\d+)?)/
     );
 
-}
+    if(spread){
 
+        const n=parseFloat(spread[1]);
 
-function getMarketName(position){
+        if(n<0){
+            return "team-green";
+        }
 
-    return (
-        position.title ||
-        position.question ||
-        position.name ||
-        position.slug ||
-        "Unknown market"
-    );
-
-}
-
-
-/* =========================================================
-   POSITION OUTCOME
-   ========================================================= */
-
-function getOutcome(position){
-
-    const raw =
-        position.outcome ??
-        position.outcome_name ??
-        position.outcomeName ??
-        position.side ??
-        position.token_outcome ??
-        "";
-
-
-    return String(raw).trim();
-
-}
-
-
-/* =========================================================
-   NORMALIZE OUTCOME
-   ========================================================= */
-
-function normalizedOutcome(position){
-
-    const outcome =
-        getOutcome(position);
-
-    if(!outcome){
-        return "Unknown";
+        if(n>0){
+            return "team-red";
+        }
     }
 
-
-    const lower =
-        outcome.toLowerCase();
-
-
-    if(lower === "yes"){
-        return "YES";
-    }
-
-
-    if(lower === "no"){
-        return "NO";
-    }
-
-
-    return outcome;
-
+    return "neutral";
 }
 
 
-/* =========================================================
-   BUILD MARKET INDEX
-   ========================================================= */
+/* =========================
+   MARKET INDEX
+========================= */
 
-function buildIndex(){
+function buildMarketIndex(){
 
     marketMap.clear();
 
-
     for(const position of allPositions){
 
-        const condition =
-            getCondition(position);
+        const condition=
+            position.condition_id ||
+            position.conditionId;
 
-
-        const wallet =
-            String(
-                position.proxy_wallet ||
-                position.proxyWallet ||
-                position.user ||
-                ""
-            ).toLowerCase();
-
+        const wallet=String(
+            position.proxy_wallet ||
+            position.proxyWallet ||
+            ""
+        ).toLowerCase();
 
         if(!condition || !wallet){
             continue;
         }
 
-
         if(!marketMap.has(condition)){
 
-            marketMap.set(
+            marketMap.set(condition,{
                 condition,
-                {
-                    condition,
-                    title:
-                        getMarketName(position),
-                    wallets:new Map(),
-                    value:0
-                }
-            );
+                title:
+                    position.title ||
+                    position.question ||
+                    position.name ||
+                    "Unknown market",
 
+                wallets:new Map(),
+                value:0
+            });
         }
 
-
-        const market =
+        const market=
             marketMap.get(condition);
 
-
         if(!market.wallets.has(wallet)){
-
-            market.wallets.set(
-                wallet,
-                []
-            );
-
+            market.wallets.set(wallet,[]);
         }
-
 
         market.wallets
             .get(wallet)
             .push(position);
 
-
-        const value =
-            Number(
-                position.current_value ??
-                position.currentValue ??
-                0
-            );
-
+        const value=Number(
+            position.current_value ??
+            position.currentValue ??
+            0
+        );
 
         if(Number.isFinite(value)){
-
-            market.value += value;
-
+            market.value+=value;
         }
-
     }
-
 }
 
 
-/* =========================================================
-   WALLET POSITION
-   ========================================================= */
-
-function walletPosition(positions){
-
-    const outcomes = [];
-
-    for(const p of positions){
-
-        const outcome =
-            normalizedOutcome(p);
-
-        if(
-            outcome &&
-            !outcomes.includes(outcome)
-        ){
-
-            outcomes.push(outcome);
-
-        }
-
-    }
-
-
-    if(outcomes.length){
-        return outcomes.join(" + ");
-    }
-
-
-    return "Unknown";
-
-}
-
-
-/* =========================================================
+/* =========================
    MARKET STATS
-   ========================================================= */
+========================= */
 
-function getMarketStats(market){
+function marketStats(market){
 
-    const counts =
-        new Map();
+    const counts=new Map();
 
+    const wallets=[
+        ...market.wallets.entries()
+    ];
 
-    let totalValue = 0;
+    /*
+      IMPORTANT:
+      One wallet counts ONCE for ONE outcome.
 
+      This prevents:
+      90% YES + 30% NO = 120%
 
-    for(
-        const positions
-        of market.wallets.values()
-    ){
+      If a wallet holds multiple entries for
+      the same outcome, those entries are
+      combined.
+    */
 
-        const unique =
+    for(const [,positions] of wallets){
+
+        const outcomes=
             new Set();
 
+        for(const p of positions){
 
-        for(const position of positions){
+            const outcome=outcomeOf(p);
 
-            const outcome =
-                normalizedOutcome(position);
-
-
-            if(
-                outcome &&
-                !unique.has(outcome)
-            ){
-
-                unique.add(outcome);
-
-                counts.set(
-                    outcome,
-                    (
-                        counts.get(outcome) ||
-                        0
-                    ) + 1
-                );
-
+            if(outcome){
+                outcomes.add(outcome);
             }
-
-
-            const value =
-                Number(
-                    position.current_value ??
-                    position.currentValue ??
-                    0
-                );
-
-
-            if(Number.isFinite(value)){
-                totalValue += value;
-            }
-
         }
 
+        for(const outcome of outcomes){
+
+            counts.set(
+                outcome,
+                (counts.get(outcome)||0)+1
+            );
+        }
     }
 
 
+    /*
+      For normal two-sided markets, use one
+      side per wallet.
+
+      If a wallet somehow holds BOTH sides,
+      don't let it inflate the percentage.
+    */
+
+    let exclusiveCounts=
+        new Map(counts);
+
+    const totalWallets=
+        market.wallets.size;
+
     return {
-        total:
-            market.wallets.size,
-
-        counts,
-
-        value:
-            totalValue
+        counts:exclusiveCounts,
+        total:totalWallets,
+        value:market.value
     };
-
 }
 
 
-/* =========================================================
-   RENDER TOP 100
-   ========================================================= */
+/* =========================
+   TOP 100
+========================= */
 
 function renderLeaderboard(){
 
-    const search =
+    const search=
         $("traderSearch")
-            .value
-            .toLowerCase();
+        .value
+        .toLowerCase();
 
 
-    const rows =
+    const rows=
         leaderboard.filter(t => {
 
-            const name =
+            const name=
                 traderName(t)
-                    .toLowerCase();
+                .toLowerCase();
 
-            const wallet =
-                walletOfTrader(t)
-                    .toLowerCase();
+            const wallet=
+                walletOfTrader(t);
 
-            return (
+            return(
                 name.includes(search) ||
                 wallet.includes(search)
             );
-
         });
 
 
-    $("leaderboardTable")
-        .innerHTML =
-        rows.map((trader,index) => {
+    $("leaderboardTable").innerHTML=
+        rows.map((trader,index)=>{
 
-            const rank =
+            const wallet=
+                walletOfTrader(trader);
+
+            const rank=
                 Number(
                     trader.rank ??
-                    index + 1
+                    index+1
                 );
 
-
-            const pnl =
+            const pnl=
                 Number(
                     trader.pnl ??
                     trader.PNL ??
                     0
                 );
 
-
-            const volume =
+            const volume=
                 Number(
                     trader.vol ??
                     trader.volume ??
                     0
                 );
 
+            const stats=
+                walletStats.get(wallet);
 
-            const winRate =
-                getWinRate(trader);
+            const winRate=
+                stats?.winRate;
 
 
             return `
 
-<tr class="click">
+<tr>
 
 <td class="rank">
 #${rank}
@@ -1285,11 +1074,7 @@ ${esc(traderName(trader))}
 </div>
 
 <div class="address">
-${esc(
-    shortWallet(
-        walletOfTrader(trader)
-    )
-)}
+${esc(shortWallet(wallet))}
 </div>
 
 </td>
@@ -1303,102 +1088,101 @@ ${money(volume)}
 </td>
 
 <td>
+
 ${
-    winRate === null
+    winRate === null ||
+    winRate === undefined
     ? "—"
-    : winRate.toFixed(1) + "%"
+    : winRate.toFixed(1)+"%"
 }
+
+${
+    stats?.wins !== undefined
+    ? `
+<div class="sub">
+${stats.wins}W / ${stats.losses}L
+</div>
+`
+    : ""
+}
+
 </td>
 
 </tr>
 
 `;
 
-        })
-        .join("");
-
-
+        }).join("");
 }
 
 
-/* =========================================================
-   MARKET BREAKDOWN TEXT
-   ========================================================= */
-
-function breakdownText(stats){
-
-    const entries =
-        [...stats.counts.entries()]
-        .sort(
-            (a,b) =>
-                b[1] - a[1]
-        );
-
-
-    if(!entries.length){
-        return "Position data unavailable";
-    }
-
-
-    return entries
-        .slice(0,4)
-        .map(
-            ([name,count]) =>
-                `${esc(name)}: ${count}`
-        )
-        .join(" • ");
-
-}
-
-
-/* =========================================================
-   RENDER MARKETS
-   ========================================================= */
+/* =========================
+   MARKET RENDER
+========================= */
 
 function renderMarkets(){
 
-    const search =
+    const search=
         $("marketSearch")
-            .value
-            .toLowerCase();
+        .value
+        .toLowerCase();
 
-
-    const minimum =
+    const minimum=
         Number(
             $("minimumWallets")
-                .value
+            .value
         );
 
 
-    visibleMarkets =
+    visibleMarkets=
         [...marketMap.values()]
-        .filter(market => {
+        .filter(m => {
 
-            return (
-                market.wallets.size >= minimum &&
-                market.title
-                    .toLowerCase()
-                    .includes(search)
+            return(
+                m.wallets.size>=minimum &&
+                m.title
+                .toLowerCase()
+                .includes(search)
             );
-
         })
         .sort(
-            (a,b) =>
-                b.wallets.size -
+            (a,b)=>
+                b.wallets.size-
                 a.wallets.size
         );
 
 
-    $("marketsTable")
-        .innerHTML =
-        visibleMarkets
-        .map((market,index) => {
+    $("marketsTable").innerHTML=
+        visibleMarkets.map(
+            (market,index)=>{
 
-            const stats =
-                getMarketStats(market);
+                const stats=
+                    marketStats(market);
 
 
-            return `
+                const breakdown=
+                    [...stats.counts.entries()]
+                    .sort(
+                        (a,b)=>b[1]-a[1]
+                    )
+                    .slice(0,4)
+                    .map(([outcome,count])=>{
+
+                        const cls=
+                            outcomeColor(
+                                outcome
+                            );
+
+                        return `
+<span class="badge ${cls}">
+${esc(outcome)} ${count}
+</span>
+`;
+                    })
+                    .join("");
+
+
+                return `
 
 <tr
 class="click"
@@ -1418,7 +1202,7 @@ ${stats.total}
 </td>
 
 <td>
-${breakdownText(stats)}
+${breakdown || "Position data unavailable"}
 </td>
 
 <td>
@@ -1428,9 +1212,8 @@ ${money(stats.value)}
 </tr>
 
 `;
-
-        })
-        .join("")
+            }
+        ).join("")
         ||
         `
 <tr>
@@ -1439,34 +1222,63 @@ No active markets found.
 </td>
 </tr>
 `;
-
 }
 
 
-/* =========================================================
-   OPEN MARKET
-   ========================================================= */
+/* =========================
+   MARKET DETAIL
+========================= */
 
 function openMarket(index){
 
-    const market =
+    const market=
         visibleMarkets[index];
 
+    if(!market) return;
 
-    if(!market){
-        return;
+
+    const stats=
+        marketStats(market);
+
+
+    const entries=
+        [...stats.counts.entries()]
+        .sort(
+            (a,b)=>b[1]-a[1]
+        );
+
+
+    /*
+      Percentage denominator is the number
+      of wallets with a recognized outcome,
+      NOT a sum of arbitrary positions.
+    */
+
+    const recognizedWallets=
+        new Set();
+
+
+    for(
+        const [wallet,positions]
+        of market.wallets
+    ){
+
+        const outcomes=
+            positions
+            .map(outcomeOf)
+            .filter(Boolean);
+
+        if(outcomes.length){
+            recognizedWallets.add(wallet);
+        }
     }
 
 
-    const stats =
-        getMarketStats(market);
+    const denominator=
+        recognizedWallets.size;
 
 
-    const total =
-        stats.total;
-
-
-    let html = `
+    let html=`
 
 <div>
 
@@ -1474,26 +1286,9 @@ function openMarket(index){
 ${esc(market.title)}
 </b>
 
-<div class="sub" style="margin-top:4px">
-${total} unique active wallets
+<div class="sub" style="margin-top:5px">
+${stats.total} active wallets
 </div>
-
-`;
-
-
-    /* POSITION BREAKDOWN */
-
-    const entries =
-        [...stats.counts.entries()]
-        .sort(
-            (a,b) =>
-                b[1] - a[1]
-        );
-
-
-    if(entries.length){
-
-        html += `
 
 <div class="percent">
 Position Breakdown
@@ -1501,76 +1296,153 @@ Position Breakdown
 
 `;
 
-        for(
-            const [outcome,count]
-            of entries
-        ){
 
-            const pct =
-                total
-                ? count / total * 100
+    if(entries.length){
+
+        const first=
+            entries[0];
+
+        const second=
+            entries[1];
+
+
+        if(first){
+
+            const pct=
+                denominator
+                ? first[1]/denominator*100
                 : 0;
 
 
-            let badgeClass =
-                "outcome";
-
-
-            if(
-                outcome.toUpperCase() === "YES"
-            ){
-                badgeClass = "yes";
-            }
-
-
-            if(
-                outcome.toUpperCase() === "NO"
-            ){
-                badgeClass = "no";
-            }
-
-
-            html += `
+            html+=`
 
 <div class="outcome-row">
 
-<span class="badge ${badgeClass}">
-${esc(outcome)}
+<span class="badge ${outcomeColor(first[0])}">
+${esc(first[0])}
 </span>
 
 <span class="outcome-percent">
 ${pct.toFixed(1)}%
 </span>
 
-<div class="small">
-${count} wallet${count === 1 ? "" : "s"}
+<div class="sub">
+${first[1]} wallets
 </div>
 
 </div>
 
 `;
-
         }
 
+
+        if(second){
+
+            const pct=
+                denominator
+                ? second[1]/denominator*100
+                : 0;
+
+
+            html+=`
+
+<div class="outcome-row">
+
+<span class="badge ${outcomeColor(second[0])}">
+${esc(second[0])}
+</span>
+
+<span class="outcome-percent">
+${pct.toFixed(1)}%
+</span>
+
+<div class="sub">
+${second[1]} wallets
+</div>
+
+</div>
+
+`;
+        }
+
+
+        /*
+          Only show a bar when the outcomes
+          are actually two mutually exclusive
+          sides.
+        */
+
+        if(
+            entries.length===2 &&
+            denominator>0
+        ){
+
+            const aPct=
+                entries[0][1]/
+                denominator*100;
+
+            const bPct=
+                entries[1][1]/
+                denominator*100;
+
+
+            html+=`
+
+<div class="bar">
+
+<div
+class="${
+    outcomeColor(entries[0][0])
+    ==="team-green"
+    ? "greenbar"
+    : "redbar"
+}"
+style="width:${aPct}%"
+></div>
+
+<div
+class="${
+    outcomeColor(entries[1][0])
+    ==="team-green"
+    ? "greenbar"
+    : "redbar"
+}"
+style="width:${bPct}%"
+></div>
+
+</div>
+
+`;
+        }
+
+    }else{
+
+        html+=`
+
+<div class="note">
+The API returned active positions for these wallets,
+but did not provide a recognizable outcome label.
+No YES/NO percentage is being invented.
+</div>
+
+`;
     }
 
 
-    /* WALLET LIST */
+    html+=`
 
-    html += `
-
-<div class="percent" style="margin-top:18px">
-Top-100 Wallets Holding This Market
+<div class="percent">
+Top-100 Wallets
 </div>
 
 <div class="wrap">
 
-<table style="min-width:800px">
+<table style="min-width:850px">
 
 <thead>
 
 <tr>
-<th>Top-100 Rank</th>
+<th>Rank</th>
 <th>Wallet</th>
 <th>Position</th>
 <th>Value</th>
@@ -1583,57 +1455,48 @@ Top-100 Wallets Holding This Market
 `;
 
 
-    const wallets =
+    const walletRows=
         [...market.wallets.entries()]
         .map(
-            ([wallet,positions]) => {
+            ([wallet,positions])=>{
 
-                const trader =
-                    leaderboardMap.get(
-                        wallet
-                    );
+                const trader=
+                    leaderboardMap.get(wallet);
 
-
-                const rank =
+                const rank=
                     trader
                     ? Number(
                         trader.rank ??
                         leaderboard.findIndex(
-                            x =>
-                            walletOfTrader(x) === wallet
-                        ) + 1
+                            x=>
+                                walletOfTrader(x)
+                                ===wallet
+                        )+1
                     )
                     : 9999;
 
 
-                let value = 0;
+                let value=0;
+                let pnl=0;
 
-                let pnl = 0;
 
+                for(const p of positions){
 
-                for(
-                    const position
-                    of positions
-                ){
-
-                    value += Number(
-                        position.current_value ??
-                        position.currentValue ??
+                    value+=Number(
+                        p.current_value ??
                         0
                     );
 
-
-                    pnl += Number(
-                        position.cash_pnl ??
-                        position.cashPnl ??
-                        position.pnl ??
+                    pnl+=Number(
+                        p.unrealized_pnl ??
+                        p.realized_pnl ??
+                        p.total_pnl ??
                         0
                     );
-
                 }
 
 
-                return {
+                return{
                     wallet,
                     positions,
                     trader,
@@ -1641,36 +1504,51 @@ Top-100 Wallets Holding This Market
                     value,
                     pnl
                 };
-
             }
         )
         .sort(
-            (a,b) =>
-                a.rank - b.rank
+            (a,b)=>a.rank-b.rank
         );
 
 
-    for(
-        const item
-        of wallets
-    ){
+    for(const item of walletRows){
 
-        const name =
+        const name=
             item.trader
             ? traderName(item.trader)
             : shortWallet(item.wallet);
 
 
-        html += `
+        const positions=
+            item.positions
+            .map(p=>{
+
+                const outcome=
+                    outcomeOf(p) ||
+                    "Unknown";
+
+                return `
+<span class="badge ${outcomeColor(outcome)}">
+${esc(outcome)}
+</span>
+`;
+
+            })
+            .join("");
+
+
+        html+=`
 
 <tr>
 
 <td class="rank">
+
 ${
-    item.rank <= 100
-    ? "#" + item.rank
+    item.rank<=100
+    ? "#"+item.rank
     : "Not Top 100"
 }
+
 </td>
 
 <td>
@@ -1686,47 +1564,7 @@ ${esc(shortWallet(item.wallet))}
 </td>
 
 <td>
-
-${
-    item.positions
-        .map(position => {
-
-            const outcome =
-                normalizedOutcome(
-                    position
-                );
-
-
-            let cls =
-                "outcome";
-
-
-            if(
-                outcome.toUpperCase() ===
-                "YES"
-            ){
-                cls = "yes";
-            }
-
-
-            if(
-                outcome.toUpperCase() ===
-                "NO"
-            ){
-                cls = "no";
-            }
-
-
-            return `
-<span class="badge ${cls}">
-${esc(outcome)}
-</span>
-`;
-
-        })
-        .join("")
-}
-
+${positions}
 </td>
 
 <td>
@@ -1740,11 +1578,10 @@ ${money(item.pnl)}
 </tr>
 
 `;
-
     }
 
 
-    html += `
+    html+=`
 
 </tbody>
 
@@ -1752,18 +1589,13 @@ ${money(item.pnl)}
 
 </div>
 
-`;
-
-
-    html += `
-
 <div class="note">
 
-The percentage above is based on the Top-100 wallets that
-actually have an open position returned by Polymarket.
-Sports markets are shown using their real outcomes
-(for example Falcons vs Packers), rather than incorrectly
-converting team positions into YES/NO.
+Team colors use the market's actual outcome.
+For spread markets, the favorite/negative spread is
+shown green and the underdog/positive spread red.
+Percentages are calculated from unique wallets rather
+than counting duplicate position rows.
 
 </div>
 
@@ -1772,36 +1604,27 @@ converting team positions into YES/NO.
 `;
 
 
-    $("marketDetail").innerHTML =
-        html;
-
+    $("marketDetail").innerHTML=html;
 
     $("marketDetail")
         .classList
         .remove("hidden");
-
 
     $("marketDetail")
         .scrollIntoView({
             behavior:"smooth",
             block:"start"
         });
-
 }
 
 
-/* =========================================================
+/* =========================
    MAIN SCAN
-   ========================================================= */
+========================= */
 
 async function scan(){
 
-    const button =
-        $("scanButton");
-
-
-    button.disabled = true;
-
+    $("scanButton").disabled=true;
 
     $("marketDetail")
         .classList
@@ -1815,173 +1638,149 @@ async function scan(){
         );
 
 
-        leaderboard =
+        leaderboard=
             await loadLeaderboard();
 
 
-        if(leaderboard.length !== 100){
-
-            setStatus(
-                `Loaded ${leaderboard.length} leaderboard wallets. Continuing with all returned wallets.`,
-                "good"
+        if(!leaderboard.length){
+            throw new Error(
+                "No leaderboard wallets returned."
             );
-
         }
 
 
         leaderboardMap.clear();
 
 
-        for(
-            const trader
-            of leaderboard
-        ){
+        for(const trader of leaderboard){
 
-            const wallet =
+            const wallet=
                 walletOfTrader(trader);
 
-
             if(wallet){
-
                 leaderboardMap.set(
                     wallet,
                     trader
                 );
-
             }
-
         }
 
+
+        walletStats.clear();
 
         renderLeaderboard();
 
 
-        const wallets =
+        const wallets=
             leaderboard
-                .map(walletOfTrader)
-                .filter(Boolean);
-
-
-        if(!wallets.length){
-
-            throw new Error(
-                "No wallet addresses were returned by the leaderboard."
-            );
-
-        }
+            .map(walletOfTrader)
+            .filter(Boolean);
 
 
         setStatus(
-            `Scanning ${wallets.length} wallets simultaneously...`
+            `Scanning ${wallets.length} wallets for active positions and weekly results...`
         );
 
 
-        const results =
-            await scanWallets(
-                wallets
-            );
+        const results=
+            await scanWallets(wallets);
 
 
-        allPositions = [];
+        allPositions=[];
 
 
-        let successful = 0;
-
-        let failed = 0;
-
-        let totalPositions = 0;
+        let success=0;
+        let failed=0;
 
 
-        for(
-            const result
-            of results
-        ){
+        for(const result of results){
 
             if(result.error){
-
                 failed++;
-
                 continue;
-
             }
 
 
-            successful++;
+            success++;
 
 
-            for(
-                const position
-                of result.positions
-            ){
+            const winRate=
+                calculateWinRate(
+                    result.weeklyResults
+                );
+
+
+            walletStats.set(
+                result.wallet,
+                {
+                    winRate:
+                        winRate
+                        ? winRate.rate
+                        : null,
+
+                    wins:
+                        winRate
+                        ? winRate.wins
+                        : 0,
+
+                    losses:
+                        winRate
+                        ? winRate.losses
+                        : 0
+                }
+            );
+
+
+            for(const position of result.positions){
 
                 if(
                     !position.proxy_wallet &&
                     !position.proxyWallet
                 ){
 
-                    position.proxy_wallet =
+                    position.proxy_wallet=
                         result.wallet;
-
                 }
 
 
                 allPositions.push(
                     position
                 );
-
-                totalPositions++;
-
             }
-
         }
 
 
-        buildIndex();
+        buildMarketIndex();
+
+        renderLeaderboard();
 
         renderMarkets();
 
 
         setStatus(
-            `Done. ${successful} wallets scanned, ${failed} failed, ${totalPositions} open positions found across ${marketMap.size} active markets.`,
-            failed === 0
-                ? "good"
-                : ""
+            `Done. ${success} wallets scanned, ${failed} failed, ${allPositions.length} active positions found across ${marketMap.size} markets.`,
+            failed===0 ? "good" : ""
         );
 
 
-    }
-
-    catch(error){
+    }catch(error){
 
         console.error(error);
 
-
         setStatus(
-            "Scan failed: " +
-            (
-                error?.message ||
-                String(error)
-            ),
+            "Scan failed: "+
+            (error?.message || String(error)),
             "bad"
         );
 
+    }finally{
+
+        $("scanButton").disabled=false;
     }
-
-    finally{
-
-        button.disabled = false;
-
-    }
-
 }
 
 
-/* =========================================================
-   START
-   ========================================================= */
-
 renderLeaderboard();
-
 renderMarkets();
 
 </script>
