@@ -1,67 +1,258 @@
 <!doctype html>
-<html lang="en">
+<html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Polymarket Top 100 Scanner</title>
 <style>
-body{font-family:system-ui,-apple-system,sans-serif;margin:0;background:#f6f7f9;color:#111}
-main{max-width:1100px;margin:auto;padding:24px}
-header{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap}
-button{border:0;border-radius:10px;padding:11px 16px;font-weight:700;cursor:pointer}
-.primary{background:#111;color:#fff}.muted{color:#666}
-.card{background:#fff;border-radius:16px;padding:18px;margin-top:18px;box-shadow:0 1px 5px #00000010}
-table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:11px;border-bottom:1px solid #eee}
-.badge{display:inline-block;padding:4px 8px;border-radius:999px;background:#eee;font-size:12px}
-.notice{padding:12px;border-radius:10px;background:#fff8db}
+body{font-family:-apple-system,BlinkMacSystemFont,Arial;margin:0;background:#f5f6f8;color:#111}
+main{max-width:1100px;margin:auto;padding:18px}
+.card{background:white;border-radius:14px;padding:16px;margin:16px 0;box-shadow:0 1px 6px #0001}
+header{display:flex;justify-content:space-between;align-items:center;gap:10px}
+button{background:#111;color:white;border:0;border-radius:9px;padding:11px 15px;font-weight:bold}
+table{width:100%;border-collapse:collapse}
+th,td{text-align:left;padding:9px;border-bottom:1px solid #eee}
+.wrap{overflow:auto}
+.status{padding:10px;background:#eef3ff;border-radius:9px;margin-top:12px}
 </style>
 </head>
+
 <body>
 <main>
+
 <header>
-<div><h1>Polymarket Top 100 Scanner</h1><div class="muted">Weekly leaderboard • active-position overlap</div></div>
-<button class="primary" onclick="loadDemo()">Load demo data</button>
+<div>
+<h1>Polymarket Top 100 Scanner</h1>
+<div>Weekly leaderboard • active positions • overlap</div>
+</div>
+<button onclick="scan()">🔄 Scan Top 100</button>
 </header>
 
+<div id="status" class="status">
+Ready — tap Scan Top 100.
+</div>
+
 <div class="card">
-<h2>Weekly leaderboard</h2>
-<div class="notice">This starter dashboard is the interface. The next step is connecting it to Polymarket's live public data API so the Scan button can populate the current top 100 automatically.</div>
-<table><thead><tr><th>#</th><th>Wallet</th><th>Weekly P&L</th><th>Weekly volume</th></tr></thead>
-<tbody id="leaders"><tr><td colspan="4" class="muted">No data loaded yet.</td></tr></tbody></table>
+<h2>Top 100 Weekly</h2>
+<div class="wrap">
+<table>
+<thead>
+<tr><th>#</th><th>Trader</th><th>Weekly P&L</th><th>Volume</th></tr>
+</thead>
+<tbody id="leaders">
+<tr><td colspan="4">No data yet.</td></tr>
+</tbody>
+</table>
+</div>
 </div>
 
 <div class="card">
 <h2>Most-held active markets</h2>
-<table><thead><tr><th>Market</th><th>Holders</th><th>YES</th><th>NO</th><th>Combined value</th></tr></thead>
-<tbody id="markets"><tr><td colspan="5" class="muted">No data loaded yet.</td></tr></tbody></table>
+<div class="wrap">
+<table>
+<thead>
+<tr><th>Market</th><th>Wallets</th><th>YES</th><th>NO</th><th>Value</th></tr>
+</thead>
+<tbody id="markets">
+<tr><td colspan="5">No data yet.</td></tr>
+</tbody>
+</table>
+</div>
 </div>
 
 <div class="card">
-<h2>Portfolio overlap</h2>
-<table><thead><tr><th>Wallet A</th><th>Wallet B</th><th>Shared markets</th></tr></thead>
-<tbody id="overlap"><tr><td colspan="3" class="muted">No data loaded yet.</td></tr></tbody></table>
+<h2>Biggest portfolio overlaps</h2>
+<div class="wrap">
+<table>
+<thead>
+<tr><th>Wallet A</th><th>Wallet B</th><th>Shared markets</th></tr>
+</thead>
+<tbody id="overlap">
+<tr><td colspan="3">No data yet.</td></tr>
+</tbody>
+</table>
+</div>
 </div>
 
-<div class="card">
-<h2>What this will do</h2>
-<ul>
-<li>Pull the current weekly top 100.</li>
-<li>Fetch each wallet's open positions.</li>
-<li>Group identical markets and YES/NO sides.</li>
-<li>Find wallets with the most shared active markets.</li>
-<li>Let you drill into individual wallets.</li>
-</ul>
-</div>
-</main>
 <script>
-function loadDemo(){
- const leaders=[1,2,3,4,5].map((n)=>({n,w:"Wallet "+n,p:(12500-n*1300),v:(95000+n*7000)}));
- document.querySelector("#leaders").innerHTML=leaders.map(x=>`<tr><td>${x.n}</td><td><span class="badge">${x.w}</span></td><td>$${x.p.toLocaleString()}</td><td>$${x.v.toLocaleString()}</td></tr>`).join("");
- const markets=[["Market A",34,31,3,284000],["Market B",27,8,19,231000],["Market C",21,18,3,177000]];
- document.querySelector("#markets").innerHTML=markets.map(x=>`<tr><td>${x[0]}</td><td>${x[1]}</td><td>${x[2]}</td><td>${x[3]}</td><td>$${x[4].toLocaleString()}</td></tr>`).join("");
- const pairs=[["Wallet 4","Wallet 17",22],["Wallet 8","Wallet 11",18],["Wallet 3","Wallet 29",16]];
- document.querySelector("#overlap").innerHTML=pairs.map(x=>`<tr><td>${x[0]}</td><td>${x[1]}</td><td>${x[2]}</td></tr>`).join("");
+const API="https://data-api.polymarket.com";
+let leaders=[],positions=[];
+
+const money=x=>Number(x||0).toLocaleString(undefined,{
+style:"currency",currency:"USD",maximumFractionDigits:0
+});
+
+const short=x=>x&&x.length>18?x.slice(0,8)+"..."+x.slice(-6):x;
+
+async function get(url){
+const r=await fetch(url);
+if(!r.ok)throw Error("HTTP "+r.status);
+return r.json();
+}
+
+async function scan(){
+
+const status=document.getElementById("status");
+status.textContent="Loading weekly top 100...";
+
+try{
+
+leaders=[];
+
+for(let offset=0;offset<100;offset+=50){
+
+let data=await get(
+API+"/v1/leaderboard?category=OVERALL&timePeriod=WEEK&orderBy=PNL&limit=50&offset="+offset
+);
+
+if(!Array.isArray(data))break;
+
+leaders.push(...data);
+
+if(data.length<50)break;
+}
+
+leaders=leaders.slice(0,100);
+
+document.getElementById("leaders").innerHTML=
+leaders.map(x=>`
+<tr>
+<td>${x.rank||""}</td>
+<td>${x.userName||short(x.proxyWallet)}</td>
+<td>${money(x.pnl)}</td>
+<td>${money(x.vol)}</td>
+</tr>`).join("");
+
+status.textContent=
+"Loaded "+leaders.length+" wallets. Loading active positions...";
+
+positions=[];
+
+for(let i=0;i<leaders.length;i++){
+
+let wallet=leaders[i].proxyWallet;
+
+try{
+
+let data=await get(
+API+"/positions?user="+encodeURIComponent(wallet)+"&limit=500"
+);
+
+if(Array.isArray(data)){
+positions.push(...data.filter(x=>Number(x.size||0)>0));
+}
+
+}catch(e){}
+
+status.textContent=
+"Loading positions "+(i+1)+"/"+leaders.length+"...";
+}
+
+buildMarkets();
+buildOverlap();
+
+status.textContent=
+"Done — "+leaders.length+" wallets analyzed.";
+
+}catch(e){
+
+status.textContent=
+"Live data request failed: "+e.message;
+
+}
+}
+
+function marketKey(p){
+return p.conditionId||p.market||p.asset||p.title;
+}
+
+function buildMarkets(){
+
+let map={};
+
+positions.forEach(p=>{
+
+let k=marketKey(p);
+
+if(!map[k])
+map[k]={
+name:p.title||p.question||k,
+wallets:new Set(),
+yes:0,
+no:0,
+value:0
+};
+
+map[k].wallets.add(p.proxyWallet);
+
+if(String(p.outcome).toLowerCase()=="yes")
+map[k].yes++;
+else
+map[k].no++;
+
+map[k].value+=Number(p.currentValue||0);
+
+});
+
+let rows=Object.values(map)
+.sort((a,b)=>b.wallets.size-a.wallets.size)
+.slice(0,100);
+
+document.getElementById("markets").innerHTML=
+rows.map(x=>`
+<tr>
+<td>${x.name}</td>
+<td>${x.wallets.size}</td>
+<td>${x.yes}</td>
+<td>${x.no}</td>
+<td>${money(x.value)}</td>
+</tr>`).join("");
+}
+
+function buildOverlap(){
+
+let wallets={};
+
+positions.forEach(p=>{
+
+if(!wallets[p.proxyWallet])
+wallets[p.proxyWallet]=new Set();
+
+wallets[p.proxyWallet].add(marketKey(p));
+
+});
+
+let ids=Object.keys(wallets);
+let pairs=[];
+
+for(let i=0;i<ids.length;i++){
+
+for(let j=i+1;j<ids.length;j++){
+
+let count=0;
+
+wallets[ids[i]].forEach(x=>{
+if(wallets[ids[j]].has(x))count++;
+});
+
+if(count>0)
+pairs.push([ids[i],ids[j],count]);
+
+}
+}
+
+pairs.sort((a,b)=>b[2]-a[2]);
+
+document.getElementById("overlap").innerHTML=
+pairs.slice(0,100).map(x=>`
+<tr>
+<td>${short(x[0])}</td>
+<td>${short(x[1])}</td>
+<td><b>${x[2]}</b></td>
+</tr>`).join("");
 }
 </script>
+
+</main>
 </body>
 </html>
