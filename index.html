@@ -1,1216 +1,1696 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Polymarket Top 100 Consensus Scanner</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<title>Polymarket Top 100</title>
+
 <style>
-:root{
-font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
-color:#111;background:#f5f6f8
+* {
+    box-sizing: border-box;
 }
-*{box-sizing:border-box}
-body{margin:0}
-main{max-width:1250px;margin:auto;padding:16px}
-header{
-display:flex;justify-content:space-between;align-items:center;
-gap:12px;flex-wrap:wrap
+
+body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: #f5f6f8;
+    color: #111;
 }
-h1{margin:0 0 3px;font-size:24px}
-.muted{color:#6b6b6b;font-size:13px}
-button{
-border:0;border-radius:9px;padding:10px 14px;
-font-weight:750;cursor:pointer;background:#111;color:#fff
+
+.container {
+    max-width: 1100px;
+    margin: auto;
+    padding: 18px;
 }
-button.secondary{background:#eee;color:#111}
-button:disabled{opacity:.55}
-.card{
-background:#fff;border-radius:14px;padding:15px;margin-top:15px;
-box-shadow:0 1px 6px #00000012
+
+header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
 }
-.status{
-margin-top:12px;padding:10px 12px;border-radius:9px;
-background:#eef3ff;font-size:14px
+
+h1 {
+    margin: 0;
+    font-size: 25px;
 }
-.status.ok{background:#eaf8ee;color:#176b2d}
-.status.err{background:#ffecec;color:#9b1c1c}
-.grid{
-display:grid;grid-template-columns:repeat(4,1fr);gap:10px
+
+h2 {
+    margin-top: 0;
 }
-.metric{
-background:#f7f7f8;border-radius:11px;padding:11px
+
+.subtitle {
+    color: #777;
+    font-size: 13px;
+    margin-top: 4px;
 }
-.metric b{
-display:block;font-size:20px;margin-top:2px
+
+button {
+    border: none;
+    border-radius: 9px;
+    padding: 10px 15px;
+    background: #111;
+    color: white;
+    font-weight: 700;
+    cursor: pointer;
 }
-.controls{
-display:flex;gap:8px;flex-wrap:wrap;margin:10px 0
+
+button:disabled {
+    opacity: .5;
 }
-input,select{
-border:1px solid #ddd;border-radius:8px;
-padding:9px;background:#fff
+
+.card {
+    background: white;
+    border-radius: 14px;
+    padding: 16px;
+    margin-top: 15px;
+    box-shadow: 0 2px 8px rgba(0,0,0,.06);
 }
-.wrap{overflow:auto}
-table{
-width:100%;border-collapse:collapse;min-width:700px
+
+.status {
+    margin-top: 12px;
+    padding: 11px;
+    border-radius: 9px;
+    background: #edf2ff;
+    font-size: 14px;
 }
-th,td{
-text-align:left;padding:9px;border-bottom:1px solid #eee;
-font-size:13px;vertical-align:top
+
+.status.success {
+    background: #e8f7ed;
+    color: #176b2d;
 }
-th{
-font-size:11px;text-transform:uppercase;color:#777
+
+.status.error {
+    background: #ffeaea;
+    color: #a11;
 }
-tr.clickable{cursor:pointer}
-tr.clickable:hover{background:#f8f8f8}
-.badge{
-display:inline-block;padding:3px 7px;border-radius:99px;
-background:#eee;font-size:11px
+
+.controls {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin: 12px 0;
 }
-.yes{background:#e8f7ed;color:#176b2d}
-.no{background:#fff0f0;color:#a11}
-.wallet{font-weight:700}
-.addr{font-size:11px;color:#888}
-.subcard{
-margin-top:10px;padding:12px;
-background:#f8f8f8;border-radius:10px
+
+input,
+select {
+    padding: 9px 10px;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    background: white;
 }
-.hidden{display:none}
-@media(max-width:750px){
-.grid{grid-template-columns:1fr 1fr}
-h1{font-size:21px}
+
+.table-wrap {
+    overflow-x: auto;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    min-width: 750px;
+}
+
+th,
+td {
+    padding: 10px;
+    border-bottom: 1px solid #eee;
+    text-align: left;
+    font-size: 13px;
+}
+
+th {
+    color: #777;
+    font-size: 11px;
+    text-transform: uppercase;
+}
+
+.clickable {
+    cursor: pointer;
+}
+
+.clickable:hover {
+    background: #f8f8f8;
+}
+
+.rank {
+    font-weight: 800;
+}
+
+.trader {
+    font-weight: 700;
+}
+
+.address {
+    color: #888;
+    font-size: 11px;
+}
+
+.badge {
+    display: inline-block;
+    padding: 3px 8px;
+    border-radius: 99px;
+    font-size: 11px;
+    font-weight: 700;
+}
+
+.yes {
+    background: #e7f7ec;
+    color: #176b2d;
+}
+
+.no {
+    background: #ffecec;
+    color: #a11;
+}
+
+.na {
+    background: #eee;
+    color: #777;
+}
+
+.market-detail {
+    background: #f8f8f8;
+    border-radius: 10px;
+    padding: 13px;
+}
+
+.detail-title {
+    font-weight: 800;
+    margin-bottom: 4px;
+}
+
+.small {
+    color: #777;
+    font-size: 12px;
+}
+
+@media (max-width: 700px) {
+    h1 {
+        font-size: 21px;
+    }
 }
 </style>
 </head>
 
 <body>
-<main>
+
+<div class="container">
 
 <header>
+
 <div>
-<h1>Polymarket Top 100 Consensus Scanner</h1>
-<div class="muted">
-Weekly leaderboard • active positions • consensus • portfolio overlap
-</div>
+<h1>Polymarket Top 100</h1>
+
+<div class="subtitle">
+Weekly traders • P&L • volume • win rate • active markets
 </div>
 
-<button id="scan" onclick="scan()">🔄 Scan Top 100</button>
+</div>
+
+<button id="scanButton" onclick="scanData()">
+🔄 Scan
+</button>
+
 </header>
 
 <div id="status" class="status">
-Ready — tap Scan Top 100.
+Ready — press Scan.
 </div>
 
-<div class="card">
-<div class="grid">
 
-<div class="metric">
-<span class="muted">Wallets</span>
-<b id="mWallets">—</b>
-</div>
-
-<div class="metric">
-<span class="muted">Position records</span>
-<b id="mPositions">—</b>
-</div>
-
-<div class="metric">
-<span class="muted">Unique markets</span>
-<b id="mMarkets">—</b>
-</div>
-
-<div class="metric">
-<span class="muted">Consensus markets</span>
-<b id="mConsensus">—</b>
-</div>
-
-</div>
-</div>
+<!-- ACTIVE MARKETS -->
 
 <div class="card">
 
-<h2>🔥 Consensus Markets</h2>
+<h2>Active Markets</h2>
 
-<div class="muted">
-Markets held by the largest number of unique top-100 wallets.
-Click a market to see its holders.
+<div class="subtitle">
+Markets currently held by traders in the weekly Top 100.
+Tap a market to see exactly who holds it.
 </div>
 
 <div class="controls">
 
 <input
-id="marketSearch"
-placeholder="Search markets..."
-oninput="renderMarkets()"
+    id="marketSearch"
+    placeholder="Search active markets..."
+    oninput="renderMarkets()"
 >
 
-<select id="minWallets" onchange="renderMarkets()">
-<option value="2">2+ wallets</option>
-<option value="5">5+ wallets</option>
-<option value="10">10+ wallets</option>
+<select id="minimumWallets" onchange="renderMarkets()">
+
+<option value="1">
+1+ active wallets
+</option>
+
+<option value="2">
+2+ active wallets
+</option>
+
+<option value="5">
+5+ active wallets
+</option>
+
+<option value="10">
+10+ active wallets
+</option>
+
 </select>
 
 </div>
 
-<div class="wrap">
+
+<div class="table-wrap">
 
 <table>
 
 <thead>
+
 <tr>
-<th>Market</th>
-<th>Unique wallets</th>
-<th>YES</th>
-<th>NO</th>
-<th>Combined value</th>
+
+<th>
+Active Market
+</th>
+
+<th>
+Wallets
+</th>
+
+<th>
+YES
+</th>
+
+<th>
+NO
+</th>
+
+<th>
+Value
+</th>
+
 </tr>
+
 </thead>
 
-<tbody id="markets">
+<tbody id="marketsTable">
+
 <tr>
-<td colspan="5">No data yet.</td>
+<td colspan="5">
+No data yet.
+</td>
 </tr>
-</tbody>
 
-</table>
-
-</div>
-</div>
-
-<div class="card">
-
-<h2>🔗 Biggest Portfolio Overlaps</h2>
-
-<div class="muted">
-Two wallets overlap when they currently hold the same market.
-Click View markets to see exactly which ones.
-</div>
-
-<div class="wrap">
-
-<table>
-
-<thead>
-<tr>
-<th>Trader A</th>
-<th>Trader B</th>
-<th>Shared markets</th>
-<th></th>
-</tr>
-</thead>
-
-<tbody id="overlap">
-<tr>
-<td colspan="4">No data yet.</td>
-</tr>
 </tbody>
 
 </table>
 
 </div>
 
-<div id="sharedBox" class="subcard hidden"></div>
-
 </div>
+
+
+<!-- TOP 100 -->
 
 <div class="card">
 
-<h2>🏆 Weekly Top 100</h2>
+<h2>Top 100 Weekly</h2>
+
+<div class="subtitle">
+Weekly leaderboard.
+</div>
 
 <div class="controls">
 
 <input
-id="traderSearch"
-placeholder="Search trader or wallet..."
-oninput="renderLeaders()"
+    id="traderSearch"
+    placeholder="Search trader..."
+    oninput="renderLeaderboard()"
 >
 
 </div>
 
-<div class="wrap">
+
+<div class="table-wrap">
 
 <table>
 
 <thead>
+
 <tr>
-<th>#</th>
-<th>Trader</th>
-<th>Weekly P&L</th>
-<th>Weekly volume</th>
-<th>Open markets</th>
+
+<th>
+#
+</th>
+
+<th>
+Trader
+</th>
+
+<th>
+Weekly P&L
+</th>
+
+<th>
+Volume
+</th>
+
+<th>
+Win %
+</th>
+
 </tr>
+
 </thead>
 
-<tbody id="leaders">
+<tbody id="leaderboardTable">
+
 <tr>
-<td colspan="5">No data yet.</td>
+<td colspan="5">
+No data yet.
+</td>
 </tr>
+
 </tbody>
 
 </table>
 
 </div>
+
 </div>
 
-<div class="card" id="marketDetailCard" style="display:none">
 
-<h2 id="marketDetailTitle">
-Market holders
-</h2>
+<!-- TRADER DETAIL -->
 
-<div class="wrap">
+<div
+    class="card"
+    id="traderDetailCard"
+    style="display:none"
+>
+
+<h2 id="traderDetailTitle"></h2>
+
+<div class="table-wrap">
 
 <table>
 
 <thead>
+
 <tr>
-<th>Trader / Rank</th>
-<th>Side</th>
-<th>Shares</th>
-<th>Value</th>
-<th>P&L</th>
+
+<th>
+Market
+</th>
+
+<th>
+Side
+</th>
+
+<th>
+Shares
+</th>
+
+<th>
+Value
+</th>
+
+<th>
+P&L
+</th>
+
 </tr>
+
 </thead>
 
-<tbody id="marketDetail"></tbody>
+<tbody id="traderDetailTable">
+</tbody>
 
 </table>
 
 </div>
-</div>
-
-<div class="card" id="walletDetailCard" style="display:none">
-
-<h2 id="walletDetailTitle">
-Wallet positions
-</h2>
-
-<div class="wrap">
-
-<table>
-
-<thead>
-<tr>
-<th>Market</th>
-<th>Side</th>
-<th>Shares</th>
-<th>Value</th>
-<th>P&L</th>
-</tr>
-</thead>
-
-<tbody id="walletDetail"></tbody>
-
-</table>
 
 </div>
+
 </div>
 
-</main>
 
 <script>
 
-const API="https://data-api.polymarket.com";
+const API =
+"https://data-api.polymarket.com";
 
-let leaderboard=[];
-let positions=[];
-let marketMap=new Map();
-let walletMap=new Map();
+let leaderboard = [];
 
-const $=id=>document.getElementById(id);
+let positions = [];
 
-const esc=s=>String(s??"").replace(
-/[&<>"']/g,
-c=>({
-"&":"&amp;",
-"<":"&lt;",
-">":"&gt;",
-'"':"&quot;",
-"'":"&#39;"
-}[c])
-);
+let markets = new Map();
 
-const money=x=>Number(x||0).toLocaleString(
-undefined,
-{
-style:"currency",
-currency:"USD",
-maximumFractionDigits:0
-}
-);
+let leaderboardMap = new Map();
 
-const shares=x=>Number(x||0).toLocaleString(
-undefined,
-{
-maximumFractionDigits:2
-}
-);
+let visibleMarkets = [];
 
-const short=x=>
-x&&x.length>18
-?x.slice(0,7)+"…"+x.slice(-5)
-:(x||"Unknown");
 
-function nameOf(t){
+/* BASIC HELPERS */
 
-return t?.userName ||
-t?.displayName ||
-short(t?.proxyWallet);
-
+function $(id) {
+    return document.getElementById(id);
 }
 
-function sideClass(s){
 
-return String(s||"").toLowerCase()==="yes"
-?"yes"
-:"no";
+function escapeHTML(value) {
 
+    return String(value ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
 }
 
-function status(t,c=""){
 
-$("status").textContent=t;
-$("status").className="status "+c;
+function money(value) {
 
+    return Number(value || 0)
+        .toLocaleString(
+            undefined,
+            {
+                style: "currency",
+                currency: "USD",
+                maximumFractionDigits: 0
+            }
+        );
 }
 
-async function getJSON(url){
 
-const r=await fetch(
-url,
-{
-headers:{
-Accept:"application/json"
-}
-}
-);
+function number(value) {
 
-if(!r.ok)
-throw Error("HTTP "+r.status);
-
-return r.json();
-
+    return Number(value || 0)
+        .toLocaleString(
+            undefined,
+            {
+                maximumFractionDigits: 2
+            }
+        );
 }
 
-async function getLeaderboard(){
 
-let a=[];
+function shortenWallet(wallet) {
 
-for(let offset=0;offset<100;offset+=50){
+    if (!wallet) {
+        return "";
+    }
 
-const x=await getJSON(
-`${API}/v1/leaderboard?category=OVERALL&timePeriod=WEEK&orderBy=PNL&limit=50&offset=${offset}`
-);
+    if (wallet.length <= 18) {
+        return wallet;
+    }
 
-if(!Array.isArray(x))
-break;
-
-a.push(...x);
-
-if(x.length<50)
-break;
-
+    return wallet.slice(0, 7)
+        + "…"
+        + wallet.slice(-5);
 }
 
-return a.slice(0,100);
 
+function traderName(trader) {
+
+    return trader?.userName
+        || trader?.displayName
+        || shortenWallet(trader?.proxyWallet)
+        || "Unknown";
 }
 
-async function getPositions(wallet){
 
-let a=[];
+function setStatus(message, type = "") {
 
-for(let offset=0;offset<1000;offset+=500){
+    $("status").textContent = message;
 
-const x=await getJSON(
-`${API}/positions?user=${encodeURIComponent(wallet)}&limit=500&offset=${offset}`
-);
-
-if(!Array.isArray(x)||!x.length)
-break;
-
-a.push(
-...x.filter(
-p=>Number(p.size||0)>0.01
-)
-);
-
-if(x.length<500)
-break;
-
+    $("status").className =
+        "status " + type;
 }
 
-return a;
 
+/* API */
+
+async function getJSON(url) {
+
+    const response =
+        await fetch(
+            url,
+            {
+                headers: {
+                    "Accept": "application/json"
+                }
+            }
+        );
+
+    if (!response.ok) {
+
+        throw new Error(
+            "HTTP " + response.status
+        );
+
+    }
+
+    return response.json();
 }
 
-async function scan(){
 
-$("scan").disabled=true;
+/* GET WEEKLY TOP 100 */
 
-try{
+async function getLeaderboard() {
 
-marketMap=new Map();
-walletMap=new Map();
-positions=[];
+    let results = [];
 
-status("Loading weekly top 100…");
+    for (
+        let offset = 0;
+        offset < 100;
+        offset += 50
+    ) {
 
-leaderboard=await getLeaderboard();
+        const data =
+            await getJSON(
+                `${API}/v1/leaderboard?category=OVERALL&timePeriod=WEEK&orderBy=PNL&limit=50&offset=${offset}`
+            );
 
-renderLeaders();
+        if (!Array.isArray(data)) {
+            break;
+        }
 
-const queue=[...leaderboard];
+        results.push(...data);
 
-let done=0;
+        if (data.length < 50) {
+            break;
+        }
+    }
 
-async function worker(){
-
-while(queue.length){
-
-const t=queue.shift();
-
-try{
-
-const ps=await getPositions(
-t.proxyWallet
-);
-
-positions.push(
-...ps.map(
-p=>({
-...p,
-proxyWallet:t.proxyWallet,
-userName:nameOf(t)
-})
-)
-);
-
-}catch(e){
-
-console.warn(
-"Position fetch failed",
-t.proxyWallet,
-e
-);
-
+    return results.slice(0, 100);
 }
 
-done++;
 
-status(
-`Fetching active positions… ${done}/${leaderboard.length}`
-);
+/* GET ACTIVE POSITIONS */
 
+async function getPositions(wallet) {
+
+    const data =
+        await getJSON(
+            `${API}/positions?user=${encodeURIComponent(wallet)}&limit=500`
+        );
+
+    if (!Array.isArray(data)) {
+        return [];
+    }
+
+    return data.filter(
+        position =>
+            Number(position.size || 0) > 0
+    );
 }
 
+
+/* MARKET IDENTIFICATION */
+
+function marketKey(position) {
+
+    return (
+        position.conditionId
+        ||
+        position.conditionID
+        ||
+        position.market
+        ||
+        position.asset
+        ||
+        position.slug
+        ||
+        position.title
+        ||
+        position.question
+        ||
+        "unknown"
+    );
 }
 
-await Promise.all(
-Array.from(
-{length:6},
-worker
-)
-);
 
-buildIndexes();
+function marketName(position) {
 
-renderMarkets();
-renderOverlaps();
-renderLeaders();
-
-status(
-`Done — ${leaderboard.length} wallets, ${positions.length} position records.`,
-"ok"
-);
-
-}catch(e){
-
-console.error(e);
-
-status(
-"Live API request failed: "+
-e.message+
-". If GitHub Pages blocks the request, we'll add a serverless backend.",
-"err"
-);
-
-}finally{
-
-$("scan").disabled=false;
-
+    return (
+        position.title
+        ||
+        position.question
+        ||
+        position.marketTitle
+        ||
+        position.slug
+        ||
+        "Unknown market"
+    );
 }
 
+
+/*
+IMPORTANT:
+
+Only show YES or NO when the API
+actually gives us the outcome.
+
+We do NOT assume an outcome.
+
+That prevents:
+
+10 wallets
+YES 0
+NO 0
+
+from pretending we know something
+that the API didn't actually provide.
+*/
+
+function getOutcome(position) {
+
+    const possible =
+        position.outcome
+        ??
+        position.outcomeName
+        ??
+        position.positionOutcome
+        ??
+        position.side
+        ??
+        "";
+
+    const outcome =
+        String(possible)
+            .trim()
+            .toUpperCase();
+
+    if (
+        outcome === "YES"
+        ||
+        outcome === "NO"
+    ) {
+
+        return outcome;
+
+    }
+
+    return "";
 }
 
-function marketKey(p){
 
-return p.conditionId ||
-p.market ||
-p.conditionID ||
-p.asset ||
-p.title ||
-p.question ||
-"unknown";
+function outcomeBadge(outcome) {
 
+    if (outcome === "YES") {
+
+        return `
+        <span class="badge yes">
+            YES
+        </span>
+        `;
+
+    }
+
+    if (outcome === "NO") {
+
+        return `
+        <span class="badge no">
+            NO
+        </span>
+        `;
+
+    }
+
+    return `
+    <span class="badge na">
+        —
+    </span>
+    `;
 }
 
-function marketName(p){
 
-return p.title ||
-p.question ||
-p.marketTitle ||
-p.slug ||
-marketKey(p);
+/* WIN RATE */
 
+function getWinRate(trader) {
+
+    const possibleFields = [
+
+        "winRate",
+
+        "winrate",
+
+        "win_rate",
+
+        "winningPercentage",
+
+        "winningPct",
+
+        "winPercentage"
+
+    ];
+
+    for (
+        const field of possibleFields
+    ) {
+
+        if (
+            trader?.[field] !== undefined
+            &&
+            trader?.[field] !== null
+            &&
+            trader?.[field] !== ""
+        ) {
+
+            let value =
+                Number(trader[field]);
+
+            if (
+                Number.isFinite(value)
+            ) {
+
+                if (value <= 1) {
+                    value *= 100;
+                }
+
+                return value;
+            }
+        }
+    }
+
+    return null;
 }
 
-function buildIndexes(){
 
-marketMap=new Map();
-walletMap=new Map();
+/* MAIN SCAN */
 
-for(const p of positions){
+async function scanData() {
 
-const mk=marketKey(p);
+    $("scanButton").disabled = true;
 
-if(!marketMap.has(mk))
+    try {
 
-marketMap.set(
-mk,
-{
-key:mk,
-name:marketName(p),
-holders:new Map(),
-yes:0,
-no:0,
-value:0
-}
-);
+        setStatus(
+            "Loading weekly Top 100..."
+        );
 
-const m=marketMap.get(mk);
+        leaderboard =
+            await getLeaderboard();
 
-if(!m.holders.has(p.proxyWallet))
 
-m.holders.set(
-p.proxyWallet,
-[]
-);
-
-m.holders.get(
-p.proxyWallet
-).push(p);
-
-const s=String(
-p.outcome||""
-).toLowerCase();
+        leaderboardMap =
+            new Map(
+                leaderboard.map(
+                    (trader, index) => {
 
-if(s==="yes")
-m.yes++;
-
-else if(s==="no")
-m.no++;
+                        return [
+                            trader.proxyWallet,
+                            {
+                                ...trader,
+                                rank:
+                                    trader.rank
+                                    ||
+                                    index + 1
+                            }
+                        ];
 
-m.value+=Number(
-p.currentValue||0
-);
+                    }
+                )
+            );
 
-if(!walletMap.has(p.proxyWallet))
 
-walletMap.set(
-p.proxyWallet,
-new Map()
-);
+        renderLeaderboard();
 
-walletMap
-.get(p.proxyWallet)
-.set(mk,p);
 
-}
+        positions = [];
 
-$("mWallets").textContent=
-leaderboard.length;
+        const queue =
+            [...leaderboard];
 
-$("mPositions").textContent=
-positions.length;
+        let completed = 0;
 
-$("mMarkets").textContent=
-marketMap.size;
 
-$("mConsensus").textContent=
-[...marketMap.values()]
-.filter(m=>m.holders.size>=5)
-.length;
+        async function worker() {
 
-}
+            while (queue.length > 0) {
 
-function renderMarkets(){
+                const trader =
+                    queue.shift();
 
-const q=$(
-"marketSearch"
-).value.toLowerCase();
+                try {
 
-const min=Number(
-$("minWallets").value
-);
+                    const traderPositions =
+                        await getPositions(
+                            trader.proxyWallet
+                        );
 
-const arr=
-[...marketMap.values()]
-.filter(
-m=>
-m.holders.size>=min &&
-m.name.toLowerCase().includes(q)
-)
-.sort(
-(a,b)=>
-b.holders.size-a.holders.size ||
-b.value-a.value
-)
-.slice(0,100);
+                    positions.push(
 
-$("markets").innerHTML=
-arr.map(
-m=>`
+                        ...traderPositions.map(
+                            position => ({
+                                ...position,
+                                proxyWallet:
+                                    trader.proxyWallet
+                            })
+                        )
 
-<tr
-class="clickable"
-onclick="showMarket('${esc(m.key)}')"
->
+                    );
 
-<td>
-<b>${esc(m.name)}</b>
-</td>
-
-<td>
-${m.holders.size}
-</td>
-
-<td>
-<span class="badge yes">
-${m.yes}
-</span>
-</td>
+                }
 
-<td>
-<span class="badge no">
-${m.no}
-</span>
-</td>
-
-<td>
-${money(m.value)}
-</td>
-
-</tr>
-
-`
-).join("")
-||
-"<tr><td colspan=5>No matching markets.</td></tr>";
-
-}
+                catch (error) {
 
-function renderOverlaps(){
+                    console.log(
+                        "Position error:",
+                        error
+                    );
 
-const ids=[
-...walletMap.keys()
-];
-
-const pairs=[];
-
-for(
-let i=0;
-i<ids.length;
-i++
-)
+                }
 
-for(
-let j=i+1;
-j<ids.length;
-j++
-){
 
-const a=
-walletMap.get(ids[i]);
+                completed++;
 
-const b=
-walletMap.get(ids[j]);
+                setStatus(
+                    `Loading active markets... ${completed}/${leaderboard.length}`
+                );
 
-let shared=[];
+            }
 
-for(
-const k of a.keys()
-)
+        }
 
-if(b.has(k))
-shared.push(k);
 
-if(shared.length)
+        await Promise.all(
 
-pairs.push({
-a:ids[i],
-b:ids[j],
-shared
-});
+            Array.from(
+                {
+                    length: 6
+                },
+                worker
+            )
 
-}
+        );
 
-pairs.sort(
-(x,y)=>
-y.shared.length-
-x.shared.length
-);
 
-$("overlap").innerHTML=
-pairs
-.slice(0,100)
-.map(
-(p,i)=>`
+        buildMarkets();
 
-<tr>
+        renderMarkets();
 
-<td>
+        renderLeaderboard();
 
-<div class="wallet">
-${esc(
-nameOf(
-leaderboard.find(
-t=>t.proxyWallet===p.a
-)
-)
-)}
-</div>
 
-<div class="addr">
-${esc(short(p.a))}
-</div>
+        setStatus(
 
-</td>
+            `Done — ${leaderboard.length} Top-100 traders and ${positions.length} active positions loaded.`,
 
-<td>
+            "success"
 
-<div class="wallet">
-${esc(
-nameOf(
-leaderboard.find(
-t=>t.proxyWallet===p.b
-)
-)
-)}
-</div>
+        );
 
-<div class="addr">
-${esc(short(p.b))}
-</div>
+    }
 
-</td>
+    catch (error) {
 
-<td>
-<b>${p.shared.length}</b>
-</td>
+        console.error(error);
 
-<td>
+        setStatus(
 
-<button
-class="secondary"
-onclick="showShared(${i})"
->
-View markets →
-</button>
+            "Unable to load the live Polymarket data: "
+            + error.message,
 
-</td>
+            "error"
 
-</tr>
+        );
 
-`
-)
-.join("")
-||
-"<tr><td colspan=4>No overlaps.</td></tr>";
+    }
 
-window.overlapPairs=pairs;
+    finally {
+
+        $("scanButton").disabled = false;
+
+    }
 
 }
 
-function showShared(i){
 
-const p=
-window.overlapPairs[i];
+/* BUILD MARKET DATA */
 
-const box=
-$("sharedBox");
+function buildMarkets() {
 
-box.classList.remove(
-"hidden"
-);
+    markets = new Map();
 
-const ta=
-leaderboard.find(
-t=>t.proxyWallet===p.a
-);
 
-const tb=
-leaderboard.find(
-t=>t.proxyWallet===p.b
-);
+    for (
+        const position of positions
+    ) {
 
-let rows=
-p.shared
-.map(
-k=>{
+        const key =
+            marketKey(position);
 
-const a=
-walletMap
-.get(p.a)
-.get(k);
 
-const b=
-walletMap
-.get(p.b)
-.get(k);
+        if (!markets.has(key)) {
 
-const m=
-marketMap.get(k);
+            markets.set(
 
-return `
+                key,
 
-<tr>
+                {
 
-<td>
-${esc(m?.name||k)}
-</td>
+                    key,
 
-<td>
+                    name:
+                        marketName(position),
 
-<span class="badge ${sideClass(a.outcome)}">
-${esc(a.outcome||"")}
-</span>
+                    holders:
+                        new Map(),
 
-<br>
+                    yes:
+                        new Set(),
 
-${money(a.currentValue)}
+                    no:
+                        new Set(),
 
-</td>
+                    value: 0
 
-<td>
+                }
 
-<span class="badge ${sideClass(b.outcome)}">
-${esc(b.outcome||"")}
-</span>
+            );
 
-<br>
+        }
 
-${money(b.currentValue)}
 
-</td>
+        const market =
+            markets.get(key);
 
-</tr>
 
-`;
+        if (
+            !market.holders.has(
+                position.proxyWallet
+            )
+        ) {
 
-}
-)
-.join("");
+            market.holders.set(
+                position.proxyWallet,
+                []
+            );
 
-box.innerHTML=
+        }
 
-`<b>
-#${esc(ta?.rank||"?")} ${esc(nameOf(ta))}
-+
-#${esc(tb?.rank||"?")} ${esc(nameOf(tb))}
-</b>
 
-— ${p.shared.length} shared markets
+        market.holders
+            .get(position.proxyWallet)
+            .push(position);
 
-<div
-class="wrap"
-style="margin-top:8px"
->
 
-<table>
+        const outcome =
+            getOutcome(position);
 
-<thead>
 
-<tr>
+        if (outcome === "YES") {
 
-<th>
-Shared market
-</th>
+            market.yes.add(
+                position.proxyWallet
+            );
 
-<th>
-#${esc(ta?.rank||"?")} ${esc(nameOf(ta))}
-</th>
+        }
 
-<th>
-#${esc(tb?.rank||"?")} ${esc(nameOf(tb))}
-</th>
 
-</tr>
+        if (outcome === "NO") {
 
-</thead>
+            market.no.add(
+                position.proxyWallet
+            );
 
-<tbody>
+        }
 
-${rows}
 
-</tbody>
+        market.value +=
+            Number(
+                position.currentValue || 0
+            );
 
-</table>
-
-</div>`;
-
-box.scrollIntoView(
-{
-behavior:"smooth"
-}
-);
+    }
 
 }
 
-function showMarket(k){
 
-const m=
-marketMap.get(k);
+/* ACTIVE MARKETS TABLE */
 
-if(!m)
-return;
+function renderMarkets() {
 
-$("marketDetailCard")
-.style.display="block";
+    const search =
+        $("marketSearch")
+            .value
+            .toLowerCase();
 
-$("marketDetailTitle")
-.textContent=
-`${m.name} — ${m.holders.size} unique wallets`;
 
-let rows=[];
+    const minimum =
+        Number(
+            $("minimumWallets").value
+        );
 
-for(
-const [w,ps]
-of m.holders
-){
 
-const t=
-leaderboard.find(
-x=>x.proxyWallet===w
-);
+    visibleMarkets =
 
-for(
-const p of ps
-)
+        [...markets.values()]
 
-rows.push(`
+            .filter(
+                market =>
 
-<tr>
+                    market.holders.size
+                    >= minimum
 
-<td>
+                    &&
 
-<b>
-#${esc(t?.rank||"?")}
-${esc(nameOf(t))}
-</b>
+                    market.name
+                        .toLowerCase()
+                        .includes(search)
+            )
 
-<div class="addr">
-${esc(short(w))}
-</div>
+            .sort(
+                (a, b) =>
 
-</td>
+                    b.holders.size
+                    -
+                    a.holders.size
 
-<td>
+                    ||
 
-<span
-class="badge ${sideClass(p.outcome)}"
->
+                    b.value
+                    -
+                    a.value
+            )
 
-${esc(p.outcome||"")}
+            .slice(0, 200);
 
-</span>
 
-</td>
+    $("marketsTable").innerHTML =
 
-<td>
-${shares(p.size)}
-</td>
+        visibleMarkets.map(
 
-<td>
-${money(p.currentValue)}
-</td>
+            (market, index) => `
 
-<td>
-${money(p.cashPnl)}
-</td>
+                <tr
+                    class="clickable"
+                    onclick="toggleMarket(${index})"
+                >
 
-</tr>
+                    <td>
+                        <b>
+                            ${escapeHTML(
+                                market.name
+                            )}
+                        </b>
+                    </td>
 
-`);
+                    <td>
+                        ${market.holders.size}
+                    </td>
 
-}
+                    <td>
+                        ${market.yes.size}
+                    </td>
 
-$("marketDetail")
-.innerHTML=
-rows.join("")
-||
-"<tr><td colspan=5>No holders.</td></tr>";
+                    <td>
+                        ${market.no.size}
+                    </td>
 
-$("marketDetailCard")
-.scrollIntoView(
-{
-behavior:"smooth"
-}
-);
+                    <td>
+                        ${money(
+                            market.value
+                        )}
+                    </td>
 
-}
+                </tr>
 
-function renderLeaders(){
 
-const q=
-(
-$("traderSearch").value||""
-).toLowerCase();
+                <tr
+                    id="market-row-${index}"
+                    style="display:none"
+                >
 
-$("leaders").innerHTML=
+                    <td colspan="5">
 
-leaderboard
-.filter(
-t=>
-(
-nameOf(t)+
-" "+
-(t.proxyWallet||"")
-)
-.toLowerCase()
-.includes(q)
-)
-.map(
-(t,i)=>{
+                        <div
+                            id="market-detail-${index}"
+                            class="market-detail"
+                        ></div>
 
-const wm=
-walletMap.get(
-t.proxyWallet
-);
+                    </td>
 
-return `
+                </tr>
 
-<tr
-class="clickable"
-onclick="showWallet('${esc(t.proxyWallet)}')"
->
+            `
 
-<td>
-${esc(t.rank||i+1)}
-</td>
+        ).join("")
 
-<td>
+        ||
 
-<div class="wallet">
-${esc(nameOf(t))}
-</div>
+        `
 
-<div class="addr">
-${esc(short(t.proxyWallet))}
-</div>
+        <tr>
 
-</td>
+            <td colspan="5">
+                No active markets found.
+            </td>
 
-<td>
-${money(t.pnl)}
-</td>
+        </tr>
 
-<td>
-${money(t.vol)}
-</td>
-
-<td>
-${wm?wm.size:0}
-</td>
-
-</tr>
-
-`;
-
-}
-)
-.join("")
-||
-"<tr><td colspan=5>No matches.</td></tr>";
+        `;
 
 }
 
-function showWallet(w){
 
-const t=
-leaderboard.find(
-x=>x.proxyWallet===w
-);
+/* EXPAND MARKET */
 
-$("walletDetailCard")
-.style.display="block";
+function toggleMarket(index) {
 
-$("walletDetailTitle")
-.textContent=
-`#${t?.rank||"?"} ${nameOf(t)} — active positions`;
+    const row =
+        $(
+            "market-row-" + index
+        );
 
-const ps=
-positions
-.filter(
-p=>p.proxyWallet===w
-)
-.sort(
-(a,b)=>
-Number(b.currentValue||0)-
-Number(a.currentValue||0)
-);
 
-$("walletDetail")
-.innerHTML=
+    if (
+        row.style.display
+        ===
+        "table-row"
+    ) {
 
-ps
-.map(
-p=>`
+        row.style.display =
+            "none";
 
-<tr>
+        return;
 
-<td>
-${esc(marketName(p))}
-</td>
+    }
 
-<td>
 
-<span
-class="badge ${sideClass(p.outcome)}"
->
+    const market =
+        visibleMarkets[index];
 
-${esc(p.outcome||"")}
 
-</span>
+    const holders =
 
-</td>
+        [...market.holders.entries()]
 
-<td>
-${shares(p.size)}
-</td>
+            .map(
+                ([wallet, traderPositions]) => {
 
-<td>
-${money(p.currentValue)}
-</td>
+                    return {
 
-<td>
-${money(p.cashPnl)}
-</td>
+                        wallet,
 
-</tr>
+                        positions:
+                            traderPositions,
 
-`
-)
-.join("")
-||
-"<tr><td colspan=5>No open positions.</td></tr>";
+                        trader:
+                            leaderboardMap.get(
+                                wallet
+                            )
 
-$("walletDetailCard")
-.scrollIntoView(
-{
-behavior:"smooth"
+                    };
+
+                }
+            )
+
+            .sort(
+                (a, b) =>
+
+                    (a.trader?.rank || 999)
+                    -
+                    (b.trader?.rank || 999)
+            );
+
+
+    let html = `
+
+        <div class="detail-title">
+
+            ${escapeHTML(
+                market.name
+            )}
+
+        </div>
+
+        <div class="small">
+
+            ${holders.length}
+            active Top-100 wallets,
+            ordered by weekly leaderboard rank.
+
+        </div>
+
+        <br>
+
+        <table>
+
+            <thead>
+
+                <tr>
+
+                    <th>
+                        Rank
+                    </th>
+
+                    <th>
+                        Trader
+                    </th>
+
+                    <th>
+                        Side
+                    </th>
+
+                    <th>
+                        Shares
+                    </th>
+
+                    <th>
+                        Value
+                    </th>
+
+                    <th>
+                        P&L
+                    </th>
+
+                </tr>
+
+            </thead>
+
+            <tbody>
+
+    `;
+
+
+    for (
+        const holder of holders
+    ) {
+
+        for (
+            const position
+            of holder.positions
+        ) {
+
+            const outcome =
+                getOutcome(
+                    position
+                );
+
+
+            html += `
+
+                <tr>
+
+                    <td class="rank">
+
+                        #
+
+                        ${escapeHTML(
+                            holder.trader?.rank
+                            || "?"
+                        )}
+
+                    </td>
+
+
+                    <td>
+
+                        <div class="trader">
+
+                            ${escapeHTML(
+                                traderName(
+                                    holder.trader
+                                )
+                            )}
+
+                        </div>
+
+                        <div class="address">
+
+                            ${escapeHTML(
+                                shortenWallet(
+                                    holder.wallet
+                                )
+                            )}
+
+                        </div>
+
+                    </td>
+
+
+                    <td>
+
+                        ${outcomeBadge(
+                            outcome
+                        )}
+
+                    </td>
+
+
+                    <td>
+
+                        ${number(
+                            position.size
+                        )}
+
+                    </td>
+
+
+                    <td>
+
+                        ${money(
+                            position.currentValue
+                        )}
+
+                    </td>
+
+
+                    <td>
+
+                        ${money(
+                            position.cashPnl
+                        )}
+
+                    </td>
+
+                </tr>
+
+            `;
+
+        }
+
+    }
+
+
+    html += `
+
+            </tbody>
+
+        </table>
+
+    `;
+
+
+    $(
+        "market-detail-" + index
+    ).innerHTML = html;
+
+
+    row.style.display =
+        "table-row";
+
 }
-);
+
+
+/* TOP 100 TABLE */
+
+function renderLeaderboard() {
+
+    const search =
+        $("traderSearch")
+            .value
+            .toLowerCase();
+
+
+    const filtered =
+
+        leaderboard.filter(
+            trader =>
+
+                (
+
+                    traderName(
+                        trader
+                    )
+
+                    +
+
+                    " "
+
+                    +
+
+                    (
+                        trader.proxyWallet
+                        || ""
+                    )
+
+                )
+
+                .toLowerCase()
+                .includes(search)
+        );
+
+
+    $("leaderboardTable").innerHTML =
+
+        filtered.map(
+
+            (trader, index) => {
+
+                const rank =
+                    trader.rank
+                    ||
+                    index + 1;
+
+
+                const winRate =
+                    getWinRate(
+                        trader
+                    );
+
+
+                return `
+
+                    <tr
+                        class="clickable"
+                        onclick="showTrader('${escapeHTML(trader.proxyWallet)}')"
+                    >
+
+                        <td class="rank">
+
+                            #${escapeHTML(
+                                rank
+                            )}
+
+                        </td>
+
+
+                        <td>
+
+                            <div class="trader">
+
+                                ${escapeHTML(
+                                    traderName(
+                                        trader
+                                    )
+                                )}
+
+                            </div>
+
+                            <div class="address">
+
+                                ${escapeHTML(
+                                    shortenWallet(
+                                        trader.proxyWallet
+                                    )
+                                )}
+
+                            </div>
+
+                        </td>
+
+
+                        <td>
+
+                            ${money(
+                                trader.pnl
+                            )}
+
+                        </td>
+
+
+                        <td>
+
+                            ${money(
+                                trader.vol
+                            )}
+
+                        </td>
+
+
+                        <td>
+
+                            ${
+                                winRate === null
+
+                                ? "—"
+
+                                :
+
+                                winRate.toFixed(
+                                    1
+                                )
+                                + "%"
+                            }
+
+                        </td>
+
+                    </tr>
+
+                `;
+
+            }
+
+        ).join("")
+
+        ||
+
+        `
+
+        <tr>
+
+            <td colspan="5">
+
+                No matching traders.
+
+            </td>
+
+        </tr>
+
+        `;
+
+}
+
+
+/* TRADER DETAIL */
+
+function showTrader(wallet) {
+
+    const trader =
+        leaderboardMap.get(
+            wallet
+        );
+
+
+    const traderPositions =
+
+        positions
+
+            .filter(
+                position =>
+                    position.proxyWallet
+                    ===
+                    wallet
+            )
+
+            .sort(
+                (a, b) =>
+
+                    Number(
+                        b.currentValue || 0
+                    )
+
+                    -
+
+                    Number(
+                        a.currentValue || 0
+                    )
+            );
+
+
+    $("traderDetailCard")
+        .style.display =
+        "block";
+
+
+    $("traderDetailTitle")
+        .textContent =
+
+        `#${trader?.rank || "?"} `
+        +
+        `${traderName(trader)} — Active Positions`;
+
+
+    $("traderDetailTable")
+        .innerHTML =
+
+
+        traderPositions.map(
+
+            position => `
+
+                <tr>
+
+                    <td>
+
+                        ${escapeHTML(
+                            marketName(
+                                position
+                            )
+                        )}
+
+                    </td>
+
+
+                    <td>
+
+                        ${outcomeBadge(
+                            getOutcome(
+                                position
+                            )
+                        )}
+
+                    </td>
+
+
+                    <td>
+
+                        ${number(
+                            position.size
+                        )}
+
+                    </td>
+
+
+                    <td>
+
+                        ${money(
+                            position.currentValue
+                        )}
+
+                    </td>
+
+
+                    <td>
+
+                        ${money(
+                            position.cashPnl
+                        )}
+
+                    </td>
+
+                </tr>
+
+            `
+
+        ).join("")
+
+        ||
+
+        `
+
+        <tr>
+
+            <td colspan="5">
+
+                No active positions.
+
+            </td>
+
+        </tr>
+
+        `;
+
+
+    $("traderDetailCard")
+        .scrollIntoView({
+            behavior: "smooth"
+        });
 
 }
 
