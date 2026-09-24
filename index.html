@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Polymarket Top 100 Scanner</title>
+<style>
+body{font-family:system-ui,-apple-system,sans-serif;margin:0;background:#f6f7f9;color:#111}
+main{max-width:1100px;margin:auto;padding:24px}
+header{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap}
+button{border:0;border-radius:10px;padding:11px 16px;font-weight:700;cursor:pointer}
+.primary{background:#111;color:#fff}.muted{color:#666}
+.card{background:#fff;border-radius:16px;padding:18px;margin-top:18px;box-shadow:0 1px 5px #00000010}
+table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:11px;border-bottom:1px solid #eee}
+.badge{display:inline-block;padding:4px 8px;border-radius:999px;background:#eee;font-size:12px}
+.notice{padding:12px;border-radius:10px;background:#fff8db}
+</style>
+</head>
+<body>
+<main>
+<header>
+<div><h1>Polymarket Top 100 Scanner</h1><div class="muted">Weekly leaderboard • active-position overlap</div></div>
+<button class="primary" onclick="loadDemo()">Load demo data</button>
+</header>
+
+<div class="card">
+<h2>Weekly leaderboard</h2>
+<div class="notice">This starter dashboard is the interface. The next step is connecting it to Polymarket's live public data API so the Scan button can populate the current top 100 automatically.</div>
+<table><thead><tr><th>#</th><th>Wallet</th><th>Weekly P&L</th><th>Weekly volume</th></tr></thead>
+<tbody id="leaders"><tr><td colspan="4" class="muted">No data loaded yet.</td></tr></tbody></table>
+</div>
+
+<div class="card">
+<h2>Most-held active markets</h2>
+<table><thead><tr><th>Market</th><th>Holders</th><th>YES</th><th>NO</th><th>Combined value</th></tr></thead>
+<tbody id="markets"><tr><td colspan="5" class="muted">No data loaded yet.</td></tr></tbody></table>
+</div>
+
+<div class="card">
+<h2>Portfolio overlap</h2>
+<table><thead><tr><th>Wallet A</th><th>Wallet B</th><th>Shared markets</th></tr></thead>
+<tbody id="overlap"><tr><td colspan="3" class="muted">No data loaded yet.</td></tr></tbody></table>
+</div>
+
+<div class="card">
+<h2>What this will do</h2>
+<ul>
+<li>Pull the current weekly top 100.</li>
+<li>Fetch each wallet's open positions.</li>
+<li>Group identical markets and YES/NO sides.</li>
+<li>Find wallets with the most shared active markets.</li>
+<li>Let you drill into individual wallets.</li>
+</ul>
+</div>
+</main>
+<script>
+function loadDemo(){
+ const leaders=[1,2,3,4,5].map((n)=>({n,w:"Wallet "+n,p:(12500-n*1300),v:(95000+n*7000)}));
+ document.querySelector("#leaders").innerHTML=leaders.map(x=>`<tr><td>${x.n}</td><td><span class="badge">${x.w}</span></td><td>$${x.p.toLocaleString()}</td><td>$${x.v.toLocaleString()}</td></tr>`).join("");
+ const markets=[["Market A",34,31,3,284000],["Market B",27,8,19,231000],["Market C",21,18,3,177000]];
+ document.querySelector("#markets").innerHTML=markets.map(x=>`<tr><td>${x[0]}</td><td>${x[1]}</td><td>${x[2]}</td><td>${x[3]}</td><td>$${x[4].toLocaleString()}</td></tr>`).join("");
+ const pairs=[["Wallet 4","Wallet 17",22],["Wallet 8","Wallet 11",18],["Wallet 3","Wallet 29",16]];
+ document.querySelector("#overlap").innerHTML=pairs.map(x=>`<tr><td>${x[0]}</td><td>${x[1]}</td><td>${x[2]}</td></tr>`).join("");
+}
+</script>
+</body>
+</html>
