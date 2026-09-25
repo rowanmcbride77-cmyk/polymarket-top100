@@ -1,501 +1,621 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
+
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
-  <title>Polymarket Top 100</title>
-
-  <style>
-    * {
-      box-sizing: border-box;
-    }
-
-    body {
-      margin: 0;
-      background: #000;
-      color: #fff;
-      font-family: Arial, Helvetica, sans-serif;
-    }
-
-    .container {
-      width: min(1400px, 94%);
-      margin: 0 auto;
-      padding: 35px 0 80px;
-    }
-
-    h1 {
-      margin: 0;
-      font-size: 32px;
-    }
-
-    .subtitle {
-      color: #888;
-      margin-top: 6px;
-      margin-bottom: 25px;
-    }
-
-    button {
-      background: #fff;
-      color: #000;
-      border: 0;
-      border-radius: 10px;
-      padding: 12px 18px;
-      font-weight: 700;
-      cursor: pointer;
-    }
-
-    button:hover {
-      opacity: .85;
-    }
-
-    .header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 20px;
-      margin-bottom: 20px;
-    }
-
-    .status {
-      background: #111;
-      border: 1px solid #292929;
-      border-radius: 10px;
-      padding: 14px;
-      margin-bottom: 20px;
-      color: #aaa;
-    }
-
-    .status.error {
-      color: #ff6464;
-      border-color: #512020;
-    }
-
-    .status.success {
-      color: #63e68b;
-      border-color: #194b2b;
-    }
-
-    .card {
-      background: #0d0d0d;
-      border: 1px solid #262626;
-      border-radius: 16px;
-      padding: 20px;
-      margin-bottom: 22px;
-      overflow: hidden;
-    }
-
-    .card h2 {
-      margin: 0;
-      font-size: 23px;
-    }
-
-    .description {
-      color: #777;
-      margin: 7px 0 18px;
-    }
-
-    .controls {
-      display: flex;
-      gap: 10px;
-      margin-bottom: 15px;
-      flex-wrap: wrap;
-    }
-
-    input,
-    select {
-      background: #050505;
-      color: #fff;
-      border: 1px solid #333;
-      border-radius: 9px;
-      padding: 11px 12px;
-      outline: none;
-    }
-
-    input {
-      min-width: 230px;
-    }
-
-    input:focus,
-    select:focus {
-      border-color: #777;
-    }
-
-    .table {
-      width: 100%;
-    }
-
-    .row {
-      display: grid;
-      grid-template-columns: 70px minmax(200px, 1.5fr) 150px 150px 130px;
-      gap: 15px;
-      align-items: center;
-      padding: 15px 8px;
-      border-bottom: 1px solid #202020;
-    }
-
-    .row.header-row {
-      color: #777;
-      font-size: 12px;
-      font-weight: 700;
-      text-transform: uppercase;
-    }
-
-    .trader-row {
-      cursor: pointer;
-    }
-
-    .trader-row:hover {
-      background: #151515;
-    }
-
-    .rank {
-      font-weight: 800;
-    }
-
-    .trader-name {
-      font-weight: 700;
-    }
-
-    .wallet {
-      display: block;
-      color: #666;
-      font-size: 11px;
-      margin-top: 4px;
-      word-break: break-all;
-    }
-
-    .positive {
-      color: #62e68b;
-      font-weight: 700;
-    }
-
-    .negative {
-      color: #ff6262;
-      font-weight: 700;
-    }
-
-    .neutral {
-      color: #aaa;
-    }
-
-    .win-box {
-      font-weight: 700;
-    }
-
-    .win-detail {
-      display: block;
-      color: #777;
-      font-size: 11px;
-      margin-top: 3px;
-      font-weight: 400;
-    }
-
-    .details {
-      display: none;
-      background: #090909;
-      border-bottom: 1px solid #252525;
-      padding: 20px;
-    }
-
-    .details.open {
-      display: block;
-    }
-
-    .detail-title {
-      font-size: 19px;
-      font-weight: 800;
-      margin-bottom: 6px;
-    }
-
-    .detail-wallet {
-      color: #666;
-      font-size: 12px;
-      word-break: break-all;
-    }
-
-    .detail-stats {
-      display: flex;
-      gap: 25px;
-      flex-wrap: wrap;
-      margin: 18px 0;
-    }
-
-    .stat {
-      background: #111;
-      border: 1px solid #242424;
-      border-radius: 10px;
-      padding: 12px 15px;
-      min-width: 120px;
-    }
-
-    .stat-label {
-      color: #777;
-      font-size: 11px;
-      text-transform: uppercase;
-    }
-
-    .stat-value {
-      font-size: 18px;
-      font-weight: 800;
-      margin-top: 4px;
-    }
-
-    .loading {
-      color: #888;
-      padding: 15px 0;
-    }
-
-    .trade {
-      border: 1px solid #222;
-      border-radius: 10px;
-      padding: 13px;
-      margin-top: 9px;
-      background: #0e0e0e;
-    }
-
-    .trade-top {
-      display: flex;
-      justify-content: space-between;
-      gap: 15px;
-      align-items: flex-start;
-    }
-
-    .trade-title {
-      font-weight: 700;
-    }
-
-    .trade-meta {
-      color: #777;
-      font-size: 12px;
-      margin-top: 6px;
-    }
-
-    .side-buy {
-      color: #62e68b;
-      font-weight: 800;
-    }
-
-    .side-sell {
-      color: #ff6262;
-      font-weight: 800;
-    }
-
-    .yes {
-      color: #62e68b;
-      font-weight: 800;
-    }
-
-    .no {
-      color: #ff6262;
-      font-weight: 800;
-    }
-
-    .active-market {
-      border-bottom: 1px solid #222;
-      padding: 16px 8px;
-      cursor: pointer;
-    }
-
-    .active-market:hover {
-      background: #151515;
-    }
-
-    .market-main {
-      display: grid;
-      grid-template-columns: minmax(250px, 2fr) 100px 220px 130px;
-      gap: 15px;
-      align-items: center;
-    }
-
-    .market-name {
-      font-weight: 700;
-    }
-
-    .market-count {
-      color: #aaa;
-    }
-
-    .market-consensus {
-      font-weight: 700;
-    }
-
-    .market-value {
-      text-align: right;
-      font-weight: 700;
-    }
-
-    .market-details {
-      display: none;
-      padding: 12px 0 3px 20px;
-    }
-
-    .market-details.open {
-      display: block;
-    }
-
-    .wallet-position {
-      display: grid;
-      grid-template-columns: 50px minmax(160px, 1fr) 100px 120px 120px;
-      gap: 12px;
-      align-items: center;
-      padding: 10px;
-      border-radius: 8px;
-      background: #111;
-      margin-top: 7px;
-    }
-
-    .team-green {
-      color: #62e68b;
-      font-weight: 800;
-    }
-
-    .team-red {
-      color: #ff6262;
-      font-weight: 800;
-    }
-
-    .muted {
-      color: #777;
-    }
-
-    .empty {
-      padding: 20px 5px;
-      color: #777;
-    }
-
-    .small {
-      font-size: 12px;
-      color: #666;
-    }
-
-    @media (max-width: 850px) {
-      .row {
-        grid-template-columns: 45px 1fr 100px;
-      }
-
-      .row > div:nth-child(4),
-      .row > div:nth-child(5),
-      .header-row > div:nth-child(4),
-      .header-row > div:nth-child(5) {
-        display: none;
-      }
-
-      .market-main {
-        grid-template-columns: 1fr 80px;
-      }
-
-      .market-consensus,
-      .market-value {
-        display: none;
-      }
-
-      .wallet-position {
-        grid-template-columns: 40px 1fr;
-      }
-
-      .wallet-position > div:nth-child(n+3) {
-        grid-column: 2;
-      }
-    }
-  </style>
+
+<meta charset="UTF-8">
+
+<meta
+  name="viewport"
+  content="width=device-width,initial-scale=1"
+>
+
+<title>Polymarket Top 100</title>
+
+<style>
+
+*{
+  box-sizing:border-box
+}
+
+html,
+body{
+  margin:0;
+  background:#000;
+  color:#fff;
+  font-family:
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    Arial,
+    sans-serif
+}
+
+body{
+  min-width:320px
+}
+
+main{
+  max-width:1250px;
+  margin:auto;
+  padding:22px
+}
+
+.header{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:16px;
+  flex-wrap:wrap
+}
+
+.title{
+  font-size:28px;
+  font-weight:850
+}
+
+.sub{
+  color:#8a8a8a;
+  font-size:13px;
+  margin-top:4px
+}
+
+.card{
+  background:#111;
+  border:1px solid #292929;
+  border-radius:14px;
+  padding:17px;
+  margin-top:16px
+}
+
+.status{
+  margin-top:14px;
+  padding:11px 13px;
+  border-radius:9px;
+  border:1px solid #292929;
+  background:#151515;
+  color:#aaa;
+  font-size:13px
+}
+
+.status.good{
+  color:#75e59a;
+  background:#0f2116
+}
+
+.status.bad{
+  color:#ff8585;
+  background:#2b0e0e
+}
+
+.controls{
+  display:flex;
+  gap:8px;
+  flex-wrap:wrap;
+  margin:10px 0
+}
+
+button,
+input,
+select{
+  font:inherit
+}
+
+button{
+  background:#fff;
+  color:#000;
+  border:0;
+  border-radius:9px;
+  padding:11px 16px;
+  font-weight:800;
+  cursor:pointer
+}
+
+button:disabled{
+  opacity:.5;
+  cursor:wait
+}
+
+input,
+select{
+  background:#050505;
+  color:#fff;
+  border:1px solid #444;
+  border-radius:8px;
+  padding:9px 10px
+}
+
+input{
+  min-width:210px
+}
+
+.table{
+  width:100%;
+  overflow-x:auto
+}
+
+.row{
+  display:grid;
+  grid-template-columns:
+    65px
+    minmax(220px,1fr)
+    150px
+    150px
+    150px;
+
+  gap:12px;
+  align-items:center;
+
+  border-bottom:
+    1px solid #242424;
+
+  padding:12px 10px
+}
+
+.header-row{
+  color:#777;
+  font-size:11px;
+  text-transform:uppercase;
+  font-weight:800
+}
+
+.trader-row{
+  cursor:pointer
+}
+
+.trader-row:hover{
+  background:#171717
+}
+
+.rank{
+  font-weight:850
+}
+
+.trader-name{
+  font-weight:800
+}
+
+.wallet{
+  color:#666;
+  font-size:11px;
+  margin-top:3px
+}
+
+.positive{
+  color:#68df8c;
+  font-weight:800
+}
+
+.negative{
+  color:#ff6969;
+  font-weight:800
+}
+
+.neutral{
+  color:#aaa
+}
+
+.win-box{
+  font-weight:800
+}
+
+.win-detail{
+  display:block;
+  color:#777;
+  font-size:11px;
+  font-weight:500;
+  margin-top:2px
+}
+
+.details{
+  display:none;
+  background:#090909;
+  border-bottom:
+    1px solid #292929;
+
+  border-radius:
+    0 0 10px 10px;
+
+  padding:15px 16px
+}
+
+.details.open{
+  display:block
+}
+
+.detail-title{
+  font-size:17px;
+  font-weight:850
+}
+
+.detail-wallet{
+  font-size:11px;
+  color:#666;
+  margin:4px 0 13px;
+  word-break:break-all
+}
+
+.stats{
+  display:flex;
+  gap:24px;
+  flex-wrap:wrap;
+
+  border-bottom:
+    1px solid #222;
+
+  padding-bottom:13px;
+  margin-bottom:13px
+}
+
+.stat-label{
+  font-size:11px;
+  color:#777;
+  text-transform:uppercase
+}
+
+.stat-value{
+  font-size:18px;
+  font-weight:850;
+  margin-top:3px
+}
+
+.trade{
+  border:1px solid #242424;
+  background:#0f0f0f;
+  border-radius:10px;
+  padding:12px;
+  margin-top:8px
+}
+
+.trade-top{
+  display:flex;
+  justify-content:space-between;
+  gap:15px
+}
+
+.trade-title{
+  font-weight:750
+}
+
+.trade-meta{
+  color:#888;
+  font-size:12px;
+  margin-top:6px
+}
+
+.side-buy{
+  color:#68df8c;
+  font-weight:850
+}
+
+.side-sell{
+  color:#ff6969;
+  font-weight:850
+}
+
+.outcome-pill{
+  display:inline-block;
+  border-radius:999px;
+  padding:3px 8px;
+  font-size:11px;
+  font-weight:850
+}
+
+.yes-bg{
+  background:#123b20;
+  color:#6fe293
+}
+
+.no-bg{
+  background:#451719;
+  color:#ff8084
+}
+
+.team-green{
+  background:#123b20;
+  color:#6fe293
+}
+
+.team-red{
+  background:#451719;
+  color:#ff8084
+}
+
+.team-neutral{
+  background:#252525;
+  color:#ddd
+}
+
+.market{
+  border-bottom:
+    1px solid #222;
+
+  padding:15px 8px;
+  cursor:pointer
+}
+
+.market:hover{
+  background:#151515
+}
+
+.market-main{
+  display:grid;
+
+  grid-template-columns:
+    minmax(280px,2fr)
+    110px
+    minmax(230px,1fr)
+    130px;
+
+  gap:14px;
+  align-items:center
+}
+
+.market-name{
+  font-weight:800
+}
+
+.market-count{
+  color:#aaa;
+  font-size:13px
+}
+
+.market-consensus{
+  font-weight:800
+}
+
+.market-value{
+  text-align:right;
+  font-weight:800
+}
+
+.consensus-bar{
+  height:9px;
+  background:#292929;
+  border-radius:99px;
+  overflow:hidden;
+  display:flex;
+  margin-top:6px
+}
+
+.bar-green{
+  background:#49a866
+}
+
+.bar-red{
+  background:#d45a5a
+}
+
+.bar-neutral{
+  background:#777
+}
+
+.market-details{
+  display:none;
+  padding:12px 0 0 18px
+}
+
+.market-details.open{
+  display:block
+}
+
+.position-row{
+  display:grid;
+
+  grid-template-columns:
+    55px
+    minmax(150px,1fr)
+    minmax(100px,1fr)
+    100px
+    110px;
+
+  gap:12px;
+  align-items:center;
+
+  background:#111;
+  border-radius:8px;
+  padding:10px;
+  margin-top:7px
+}
+
+.empty{
+  padding:20px 5px;
+  color:#777
+}
+
+.small{
+  font-size:12px;
+  color:#666
+}
+
+.muted{
+  color:#777
+}
+
+.loading{
+  color:#888;
+  padding:12px 0
+}
+
+@media(max-width:850px){
+
+  main{
+    padding:12px
+  }
+
+  .row{
+    grid-template-columns:
+      45px
+      1fr
+      105px
+  }
+
+  .row>div:nth-child(4),
+  .row>div:nth-child(5),
+  .header-row>div:nth-child(4),
+  .header-row>div:nth-child(5){
+    display:none
+  }
+
+  .market-main{
+    grid-template-columns:
+      1fr 90px
+  }
+
+  .market-consensus,
+  .market-value{
+    display:none
+  }
+
+  .position-row{
+    grid-template-columns:
+      45px 1fr
+  }
+
+  .position-row>div:nth-child(n+3){
+    grid-column:2
+  }
+
+}
+
+</style>
+
 </head>
 
 <body>
 
-<div class="container">
+<main>
 
-  <div class="header">
-    <div>
-      <h1>Polymarket Top 100</h1>
-      <div class="subtitle">
-        Weekly leaderboard • P&L • Volume • Win %
-      </div>
-    </div>
+<div class="header">
 
-    <button id="scanButton">
-      Scan Top 100
-    </button>
-  </div>
+<div>
 
-  <div id="status" class="status">
-    Ready to scan.
-  </div>
+<div class="title">
+Polymarket Top 100
+</div>
 
-  <!-- TOP 100 -->
-
-  <div class="card">
-
-    <h2>Top 100 Weekly Traders</h2>
-
-    <div class="description">
-      Click a trader to see their activity and trades for the week.
-    </div>
-
-    <div class="controls">
-      <input
-        id="traderSearch"
-        placeholder="Search trader..."
-      >
-    </div>
-
-    <div class="table">
-
-      <div class="row header-row">
-        <div>Rank</div>
-        <div>Trader</div>
-        <div>Weekly P&L</div>
-        <div>Volume</div>
-        <div>Win %</div>
-      </div>
-
-      <div id="traders">
-        <div class="empty">
-          No traders loaded.
-        </div>
-      </div>
-
-    </div>
-
-  </div>
-
-
-  <!-- ACTIVE MARKETS -->
-
-  <div class="card">
-
-    <h2>Active Markets</h2>
-
-    <div class="description">
-      Current positions held by the Top 100 wallets.
-    </div>
-
-    <div class="controls">
-
-      <input
-        id="marketSearch"
-        placeholder="Search market..."
-      >
-
-      <select id="marketFilter">
-        <option value="1">1+ wallets</option>
-        <option value="2">2+ wallets</option>
-        <option value="3">3+ wallets</option>
-        <option value="5">5+ wallets</option>
-        <option value="10">10+ wallets</option>
-      </select>
-
-    </div>
-
-    <div id="markets">
-      <div class="empty">
-        No active markets loaded.
-      </div>
-    </div>
-
-  </div>
+<div class="sub">
+Weekly leaderboard • P&amp;L • volume • resolved win/loss • active markets
+</div>
 
 </div>
+
+<button id="scan">
+Scan Top 100
+</button>
+
+</div>
+
+
+<div id="status" class="status">
+Ready to scan.
+</div>
+
+
+<section class="card">
+
+<div class="section-title">
+Top 100 Weekly Traders
+</div>
+
+<div class="section-desc">
+Exactly 100 weekly accounts.
+Click a trader for every trade this week and current positions.
+</div>
+
+<div class="controls">
+
+<input
+id="traderSearch"
+placeholder="Search trader..."
+>
+
+</div>
+
+
+<div class="table">
+
+<div class="row header-row">
+
+<div>Rank</div>
+
+<div>Trader</div>
+
+<div>Weekly P&amp;L</div>
+
+<div>Volume</div>
+
+<div>Win / Loss</div>
+
+</div>
+
+
+<div id="traders">
+
+<div class="empty">
+No traders loaded.
+</div>
+
+</div>
+
+</div>
+
+</section>
+
+
+<section class="card">
+
+<div class="section-title">
+Active Markets
+</div>
+
+<div class="section-desc">
+Current non-redeemed positions held by the Top 100 wallets.
+Sports show the actual team, not fake YES/NO labels.
+</div>
+
+
+<div class="controls">
+
+<input
+id="marketSearch"
+placeholder="Search market..."
+>
+
+<select id="marketFilter">
+
+<option value="1">
+1+ wallets
+</option>
+
+<option value="2">
+2+ wallets
+</option>
+
+<option value="5">
+5+ wallets
+</option>
+
+<option value="10">
+10+ wallets
+</option>
+
+</select>
+
+</div>
+
+
+<div id="markets">
+
+<div class="empty">
+No active markets loaded.
+</div>
+
+</div>
+
+</section>
+
+</main>
 
 
 <script>
@@ -503,1121 +623,961 @@
 const WORKER =
   "https://polymarket-proxy.rowanmcbride77.workers.dev";
 
-let traders = [];
-let marketMap = new Map();
 
-let traderDetailsCache = new Map();
+const state = {
 
-const statusEl =
-  document.getElementById("status");
+  traders: [],
 
-const tradersEl =
-  document.getElementById("traders");
+  winloss: new Map(),
 
-const marketsEl =
-  document.getElementById("markets");
+  positions: new Map(),
 
+  markets: new Map(),
 
-/*
-========================================================
-HELPERS
-========================================================
-*/
+  details: new Map(),
 
-function escapeHTML(value) {
+  start: 0,
 
-  return String(value ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
-}
+  end: 0
+
+};
 
 
-function money(value) {
-
-  const n = Number(value || 0);
-
-  return n.toLocaleString("en-US", {
-    style: "currency",
-    currency: "USD",
-    maximumFractionDigits: 0
-  });
-}
+const $ =
+  id =>
+    document.getElementById(id);
 
 
-function number(value) {
+function esc(value){
 
-  const n = Number(value || 0);
+  return String(
+    value ?? ""
+  )
 
-  return n.toLocaleString("en-US", {
-    maximumFractionDigits: 0
-  });
-}
+  .replaceAll(
+    "&",
+    "&amp;"
+  )
 
+  .replaceAll(
+    "<",
+    "&lt;"
+  )
 
-function shortWallet(wallet) {
+  .replaceAll(
+    ">",
+    "&gt;"
+  )
 
-  if (!wallet) return "";
+  .replaceAll(
+    '"',
+    "&quot;"
+  )
 
-  if (wallet.length < 15)
-    return wallet;
-
-  return (
-    wallet.slice(0, 8) +
-    "..." +
-    wallet.slice(-6)
+  .replaceAll(
+    "'",
+    "&#039;"
   );
+
 }
 
 
-function pnlClass(value) {
+function money(value){
 
-  const n = Number(value || 0);
+  return Number(
+    value || 0
+  ).toLocaleString(
+    "en-US",
+    {
+      style:"currency",
+      currency:"USD",
+      maximumFractionDigits:0
+    }
+  );
 
-  if (n > 0) return "positive";
-
-  if (n < 0) return "negative";
-
-  return "neutral";
 }
 
 
-function getWallet(trader) {
+function num(value){
+
+  return Number(
+    value || 0
+  ).toLocaleString(
+    "en-US",
+    {
+      maximumFractionDigits:2
+    }
+  );
+
+}
+
+
+function short(wallet){
+
+  if(
+    wallet &&
+    wallet.length > 18
+  ){
+
+    return (
+      wallet.slice(0,8) +
+      "…" +
+      wallet.slice(-6)
+    );
+
+  }
+
+  return wallet || "";
+
+}
+
+
+function wallet(trader){
 
   return (
-    trader.proxyWallet ||
-    trader.wallet ||
-    trader.address ||
-    trader.user ||
+    trader?.proxyWallet ||
+    trader?.proxy_wallet ||
+    trader?.wallet ||
+    trader?.address ||
+    trader?.user ||
     ""
   );
+
 }
 
 
-function getName(trader) {
+function name(trader){
 
   return (
-    trader.userName ||
-    trader.username ||
-    trader.name ||
-    shortWallet(getWallet(trader))
+    trader?.userName ||
+    trader?.username ||
+    trader?.name ||
+    short(
+      wallet(trader)
+    )
   );
+
 }
 
 
-function getPnl(trader) {
+function pnl(trader){
 
   return Number(
-    trader.pnl ??
-    trader.PNL ??
-    trader.profitLoss ??
+    trader?.pnl ??
+    trader?.PNL ??
+    trader?.profitLoss ??
     0
   );
+
 }
 
 
-function getVolume(trader) {
+function vol(trader){
 
   return Number(
-    trader.vol ??
-    trader.volume ??
+    trader?.vol ??
+    trader?.volume ??
     0
   );
+
 }
 
 
-/*
-========================================================
-API
-========================================================
-*/
+function stamp(value){
 
-async function api(path) {
+  let n =
+    Number(
+      value || 0
+    );
+
+  if(
+    n > 1000000000000
+  ){
+
+    n /= 1000;
+
+  }
+
+  const date =
+    new Date(
+      n * 1000
+    );
+
+  if(
+    isNaN(
+      date.getTime()
+    )
+  ){
+
+    return "Time unavailable";
+
+  }
+
+  return date.toLocaleString(
+    undefined,
+    {
+      month:"short",
+      day:"numeric",
+      hour:"numeric",
+      minute:"2-digit"
+    }
+  );
+
+}
+
+
+function setStatus(
+  text,
+  kind=""
+){
+
+  $("status")
+    .textContent = text;
+
+  $("status")
+    .className =
+      "status " + kind;
+
+}
+
+
+async function api(path){
 
   const response =
-    await fetch(WORKER + path);
+    await fetch(
+      WORKER + path,
+      {
+        cache:"no-store"
+      }
+    );
 
   const text =
     await response.text();
 
-  if (!response.ok) {
+  if(
+    !response.ok
+  ){
 
     throw new Error(
-      `HTTP ${response.status}: ${text}`
+      `HTTP ${response.status}: ${text.slice(0,220)}`
     );
+
   }
 
-  let data;
+  const data =
+    JSON.parse(text);
 
-  try {
-    data = JSON.parse(text);
-  } catch {
-    throw new Error(
-      "Worker returned invalid JSON"
-    );
-  }
+  if(
+    data?.error
+  ){
 
-  if (
-    data &&
-    data.error
-  ) {
     throw new Error(
       data.message ||
       data.error
     );
+
   }
 
   return data;
+
 }
 
 
-/*
-========================================================
-SCAN TOP 100
-========================================================
-*/
+/* =========================
+   POSITION HELPERS
+========================= */
 
-async function scanTop100() {
+function outcomeKey(position){
 
-  setStatus(
-    "Loading Top 100 weekly leaderboard...",
-    "loading"
+  return String(
+    position.conditionId ||
+    position.conditionID ||
+    position.condition_id ||
+    position.market ||
+    position.eventId ||
+    position.title ||
+    ""
   );
 
-  try {
-
-    const data =
-      await api(
-        "/v1/leaderboard?timePeriod=WEEK&orderBy=PNL&category=OVERALL"
-      );
-
-    if (!Array.isArray(data)) {
-
-      throw new Error(
-        "Leaderboard did not return an array."
-      );
-    }
-
-    traders =
-      data
-        .slice(0, 100)
-        .map((trader, index) => ({
-          ...trader,
-          displayRank:
-            Number(trader.rank) ||
-            index + 1
-        }));
-
-    renderTraders();
-
-    setStatus(
-      `Loaded ${traders.length} weekly traders. Loading positions...`,
-      "success"
-    );
-
-    /*
-      Build Active Markets.
-      Do this in controlled batches so the browser/API
-      doesn't get hammered by 100 simultaneous requests.
-    */
-
-    await buildActiveMarkets();
-
-    setStatus(
-      `Loaded ${traders.length} traders and active markets.`,
-      "success"
-    );
-
-    /*
-      Win percentages are intentionally loaded after
-      the main leaderboard so the page appears quickly.
-    */
-
-    loadWinRates();
-
-  } catch (error) {
-
-    setStatus(
-      "Scan failed: " + error.message,
-      "error"
-    );
-  }
 }
 
 
-/*
-========================================================
-RENDER TRADERS
-========================================================
-*/
+function outcomeLabel(position){
 
-function renderTraders() {
+  return String(
+    position.outcome ||
+    position.outcomeName ||
+    position.label ||
+    "Unknown"
+  ).trim();
+
+}
+
+
+function positionSize(position){
+
+  return Number(
+    position.size ??
+    position.tokens ??
+    position.currentSize ??
+    position.current_size ??
+    0
+  );
+
+}
+
+
+function positionValue(position){
+
+  return Number(
+    position.currentValue ??
+    position.current_value ??
+    position.value ??
+    0
+  );
+
+}
+
+
+function isRedeemable(position){
+
+  return (
+    position.redeemable === true ||
+    position.status === "REDEEMABLE" ||
+    position.status === "REDEEMABLE_LOST"
+  );
+
+}
+
+
+/* =========================
+   TEAM COLORS
+
+   Sports:
+   outcomeIndex 0 = GREEN
+   outcomeIndex 1 = RED
+
+   Therefore a game such as:
+
+   Packers = outcome 0
+   Falcons = outcome 1
+
+   displays Packers green
+   and Falcons red.
+========================= */
+
+function teamClass(
+  position,
+  allPositions
+){
+
+  const label =
+    outcomeLabel(
+      position
+    ).toLowerCase();
+
+  if(
+    label === "yes"
+  ){
+
+    return "yes-bg";
+
+  }
+
+  if(
+    label === "no"
+  ){
+
+    return "no-bg";
+
+  }
+
+  const index =
+    Number(
+      position.outcomeIndex ??
+      position.outcome_index
+    );
+
+  if(
+    Number.isFinite(index)
+  ){
+
+    if(index === 0)
+      return "team-green";
+
+    if(index === 1)
+      return "team-red";
+
+    return "team-neutral";
+
+  }
+
+  const labels =
+    [
+      ...new Set(
+        allPositions.map(
+          outcomeLabel
+        )
+      )
+    ];
+
+  const i =
+    labels.indexOf(
+      outcomeLabel(position)
+    );
+
+  if(i === 0)
+    return "team-green";
+
+  if(i === 1)
+    return "team-red";
+
+  return "team-neutral";
+
+}
+
+
+/* =========================
+   ADD POSITIONS
+========================= */
+
+function addPositions(rows){
+
+  for(
+    const result of rows
+  ){
+
+    const w =
+      result.wallet;
+
+    if(
+      result.error
+    ){
+
+      continue;
+
+    }
+
+    const usable =
+      result.positions.filter(
+        position =>
+          positionSize(position) > 0 &&
+          !isRedeemable(position)
+      );
+
+    state.positions.set(
+      w,
+      usable
+    );
+
+
+    for(
+      const position of usable
+    ){
+
+      const id =
+        outcomeKey(
+          position
+        );
+
+      if(!id)
+        continue;
+
+
+      if(
+        !state.markets.has(id)
+      ){
+
+        state.markets.set(
+          id,
+          {
+            id,
+
+            title:
+              String(
+                position.title ||
+                position.question ||
+                position.marketTitle ||
+                "Unknown market"
+              ),
+
+            positions: [],
+
+            wallets: new Map()
+
+          }
+        );
+
+      }
+
+
+      const market =
+        state.markets.get(id);
+
+
+      market.positions.push({
+
+        wallet: w,
+
+        trader:
+          state.traders.find(
+            trader =>
+              wallet(trader) === w
+          ),
+
+        p: position
+
+      });
+
+
+      market.wallets.set(
+        w,
+        true
+      );
+
+    }
+
+  }
+
+}
+
+
+/* =========================
+   TRADER TABLE
+========================= */
+
+function renderTraders(){
 
   const search =
-    document
-      .getElementById("traderSearch")
+    $("traderSearch")
       .value
       .toLowerCase()
       .trim();
 
-  const filtered =
-    traders.filter(t => {
 
-      const name =
-        getName(t).toLowerCase();
+  const list =
+    state.traders.filter(
+      trader => {
 
-      const wallet =
-        getWallet(t).toLowerCase();
+        return (
+          !search ||
 
-      return (
-        !search ||
-        name.includes(search) ||
-        wallet.includes(search)
-      );
-    });
+          name(trader)
+            .toLowerCase()
+            .includes(search) ||
 
+          wallet(trader)
+            .toLowerCase()
+            .includes(search)
+        );
 
-  if (!filtered.length) {
-
-    tradersEl.innerHTML =
-      `<div class="empty">No traders found.</div>`;
-
-    return;
-  }
-
-
-  tradersEl.innerHTML =
-    filtered.map(trader => {
-
-      const wallet =
-        getWallet(trader);
-
-      const pnl =
-        getPnl(trader);
-
-      const volume =
-        getVolume(trader);
-
-      const cached =
-        traderDetailsCache.get(wallet);
-
-      let winHTML =
-        `<span class="muted">Loading...</span>`;
-
-      if (cached) {
-
-        if (cached.winRate === null) {
-
-          winHTML =
-            `<span class="muted">—</span>
-             <span class="win-detail">
-               ${cached.wins}W / ${cached.losses}L
-             </span>`;
-
-        } else {
-
-          winHTML =
-            `<span>${cached.winRate}%</span>
-             <span class="win-detail">
-               ${cached.wins}W / ${cached.losses}L
-             </span>`;
-        }
       }
+    );
 
 
-      return `
+  $("traders")
+    .innerHTML =
 
-        <div
-          class="row trader-row"
-          data-wallet="${escapeHTML(wallet)}"
-        >
+    list.map(
+      trader => {
 
-          <div class="rank">
-            #${escapeHTML(trader.displayRank)}
-          </div>
+        const w =
+          wallet(trader);
 
-          <div>
-
-            <div class="trader-name">
-              ${escapeHTML(getName(trader))}
-            </div>
-
-            <span class="wallet">
-              ${escapeHTML(shortWallet(wallet))}
-            </span>
-
-          </div>
-
-          <div class="${pnlClass(pnl)}">
-            ${money(pnl)}
-          </div>
-
-          <div>
-            ${money(volume)}
-          </div>
-
-          <div class="win-box">
-            ${winHTML}
-          </div>
-
-        </div>
-
-        <div
-          class="details"
-          id="details-${CSS.escape(wallet)}"
-        ></div>
-
-      `;
-
-    }).join("");
+        const record =
+          state.winloss.get(w);
 
 
-  document
-    .querySelectorAll(".trader-row")
-    .forEach(row => {
+        let winHTML =
+          `<span class="muted">
+             Loading...
+           </span>`;
 
-      row.addEventListener(
-        "click",
-        () => {
 
-          const wallet =
-            row.dataset.wallet;
+        if(
+          record &&
+          record.wins !== null
+        ){
 
-          toggleTrader(wallet);
+          if(
+            record.total
+          ){
+
+            winHTML =
+              `${record.wins}W / ${record.losses}L
+               <span class="win-detail">
+                 ${record.winRate.toFixed(1)}% win rate
+               </span>`;
+
+          }else{
+
+            winHTML =
+              `0W / 0L
+               <span class="win-detail">
+                 —
+               </span>`;
+
+          }
 
         }
-      );
-
-    });
-}
-
-
-/*
-========================================================
-TRADER DETAILS
-========================================================
-*/
-
-async function toggleTrader(wallet) {
-
-  const details =
-    document.getElementById(
-      `details-${CSS.escape(wallet)}`
-    );
-
-  if (!details) return;
-
-
-  if (details.classList.contains("open")) {
-
-    details.classList.remove("open");
-
-    return;
-  }
-
-
-  details.classList.add("open");
-
-
-  if (details.dataset.loaded === "true") {
-    return;
-  }
-
-
-  details.innerHTML =
-    `<div class="loading">
-      Loading this trader's weekly activity...
-    </div>`;
-
-
-  try {
-
-    const data =
-      await api(
-        `/v2/trader?user=${encodeURIComponent(wallet)}`
-      );
-
-
-    details.dataset.loaded = "true";
-
-    renderTraderDetails(
-      details,
-      data
-    );
-
-
-  } catch (error) {
-
-    details.innerHTML =
-      `<div class="status error">
-        Could not load trader activity:
-        ${escapeHTML(error.message)}
-      </div>`;
-  }
-}
-
-
-function renderTraderDetails(
-  container,
-  data
-) {
-
-  const activity =
-    Array.isArray(data.activity)
-      ? data.activity
-      : [];
-
-  const positions =
-    Array.isArray(data.positions)
-      ? data.positions
-      : [];
-
-
-  const wins =
-    Number(data.wins || 0);
-
-  const losses =
-    Number(data.losses || 0);
-
-  const total =
-    wins + losses;
-
-  const winRate =
-    total > 0
-      ? ((wins / total) * 100).toFixed(1)
-      : "—";
-
-
-  let activityHTML = "";
-
-
-  if (!activity.length) {
-
-    activityHTML =
-      `<div class="empty">
-        No weekly activity returned.
-      </div>`;
-
-  } else {
-
-    activityHTML =
-      activity.map(item => {
-
-        const title =
-          item.title ||
-          item.market ||
-          item.question ||
-          "Unknown market";
-
-        const outcome =
-          item.outcome ||
-          "";
-
-        const side =
-          String(
-            item.side ||
-            item.type ||
-            ""
-          ).toUpperCase();
-
-        const price =
-          item.price ??
-          item.avgPrice;
-
-        const size =
-          item.size ??
-          item.amount;
-
-        const timestamp =
-          item.timestamp ||
-          item.createdAt ||
-          item.created_at;
 
 
         return `
 
-          <div class="trade">
+          <div
+            class="row trader-row"
+            data-wallet="${esc(w)}"
+          >
 
-            <div class="trade-top">
+            <div class="rank">
+              #${esc(trader.rank)}
+            </div>
 
-              <div>
 
-                <div class="trade-title">
-                  ${escapeHTML(title)}
-                </div>
+            <div>
 
-                <div class="trade-meta">
-
-                  ${
-                    outcome
-                      ? `Position:
-                         <span class="${
-                           isNo(outcome)
-                             ? "no"
-                             : "yes"
-                         }">
-                           ${escapeHTML(outcome)}
-                         </span>`
-                      : ""
-                  }
-
-                  ${
-                    side
-                      ? ` •
-                        <span class="${
-                          side.includes("SELL")
-                            ? "side-sell"
-                            : "side-buy"
-                        }">
-                          ${escapeHTML(side)}
-                        </span>`
-                      : ""
-                  }
-
-                </div>
-
+              <div class="trader-name">
+                ${esc(name(trader))}
               </div>
 
-              <div class="small">
-                ${formatTime(timestamp)}
+              <div class="wallet">
+                ${esc(short(w))}
               </div>
 
             </div>
 
-            <div class="trade-meta">
 
-              ${
-                size !== undefined
-                  ? `Size:
-                     <strong>${number(size)}</strong>`
-                  : ""
-              }
+            <div
+              class="${
+                pnl(trader) > 0
+                  ? "positive"
+                  : pnl(trader) < 0
+                    ? "negative"
+                    : "neutral"
+              }"
+            >
+              ${money(pnl(trader))}
+            </div>
 
-              ${
-                price !== undefined
-                  ? ` • Price:
-                     <strong>${Number(price).toFixed(3)}</strong>`
-                  : ""
-              }
 
+            <div>
+              ${money(vol(trader))}
+            </div>
+
+
+            <div class="win-box">
+              ${winHTML}
             </div>
 
           </div>
 
+
+          <div
+            class="details"
+            id="d-${esc(w)}"
+          ></div>
+
         `;
 
-      }).join("");
-  }
+      }
+    ).join("")
+
+
+    ||
+    `<div class="empty">
+       No traders found.
+     </div>`;
+
+
+  document
+    .querySelectorAll(
+      ".trader-row"
+    )
+    .forEach(
+      row => {
+
+        row.addEventListener(
+          "click",
+          () =>
+            toggleTrader(
+              row.dataset.wallet
+            )
+        );
 
-
-  container.innerHTML = `
-
-    <div class="detail-title">
-      Trader Activity
-    </div>
-
-    <div class="detail-wallet">
-      ${escapeHTML(data.user || "")}
-    </div>
-
-
-    <div class="detail-stats">
-
-      <div class="stat">
-        <div class="stat-label">
-          Weekly Wins
-        </div>
-
-        <div class="stat-value positive">
-          ${wins}
-        </div>
-      </div>
-
-
-      <div class="stat">
-        <div class="stat-label">
-          Weekly Losses
-        </div>
-
-        <div class="stat-value negative">
-          ${losses}
-        </div>
-      </div>
-
-
-      <div class="stat">
-        <div class="stat-label">
-          Win %
-        </div>
-
-        <div class="stat-value">
-          ${winRate === "—"
-            ? "—"
-            : winRate + "%"}
-        </div>
-      </div>
-
-
-      <div class="stat">
-        <div class="stat-label">
-          Active Positions
-        </div>
-
-        <div class="stat-value">
-          ${positions.length}
-        </div>
-      </div>
-
-    </div>
-
-
-    <div>
-      <strong>
-        Weekly Trades / Activity
-      </strong>
-
-      ${activityHTML}
-
-    </div>
-
-  `;
-}
-
-
-/*
-========================================================
-WIN RATES
-========================================================
-
-Load a few at a time rather than firing 100 requests
-simultaneously.
-*/
-
-async function loadWinRates() {
-
-  const batchSize = 5;
-
-  for (
-    let i = 0;
-    i < traders.length;
-    i += batchSize
-  ) {
-
-    const batch =
-      traders.slice(
-        i,
-        i + batchSize
-      );
-
-
-    await Promise.all(
-      batch.map(
-        async trader => {
-
-          const wallet =
-            getWallet(trader);
-
-          if (!wallet) return;
-
-          if (
-            traderDetailsCache.has(wallet)
-          ) {
-            return;
-          }
-
-
-          try {
-
-            const data =
-              await api(
-                `/v2/trader?user=${encodeURIComponent(wallet)}`
-              );
-
-
-            traderDetailsCache.set(
-              wallet,
-              {
-                wins:
-                  Number(data.wins || 0),
-
-                losses:
-                  Number(data.losses || 0),
-
-                winRate:
-                  data.winRate === null ||
-                  data.winRate === undefined
-                    ? null
-                    : Number(data.winRate)
-              }
-            );
-
-          } catch (error) {
-
-            /*
-              Don't make one failed trader stop
-              the entire leaderboard.
-            */
-
-            traderDetailsCache.set(
-              wallet,
-              {
-                wins: 0,
-                losses: 0,
-                winRate: null
-              }
-            );
-
-          }
-
-        }
-      )
-    );
-
-
-    renderTraders();
-
-    setStatus(
-      `Win/loss data loaded for ${
-        Math.min(
-          i + batchSize,
-          traders.length
-        )
-      } / ${traders.length} traders...`,
-      "loading"
-    );
-  }
-
-
-  setStatus(
-    `Top 100 loaded with weekly win/loss data.`,
-    "success"
-  );
-}
-
-
-/*
-========================================================
-ACTIVE MARKETS
-========================================================
-*/
-
-async function buildActiveMarkets() {
-
-  marketMap =
-    new Map();
-
-
-  const batchSize = 10;
-
-
-  for (
-    let i = 0;
-    i < traders.length;
-    i += batchSize
-  ) {
-
-    const batch =
-      traders.slice(
-        i,
-        i + batchSize
-      );
-
-
-    await Promise.all(
-      batch.map(
-        async trader => {
-
-          const wallet =
-            getWallet(trader);
-
-          if (!wallet) return;
-
-
-          try {
-
-            const positions =
-              await api(
-                `/positions?user=${encodeURIComponent(wallet)}`
-              );
-
-
-            if (!Array.isArray(positions))
-              return;
-
-
-            positions.forEach(
-              position => {
-
-                addPosition(
-                  position,
-                  trader
-                );
-
-              }
-            );
-
-          } catch (error) {
-
-            console.warn(
-              "Position error",
-              wallet,
-              error
-            );
-
-          }
-
-        }
-      )
-    );
-
-
-    renderMarkets();
-
-    setStatus(
-      `Scanning active positions: ${
-        Math.min(
-          i + batchSize,
-          traders.length
-        )
-      } / ${traders.length} wallets...`,
-      "loading"
-    );
-  }
-
-
-  renderMarkets();
-}
-
-
-/*
-========================================================
-ADD POSITION
-========================================================
-*/
-
-function addPosition(
-  position,
-  trader
-) {
-
-  const marketId =
-    position.conditionId ||
-    position.conditionID ||
-    position.market ||
-    position.eventId ||
-    position.title;
-
-  if (!marketId)
-    return;
-
-
-  const title =
-    position.title ||
-    position.question ||
-    position.marketTitle ||
-    "Unknown market";
-
-
-  /*
-    Important:
-    Use the actual API outcome.
-    Never infer YES/NO from the title.
-  */
-
-  const outcome =
-    position.outcome ||
-    position.side ||
-    "";
-
-
-  const key =
-    String(marketId);
-
-
-  if (!marketMap.has(key)) {
-
-    marketMap.set(
-      key,
-      {
-        id: key,
-        title,
-        positions: []
       }
     );
 
-  }
-
-
-  const market =
-    marketMap.get(key);
-
-
-  /*
-    Avoid duplicate wallet/outcome entries.
-  */
-
-  const wallet =
-    getWallet(trader);
-
-
-  market.positions.push({
-
-    wallet,
-
-    rank:
-      Number(trader.displayRank || 0),
-
-    trader:
-      getName(trader),
-
-    outcome,
-
-    size:
-      Number(
-        position.size ||
-        position.tokens ||
-        0
-      ),
-
-    value:
-      Number(
-        position.currentValue ||
-        position.value ||
-        0
-      ),
-
-    pnl:
-      Number(
-        position.cashPnl ||
-        position.cashPNL ||
-        position.pnl ||
-        0
-      ),
-
-    avgPrice:
-      Number(
-        position.avgPrice ||
-        position.averagePrice ||
-        0
-      )
-
-  });
-
 }
 
 
-/*
-========================================================
-MARKET RENDER
-========================================================
-*/
+/* =========================
+   MARKET DATA
+========================= */
 
-function renderMarkets() {
+function marketData(){
 
   const search =
-    document
-      .getElementById("marketSearch")
+    $("marketSearch")
       .value
       .toLowerCase()
       .trim();
 
-  const minWallets =
+
+  const minimum =
     Number(
-      document
-        .getElementById("marketFilter")
-        .value
+      $("marketFilter").value
     );
 
 
+  return [
+    ...state.markets.values()
+  ]
+
+  .filter(
+    market =>
+
+      market.wallets.size >=
+      minimum &&
+
+      (
+        !search ||
+
+        market.title
+          .toLowerCase()
+          .includes(search)
+      )
+  )
+
+  .sort(
+    (a,b) =>
+      b.wallets.size -
+      a.wallets.size
+  );
+
+}
+
+
+/* =========================
+   ACTIVE MARKETS
+========================= */
+
+function renderMarkets(){
+
   const markets =
-    [...marketMap.values()]
-      .filter(m => {
-
-        const uniqueWallets =
-          new Set(
-            m.positions.map(
-              p => p.wallet
-            )
-          ).size;
-
-        const matchesSearch =
-          !search ||
-          m.title
-            .toLowerCase()
-            .includes(search);
-
-        return (
-          uniqueWallets >= minWallets &&
-          matchesSearch
-        );
-
-      })
-      .sort(
-        (a, b) =>
-          new Set(
-            b.positions.map(p => p.wallet)
-          ).size -
-          new Set(
-            a.positions.map(p => p.wallet)
-          ).size
-      );
+    marketData();
 
 
-  if (!markets.length) {
+  if(
+    !markets.length
+  ){
 
-    marketsEl.innerHTML =
+    $("markets").innerHTML =
       `<div class="empty">
-        No active markets found.
-      </div>`;
+         No active markets found.
+       </div>`;
 
     return;
+
   }
 
 
-  marketsEl.innerHTML =
+  $("markets").innerHTML =
+
     markets.map(
-      (market, index) => {
+      (market,index) => {
 
-        const unique =
-          new Set(
-            market.positions.map(
-              p => p.wallet
+        const positions =
+          market.positions;
+
+
+        const labels =
+          [
+            ...new Set(
+              positions.map(
+                x =>
+                  outcomeLabel(x.p)
+              )
             )
-          ).size;
+          ];
 
 
-        const yes =
-          market.positions.filter(
-            p => !isNo(p.outcome)
-          ).length;
+        const counts =
+          new Map();
 
-        const no =
-          market.positions.filter(
-            p => isNo(p.outcome)
-          ).length;
+
+        for(
+          const item of positions
+        ){
+
+          const label =
+            outcomeLabel(
+              item.p
+            );
+
+
+          if(
+            !counts.has(label)
+          ){
+
+            counts.set(
+              label,
+              new Set()
+            );
+
+          }
+
+
+          counts
+            .get(label)
+            .add(item.wallet);
+
+        }
+
+
+        const parts =
+          [
+            ...counts.entries()
+          ]
+          .map(
+            ([label,set]) => ({
+              label,
+              count:set.size
+            })
+          );
 
 
         const total =
-          yes + no;
+          parts.reduce(
+            (sum,item) =>
+              sum + item.count,
+            0
+          );
 
 
-        const yesPct =
-          total
-            ? ((yes / total) * 100).toFixed(1)
-            : 0;
+        const isBinaryYesNo =
+          labels.length > 0 &&
 
-        const noPct =
-          total
-            ? ((no / total) * 100).toFixed(1)
-            : 0;
+          labels.every(
+            label =>
+              [
+                "yes",
+                "no"
+              ].includes(
+                label.toLowerCase()
+              )
+          );
+
+
+        const percentageParts =
+          parts.map(
+            item => ({
+
+              ...item,
+
+              pct:
+                total
+                  ? item.count /
+                    total *
+                    100
+                  : 0
+
+            })
+          );
+
+
+        const consensus =
+          isBinaryYesNo
+
+            ?
+
+              `
+              ${
+                (
+                  percentageParts
+                    .find(
+                      x =>
+                        x.label
+                          .toLowerCase() ===
+                        "yes"
+                    )?.pct || 0
+                ).toFixed(1)
+              }% YES
+
+              /
+
+              ${
+                (
+                  percentageParts
+                    .find(
+                      x =>
+                        x.label
+                          .toLowerCase() ===
+                        "no"
+                    )?.pct || 0
+                ).toFixed(1)
+              }% NO
+              `
+
+            :
+
+              percentageParts
+                .map(
+                  item =>
+                    `${esc(item.label)}
+                     ${item.pct.toFixed(1)}%`
+                )
+                .join(" / ");
+
+
+        const bars =
+          percentageParts
+            .map(
+              (item,index) => {
+
+                let cls;
+
+                if(
+                  isBinaryYesNo
+                ){
+
+                  cls =
+                    item.label
+                      .toLowerCase() ===
+                    "yes"
+                      ? "bar-green"
+                      : "bar-red";
+
+                }else{
+
+                  cls =
+                    index === 0
+                      ? "bar-green"
+                      : index === 1
+                        ? "bar-red"
+                        : "bar-neutral";
+
+                }
+
+
+                return `
+                  <div
+                    class="${cls}"
+                    style="
+                      width:${item.pct}%
+                    "
+                  ></div>
+                `;
+
+              }
+            )
+            .join("");
 
 
         const totalValue =
-          market.positions.reduce(
-            (sum, p) =>
-              sum + Number(p.value || 0),
+          positions.reduce(
+            (sum,item) =>
+              sum +
+              positionValue(item.p),
             0
           );
 
@@ -1625,56 +1585,60 @@ function renderMarkets() {
         return `
 
           <div
-            class="active-market"
-            data-market-index="${index}"
+            class="market"
+            data-index="${index}"
           >
 
             <div class="market-main">
 
-              <div class="market-name">
-                ${escapeHTML(market.title)}
+
+              <div>
+
+                <div class="market-name">
+                  ${esc(market.title)}
+                </div>
+
+                <div class="market-count">
+                  ${market.wallets.size}
+                  active wallets
+                </div>
+
               </div>
 
-              <div class="market-count">
-                ${unique} wallets
+
+              <div>
+                ${money(totalValue)}
               </div>
+
 
               <div class="market-consensus">
 
-                ${
-                  total
-                    ? `
-                      <span class="yes">
-                        ${yesPct}% YES
-                      </span>
+                ${consensus}
 
-                      &nbsp; / &nbsp;
+                <div class="consensus-bar">
 
-                      <span class="no">
-                        ${noPct}% NO
-                      </span>
-                    `
-                    : `<span class="muted">
-                        No YES/NO data
-                       </span>`
-                }
+                  ${bars}
+
+                </div>
 
               </div>
 
-              <div class="market-value">
-                ${money(totalValue)}
+
+              <div class="small">
+                Click to expand
               </div>
+
 
             </div>
 
 
             <div
               class="market-details"
-              id="market-details-${index}"
+              id="md-${index}"
             >
 
-              ${renderMarketPositions(
-                market.positions
+              ${renderMarketDetails(
+                positions
               )}
 
             </div>
@@ -1688,283 +1652,1020 @@ function renderMarkets() {
 
 
   document
-    .querySelectorAll(".active-market")
-    .forEach(row => {
+    .querySelectorAll(
+      ".market"
+    )
+    .forEach(
+      row => {
 
-      row.addEventListener(
-        "click",
-        () => {
+        row.addEventListener(
+          "click",
+          event => {
 
-          const index =
-            row.dataset.marketIndex;
+            if(
+              event.target.closest(
+                ".position-row"
+              )
+            ){
 
-          const details =
-            document.getElementById(
-              `market-details-${index}`
-            );
+              return;
 
-          if (details) {
+            }
+
+
+            const details =
+              $(
+                "md-" +
+                row.dataset.index
+              );
+
 
             details.classList.toggle(
               "open"
             );
 
           }
-
-        }
-      );
-
-    });
-
-}
-
-
-/*
-========================================================
-MARKET POSITIONS
-========================================================
-*/
-
-function renderMarketPositions(
-  positions
-) {
-
-  if (!positions.length) {
-
-    return `
-      <div class="empty">
-        No positions returned.
-      </div>
-    `;
-
-  }
-
-
-  /*
-    Deduplicate by wallet + outcome.
-  */
-
-  const seen =
-    new Set();
-
-  const unique =
-    positions.filter(
-      position => {
-
-        const key =
-          `${position.wallet}-${position.outcome}`;
-
-        if (seen.has(key))
-          return false;
-
-        seen.add(key);
-
-        return true;
+        );
 
       }
     );
 
+}
 
-  return unique
+
+/* =========================
+   MARKET DETAILS
+========================= */
+
+function renderMarketDetails(
+  positions
+){
+
+  return positions
+    .slice()
     .sort(
-      (a, b) =>
-        a.rank - b.rank
+      (a,b) =>
+        Number(
+          a.trader?.rank ||
+          999
+        ) -
+
+        Number(
+          b.trader?.rank ||
+          999
+        )
     )
+
     .map(
-      position => {
+      item => {
 
-        const no =
-          isNo(position.outcome);
+        const p =
+          item.p;
 
+        const trader =
+          item.trader ||
+          {};
 
-        const outcomeClass =
-          no
-            ? "team-red"
-            : "team-green";
+        const team =
+          teamClass(
+            p,
+            positions.map(
+              x => x.p
+            )
+          );
 
 
         return `
 
-          <div class="wallet-position">
+          <div class="position-row">
+
 
             <div>
-              #${escapeHTML(position.rank)}
+              #${esc(
+                trader.rank ||
+                "—"
+              )}
             </div>
 
+
             <div>
 
-              <strong>
-                ${escapeHTML(position.trader)}
-              </strong>
+              <b>
+                ${esc(
+                  name(trader)
+                )}
+              </b>
 
-              <span class="wallet">
-                ${escapeHTML(
-                  shortWallet(position.wallet)
+              <div class="wallet">
+                ${esc(
+                  short(
+                    item.wallet
+                  )
+                )}
+              </div>
+
+            </div>
+
+
+            <div>
+
+              <span
+                class="
+                  outcome-pill
+                  ${team}
+                "
+              >
+                ${esc(
+                  outcomeLabel(p)
                 )}
               </span>
 
             </div>
 
-            <div class="${outcomeClass}">
-              ${escapeHTML(
-                position.outcome || "Unknown"
-              )}
-            </div>
 
             <div>
-              ${number(position.size)}
+              ${num(
+                positionSize(p)
+              )}
               shares
             </div>
 
+
             <div>
-              ${money(position.value)}
+              ${money(
+                positionValue(p)
+              )}
             </div>
+
 
           </div>
 
         `;
 
       }
-    ).join("");
+    )
+    .join("");
+
 }
 
 
-/*
-========================================================
-YES / NO
-========================================================
-*/
+/* =========================
+   TRADER DROPDOWN
+========================= */
 
-function isNo(outcome) {
+async function toggleTrader(
+  walletAddress
+){
 
-  const value =
-    String(outcome || "")
-      .trim()
-      .toLowerCase();
-
-  return (
-    value === "no" ||
-    value === "false" ||
-    value === "0"
-  );
-}
+  const element =
+    document.getElementById(
+      "d-" +
+      CSS.escape(
+        walletAddress
+      )
+    );
 
 
-/*
-========================================================
-TIME
-========================================================
-*/
-
-function formatTime(timestamp) {
-
-  if (!timestamp)
-    return "Time unavailable";
+  if(!element)
+    return;
 
 
-  let value =
-    Number(timestamp);
+  if(
+    element.classList.contains(
+      "open"
+    )
+  ){
 
+    element.classList.remove(
+      "open"
+    );
 
-  /*
-    Handle milliseconds.
-  */
+    return;
 
-  if (value > 1000000000000) {
-    value /= 1000;
   }
 
 
-  const date =
-    new Date(value * 1000);
-
-
-  if (isNaN(date.getTime()))
-    return "Time unavailable";
-
-
-  return date.toLocaleString(
-    undefined,
-    {
-      month: "short",
-      day: "numeric",
-      hour: "numeric",
-      minute: "2-digit"
-    }
+  element.classList.add(
+    "open"
   );
-}
 
 
-/*
-========================================================
-STATUS
-========================================================
-*/
+  if(
+    state.details.has(
+      walletAddress
+    )
+  ){
 
-function setStatus(
-  message,
-  type = "loading"
-) {
+    element.innerHTML =
+      state.details.get(
+        walletAddress
+      );
 
-  statusEl.textContent =
-    message;
+    return;
 
-  statusEl.className =
-    "status " + (
-      type === "error"
-        ? "error"
-        : type === "success"
-          ? "success"
-          : ""
+  }
+
+
+  element.innerHTML =
+    `<div class="loading">
+       Loading every trade this week...
+     </div>`;
+
+
+  try{
+
+    const data =
+      await api(
+        `/trader?user=${
+          encodeURIComponent(
+            walletAddress
+          )
+        }&start=${
+          state.start
+        }&end=${
+          state.end
+        }`
+      );
+
+
+    const html =
+      renderTraderDetail(
+        data
+      );
+
+
+    state.details.set(
+      walletAddress,
+      html
     );
+
+
+    element.innerHTML =
+      html;
+
+
+  }catch(error){
+
+    element.innerHTML =
+      `
+      <div class="status bad">
+
+        Could not load trader data:
+
+        ${esc(
+          error.message
+        )}
+
+      </div>
+      `;
+
+  }
+
 }
 
 
-/*
-========================================================
-SEARCH / FILTERS
-========================================================
-*/
+/* =========================
+   TRADER DETAIL
+========================= */
 
-document
-  .getElementById("traderSearch")
+function renderTraderDetail(
+  data
+){
+
+  const total =
+    Number(data.wins || 0) +
+    Number(data.losses || 0);
+
+
+  const winRate =
+    total
+      ? (
+          Number(data.wins) /
+          total *
+          100
+        ).toFixed(1)
+      : "—";
+
+
+  const positions =
+    data.positions
+      .filter(
+        position =>
+          positionSize(position) > 0 &&
+          !isRedeemable(position)
+      );
+
+
+  const trades =
+    data.trades || [];
+
+
+  const activeHTML =
+    positions.length
+
+      ?
+
+        positions
+          .map(
+            position => {
+
+              const team =
+                teamClass(
+                  position,
+                  positions
+                );
+
+
+              return `
+
+                <div class="trade">
+
+                  <div class="trade-title">
+
+                    ${esc(
+                      position.title ||
+                      position.question ||
+                      "Unknown market"
+                    )}
+
+                  </div>
+
+
+                  <div class="trade-meta">
+
+                    <span
+                      class="
+                        outcome-pill
+                        ${team}
+                      "
+                    >
+                      ${esc(
+                        outcomeLabel(
+                          position
+                        )
+                      )}
+                    </span>
+
+                    •
+
+                    ${num(
+                      positionSize(
+                        position
+                      )
+                    )}
+                    shares
+
+                    •
+
+                    ${money(
+                      positionValue(
+                        position
+                      )
+                    )}
+
+                  </div>
+
+                </div>
+
+              `;
+
+            }
+          )
+          .join("")
+
+      :
+
+        `<div class="empty">
+           No active positions.
+         </div>`;
+
+
+  const tradesHTML =
+    trades.length
+
+      ?
+
+        trades
+          .map(
+            trade => {
+
+              const side =
+                String(
+                  trade.side ||
+                  ""
+                ).toUpperCase();
+
+
+              const title =
+                trade.title ||
+                trade.question ||
+                trade.market ||
+                "Unknown market";
+
+
+              const outcome =
+                trade.outcome ||
+                "";
+
+
+              const price =
+                trade.price;
+
+
+              const size =
+                trade.size;
+
+
+              const dollarAmount =
+                trade.usdcSize ??
+                trade.usdc_size ??
+                trade.amount;
+
+
+              return `
+
+                <div class="trade">
+
+                  <div class="trade-top">
+
+                    <div>
+
+                      <div class="trade-title">
+                        ${esc(title)}
+                      </div>
+
+
+                      <div class="trade-meta">
+
+                        ${
+                          outcome
+
+                            ?
+
+                              `
+                              <span
+                                class="
+                                  outcome-pill
+                                  ${
+                                    outcome
+                                      .toLowerCase() ===
+                                    "no"
+
+                                      ? "no-bg"
+
+                                      : "yes-bg"
+                                  }
+                                "
+                              >
+                                ${esc(
+                                  outcome
+                                )}
+                              </span>
+                              `
+
+                            :
+
+                              ""
+                        }
+
+
+                        <span
+                          class="${
+                            side === "SELL"
+
+                              ? "side-sell"
+
+                              : "side-buy"
+                          }"
+                        >
+                          ${esc(
+                            side ||
+                            "TRADE"
+                          )}
+                        </span>
+
+                      </div>
+
+                    </div>
+
+
+                    <div class="small">
+                      ${stamp(
+                        trade.timestamp
+                      )}
+                    </div>
+
+                  </div>
+
+
+                  <div class="trade-meta">
+
+                    ${
+                      side === "BUY"
+
+                        ? "<b>Bought at:</b>"
+
+                        : "<b>Price:</b>"
+                    }
+
+                    <b>
+                      ${
+                        price != null
+                          ? Number(
+                              price
+                            ).toFixed(4)
+                          : "—"
+                      }
+                    </b>
+
+                    •
+
+                    Size:
+
+                    <b>
+                      ${
+                        size != null
+                          ? num(size)
+                          : "—"
+                      }
+                    </b>
+
+                    ${
+                      dollarAmount != null
+
+                        ?
+
+                          `
+                          •
+                          $${Number(
+                            dollarAmount
+                          ).toLocaleString(
+                            "en-US",
+                            {
+                              maximumFractionDigits:2
+                            }
+                          )}
+                          `
+
+                        :
+
+                          ""
+                    }
+
+                  </div>
+
+                </div>
+
+              `;
+
+            }
+          )
+          .join("")
+
+      :
+
+        `<div class="empty">
+           No trades returned for this week.
+         </div>`;
+
+
+  const trader =
+    state.traders.find(
+      item =>
+        wallet(item) ===
+        data.wallet
+    );
+
+
+  return `
+
+    <div class="detail-title">
+
+      Trader #
+
+      ${esc(
+        trader?.rank ||
+        "—"
+      )}
+
+      —
+
+      ${esc(
+        name(
+          trader || {}
+        )
+      )}
+
+    </div>
+
+
+    <div class="detail-wallet">
+
+      ${esc(
+        data.wallet
+      )}
+
+    </div>
+
+
+    <div class="stats">
+
+
+      <div>
+
+        <div class="stat-label">
+          Weekly Wins
+        </div>
+
+        <div class="stat-value positive">
+          ${data.wins ?? "—"}
+        </div>
+
+      </div>
+
+
+      <div>
+
+        <div class="stat-label">
+          Weekly Losses
+        </div>
+
+        <div class="stat-value negative">
+          ${data.losses ?? "—"}
+        </div>
+
+      </div>
+
+
+      <div>
+
+        <div class="stat-label">
+          Win Rate
+        </div>
+
+        <div class="stat-value">
+          ${
+            winRate === "—"
+              ? "—"
+              : winRate + "%"
+          }
+        </div>
+
+      </div>
+
+
+      <div>
+
+        <div class="stat-label">
+          Active Positions
+        </div>
+
+        <div class="stat-value">
+          ${positions.length}
+        </div>
+
+      </div>
+
+
+      <div>
+
+        <div class="stat-label">
+          Trades This Week
+        </div>
+
+        <div class="stat-value">
+          ${trades.length}
+        </div>
+
+      </div>
+
+
+    </div>
+
+
+    <div>
+
+      <b>
+        Active Positions
+      </b>
+
+      ${activeHTML}
+
+    </div>
+
+
+    <div style="margin-top:18px">
+
+      <b>
+        Every Trade This Week
+      </b>
+
+      ${tradesHTML}
+
+    </div>
+
+  `;
+
+}
+
+
+/* =========================
+   SCAN
+========================= */
+
+async function scan(){
+
+  const button =
+    $("scan");
+
+  button.disabled =
+    true;
+
+
+  state.traders = [];
+
+  state.winloss.clear();
+
+  state.positions.clear();
+
+  state.markets.clear();
+
+  state.details.clear();
+
+
+  renderTraders();
+
+  renderMarkets();
+
+
+  state.end =
+    Math.floor(
+      Date.now() / 1000
+    );
+
+
+  state.start =
+    state.end -
+    7 * 86400;
+
+
+  try{
+
+    /*
+      STEP 1
+      EXACTLY 100
+    */
+
+    setStatus(
+      "Loading exactly 100 weekly traders..."
+    );
+
+
+    const top =
+      await api(
+        "/top100"
+      );
+
+
+    if(
+      !Array.isArray(top) ||
+      top.length < 100
+    ){
+
+      throw new Error(
+        `Leaderboard returned ${
+          Array.isArray(top)
+            ? top.length
+            : 0
+        } traders; expected 100.`
+      );
+
+    }
+
+
+    state.traders =
+      top
+        .slice(0,100)
+        .map(
+          (trader,index) => ({
+            ...trader,
+
+            rank:
+              Number(
+                trader.rank
+              ) ||
+              index + 1
+          })
+        );
+
+
+    renderTraders();
+
+
+    /*
+      STEP 2
+      ACTIVE POSITIONS
+
+      10 wallets per request.
+      The Worker handles those 10
+      upstream requests concurrently.
+    */
+
+    const wallets =
+      state.traders
+        .map(wallet)
+        .filter(Boolean);
+
+
+    const batches = [];
+
+
+    for(
+      let i=0;
+      i<wallets.length;
+      i+=10
+    ){
+
+      batches.push(
+        wallets.slice(
+          i,
+          i+10
+        )
+      );
+
+    }
+
+
+    let completed =
+      0;
+
+
+    setStatus(
+      "Scanning active positions: 0 / 100 wallets..."
+    );
+
+
+    for(
+      const batch of batches
+    ){
+
+      const rows =
+        await api(
+          "/batch-positions?wallets=" +
+          encodeURIComponent(
+            batch.join(",")
+          )
+        );
+
+
+      addPositions(
+        rows
+      );
+
+
+      completed +=
+        batch.length;
+
+
+      renderMarkets();
+
+
+      setStatus(
+        `Scanning active positions: ${
+          completed
+        } / 100 wallets...`
+      );
+
+    }
+
+
+    /*
+      STEP 3
+      WEEKLY WIN / LOSS
+    */
+
+    setStatus(
+      "Loading weekly win/loss records..."
+    );
+
+
+    completed = 0;
+
+
+    for(
+      const batch of batches
+    ){
+
+      const rows =
+        await api(
+          `/batch-winloss?wallets=${
+            encodeURIComponent(
+              batch.join(",")
+            )
+          }&start=${
+            state.start
+          }&end=${
+            state.end
+          }`
+        );
+
+
+      for(
+        const record of rows
+      ){
+
+        state.winloss.set(
+          record.wallet,
+          record
+        );
+
+      }
+
+
+      completed +=
+        batch.length;
+
+
+      renderTraders();
+
+
+      setStatus(
+        `Loading win/loss records: ${
+          completed
+        } / 100 wallets...`
+      );
+
+    }
+
+
+    renderTraders();
+
+    renderMarkets();
+
+
+    setStatus(
+      `Done — ${
+        state.traders.length
+      } traders, ${
+        state.markets.size
+      } active markets, weekly win/loss loaded.`,
+      "good"
+    );
+
+
+  }catch(error){
+
+    setStatus(
+      "Scan failed: " +
+      error.message,
+      "bad"
+    );
+
+  }finally{
+
+    button.disabled =
+      false;
+
+  }
+
+}
+
+
+/* =========================
+   EVENTS
+========================= */
+
+$("scan")
+  .addEventListener(
+    "click",
+    scan
+  );
+
+
+$("traderSearch")
   .addEventListener(
     "input",
     renderTraders
   );
 
 
-document
-  .getElementById("marketSearch")
+$("marketSearch")
   .addEventListener(
     "input",
     renderMarkets
   );
 
 
-document
-  .getElementById("marketFilter")
+$("marketFilter")
   .addEventListener(
     "change",
     renderMarkets
   );
 
 
-document
-  .getElementById("scanButton")
-  .addEventListener(
-    "click",
-    scanTop100
-  );
+/* AUTO SCAN */
 
-
-/*
-========================================================
-AUTO SCAN
-========================================================
-*/
-
-scanTop100();
+scan();
 
 </script>
 
