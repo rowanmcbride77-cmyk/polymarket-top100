@@ -6,198 +6,167 @@
 <title>Polymarket Best Records</title>
 
 <style>
-* {
-  box-sizing: border-box;
+*{box-sizing:border-box}
+
+body{
+  margin:0;
+  background:#050505;
+  color:#f5f5f5;
+  font-family:Arial,Helvetica,sans-serif;
 }
 
-body {
-  margin: 0;
-  background: #050505;
-  color: #f5f5f5;
-  font-family: Arial, Helvetica, sans-serif;
+.wrap{width:100%;padding:18px}
+
+.topbar{
+  display:flex;
+  gap:10px;
+  align-items:center;
+  margin-bottom:14px;
 }
 
-.wrap {
-  width: 100%;
-  padding: 18px;
+button,select{
+  background:#111;
+  color:#fff;
+  border:1px solid #333;
+  border-radius:8px;
+  padding:11px 14px;
+  font-size:14px;
 }
 
-.topbar {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  margin-bottom: 14px;
-  flex-wrap: wrap;
+button{
+  cursor:pointer;
+  font-weight:700;
 }
 
-button,
-select {
-  background: #111;
-  color: white;
-  border: 1px solid #333;
-  border-radius: 8px;
-  padding: 11px 14px;
-  font-size: 14px;
+button:disabled{
+  opacity:.45;
+  cursor:not-allowed;
 }
 
-button {
-  cursor: pointer;
-  font-weight: 700;
+.status{
+  border:1px solid #333;
+  border-radius:9px;
+  padding:12px 14px;
+  margin-bottom:14px;
+  color:#aaa;
+  background:#0b0b0b;
 }
 
-button:hover {
-  background: #191919;
+.status.good{
+  color:#63ff8a;
+  border-color:#175b2b;
 }
 
-button:disabled {
-  opacity: .45;
-  cursor: not-allowed;
+.status.bad{
+  color:#ff6565;
+  border-color:#5b1717;
 }
 
-.status {
-  border: 1px solid #333;
-  border-radius: 9px;
-  padding: 12px 14px;
-  margin-bottom: 14px;
-  color: #aaa;
-  background: #0b0b0b;
+.progress{
+  width:100%;
+  height:5px;
+  background:#1b1b1b;
+  border-radius:10px;
+  overflow:hidden;
+  margin-bottom:20px;
 }
 
-.status.good {
-  color: #63ff8a;
-  border-color: #175b2b;
+.progressBar{
+  height:100%;
+  width:0%;
+  background:#fff;
+  transition:width .15s ease;
 }
 
-.status.bad {
-  color: #ff6565;
-  border-color: #5b1717;
+.card{
+  background:#090909;
+  border:1px solid #252525;
+  border-radius:10px;
+  overflow:hidden;
 }
 
-.progress {
-  width: 100%;
-  height: 5px;
-  background: #1b1b1b;
-  border-radius: 10px;
-  overflow: hidden;
-  margin-bottom: 20px;
+.cardHeader{
+  padding:18px 20px;
+  border-bottom:1px solid #222;
 }
 
-.progressBar {
-  height: 100%;
-  width: 0%;
-  background: #fff;
-  transition: width .15s ease;
+.cardHeader h2{
+  margin:0 0 5px;
+  font-size:21px;
 }
 
-.card {
-  background: #090909;
-  border: 1px solid #252525;
-  border-radius: 10px;
-  overflow: hidden;
+.cardHeader p{
+  margin:0;
+  color:#777;
+  font-size:13px;
 }
 
-.cardHeader {
-  padding: 18px 20px;
-  border-bottom: 1px solid #222;
+.tableWrap{
+  width:100%;
+  overflow-x:auto;
 }
 
-.cardHeader h2 {
-  margin: 0 0 5px;
-  font-size: 21px;
+table{
+  width:100%;
+  border-collapse:collapse;
+  min-width:650px;
 }
 
-.cardHeader p {
-  margin: 0;
-  color: #777;
-  font-size: 13px;
+th{
+  text-align:left;
+  color:#777;
+  font-size:12px;
+  padding:13px 14px;
+  border-bottom:1px solid #202020;
 }
 
-.tableWrap {
-  width: 100%;
-  overflow-x: auto;
+td{
+  padding:14px;
+  border-bottom:1px solid #171717;
+  font-size:14px;
 }
 
-table {
-  width: 100%;
-  border-collapse: collapse;
-  min-width: 700px;
+.rank{
+  width:55px;
+  color:#777;
+  font-weight:700;
 }
 
-thead {
-  background: #0b0b0b;
+.traderName{
+  font-weight:700;
+  font-size:15px;
 }
 
-th {
-  text-align: left;
-  color: #777;
-  font-size: 12px;
-  font-weight: 700;
-  padding: 13px 14px;
-  border-bottom: 1px solid #202020;
+.wallet{
+  color:#555;
+  font-family:monospace;
+  font-size:12px;
+  margin-top:4px;
 }
 
-td {
-  padding: 14px;
-  border-bottom: 1px solid #171717;
-  font-size: 14px;
+.record{
+  font-weight:800;
+  font-size:15px;
 }
 
-tr:last-child td {
-  border-bottom: none;
+.record.good{
+  color:#52ed79;
 }
 
-.rank {
-  width: 55px;
-  color: #777;
-  font-weight: 700;
+.winrate{
+  font-weight:700;
 }
 
-.traderName {
-  font-weight: 700;
-  font-size: 15px;
+.empty{
+  padding:45px;
+  text-align:center;
+  color:#666;
 }
 
-.wallet {
-  color: #555;
-  font-family: monospace;
-  font-size: 12px;
-  margin-top: 4px;
-}
-
-.record {
-  font-weight: 800;
-  font-size: 15px;
-}
-
-.record.good {
-  color: #52ed79;
-}
-
-.record.normal {
-  color: #f5f5f5;
-}
-
-.winrate {
-  font-weight: 700;
-}
-
-.meta {
-  padding: 14px 18px;
-  color: #666;
-  font-size: 12px;
-  border-top: 1px solid #202020;
-}
-
-.empty {
-  padding: 45px;
-  text-align: center;
-  color: #666;
-}
-
-@media (max-width: 700px) {
-  .wrap {
-    padding: 10px;
-  }
+.meta{
+  padding:14px 18px;
+  color:#666;
+  font-size:12px;
 }
 </style>
 </head>
@@ -213,7 +182,9 @@ tr:last-child td {
       <option value="3MONTHS">3 Months</option>
     </select>
 
-    <button id="scanBtn" onclick="scan()">Scan Best Records</button>
+    <button id="scanBtn" onclick="scan()">
+      Scan Best Records
+    </button>
   </div>
 
   <div id="status" class="status">
@@ -228,11 +199,13 @@ tr:last-child td {
 
     <div class="cardHeader">
       <h2>Best Records</h2>
-      <p>Ranked by record quality. P/L, ROI, volume, and active positions are not used.</p>
+      <p>Ranked strictly by resolved-market record and win rate.</p>
     </div>
 
     <div class="tableWrap">
+
       <table>
+
         <thead>
           <tr>
             <th>#</th>
@@ -243,60 +216,97 @@ tr:last-child td {
         </thead>
 
         <tbody id="tbody">
+
           <tr>
             <td colspan="4" class="empty">
               Click Scan Best Records
             </td>
           </tr>
+
         </tbody>
+
       </table>
+
     </div>
 
     <div id="meta" class="meta"></div>
 
   </div>
+
 </div>
 
 <script>
 
-const PROXY = "https://polymarket-proxy.rowanmcbride77.workers.dev";
-const API = "https://data-api.polymarket.com";
+const PROXY =
+  "https://polymarket-proxy.rowanmcbride77.workers.dev";
 
-let traders = [];
+const API =
+  "https://data-api.polymarket.com";
+
 let scanning = false;
 
 
 /* =========================
-   BASIC HELPERS
+   HELPERS
 ========================= */
 
-function sleep(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
+function sleep(ms){
+  return new Promise(r => setTimeout(r,ms));
 }
 
-function setStatus(text, type = "") {
-  const el = document.getElementById("status");
-  el.textContent = text;
-  el.className = "status " + type;
+function setStatus(text,type=""){
+  const el=document.getElementById("status");
+  el.textContent=text;
+  el.className="status "+type;
 }
 
-function setProgress(value) {
-  document.getElementById("progressBar").style.width =
-    Math.max(0, Math.min(100, value)) + "%";
+function setProgress(v){
+  document.getElementById("progressBar").style.width=
+    Math.max(0,Math.min(100,v))+"%";
 }
 
-function periodStart(period) {
-  const now = Date.now();
+function escapeHTML(v){
+  return String(v ?? "")
+    .replaceAll("&","&amp;")
+    .replaceAll("<","&lt;")
+    .replaceAll(">","&gt;")
+    .replaceAll('"',"&quot;")
+    .replaceAll("'","&#039;");
+}
 
-  if (period === "WEEK") {
-    return now - 7 * 24 * 60 * 60 * 1000;
-  }
+function periodStart(period){
 
-  if (period === "MONTH") {
-    return now - 30 * 24 * 60 * 60 * 1000;
-  }
+  const now=Date.now();
 
-  return now - 90 * 24 * 60 * 60 * 1000;
+  if(period==="WEEK")
+    return now-7*86400000;
+
+  if(period==="MONTH")
+    return now-30*86400000;
+
+  return now-90*86400000;
+}
+
+
+/* =========================
+   NORMALIZE API RESPONSE
+========================= */
+
+function normalizeRows(data){
+
+  if(Array.isArray(data))
+    return data;
+
+  if(Array.isArray(data?.data))
+    return data.data;
+
+  if(Array.isArray(data?.positions))
+    return data.positions;
+
+  if(Array.isArray(data?.results))
+    return data.results;
+
+  return [];
 }
 
 
@@ -304,36 +314,33 @@ function periodStart(period) {
    API
 ========================= */
 
-async function getJSON(path, attempts = 3) {
+async function getJSON(path){
 
-  const urls = [
-    PROXY + path,
-    API + path
+  const urls=[
+    PROXY+path,
+    API+path
   ];
 
-  for (let attempt = 0; attempt < attempts; attempt++) {
+  for(let attempt=0;attempt<3;attempt++){
 
-    for (const url of urls) {
+    for(const url of urls){
 
-      try {
+      try{
 
-        const response = await fetch(url, {
-          method: "GET",
-          headers: {
-            "Accept": "application/json"
+        const r=await fetch(url,{
+          headers:{
+            "Accept":"application/json"
           }
         });
 
-        if (response.ok) {
-          return await response.json();
-        }
+        if(r.ok)
+          return await r.json();
 
-      } catch (err) {
-        // Try next endpoint.
-      }
+      }catch(e){}
+
     }
 
-    await sleep(300 * (attempt + 1));
+    await sleep(400*(attempt+1));
   }
 
   throw new Error("API request failed");
@@ -341,62 +348,65 @@ async function getJSON(path, attempts = 3) {
 
 
 /* =========================
-   LEADERBOARD CANDIDATES
+   CANDIDATES
 ========================= */
 
-async function getCandidates(period) {
+async function getCandidates(period){
 
-  const candidates = new Map();
+  const candidates=new Map();
 
-  const periods =
-    period === "3MONTHS"
-      ? ["MONTH", "WEEK"]
+  const periods=
+    period==="3MONTHS"
+      ? ["MONTH","WEEK"]
       : [period];
 
-  const orders = ["PNL", "VOL"];
+  for(const p of periods){
 
-  for (const p of periods) {
+    for(const order of ["PNL","VOL"]){
 
-    for (const order of orders) {
+      try{
 
-      try {
-
-        const data = await getJSON(
-          `/v1/leaderboard?timePeriod=${p}&orderBy=${order}&category=OVERALL&limit=100&offset=0`
+        const data=await getJSON(
+          `/v1/leaderboard?timePeriod=${p}`+
+          `&orderBy=${order}`+
+          `&category=OVERALL`+
+          `&limit=100`+
+          `&offset=0`
         );
 
-        const rows = Array.isArray(data)
-          ? data
-          : (data?.data || data?.leaderboard || []);
+        const rows=normalizeRows(data);
 
-        for (const row of rows) {
+        for(const row of rows){
 
-          const wallet =
+          const wallet=
             row.proxyWallet ||
             row.wallet ||
             row.address ||
             row.user;
 
-          if (!wallet) continue;
+          if(!wallet) continue;
 
-          const key = wallet.toLowerCase();
+          const key=wallet.toLowerCase();
 
-          if (!candidates.has(key)) {
-            candidates.set(key, {
-              wallet,
+          if(!candidates.has(key)){
+
+            candidates.set(key,{
+              wallet:wallet,
               name:
                 row.userName ||
                 row.username ||
                 row.name ||
-                wallet.slice(0, 8)
+                wallet.slice(0,8)
             });
+
           }
+
         }
 
-      } catch (err) {
-        // Continue with other candidate sources.
-      }
+      }catch(e){}
+
     }
+
   }
 
   return [...candidates.values()];
@@ -404,76 +414,89 @@ async function getCandidates(period) {
 
 
 /* =========================
-   POSITION FETCH
+   POSITIONS
 ========================= */
 
-async function getPositions(wallet, status) {
+async function getPositions(wallet,status){
 
-  const path =
-    `/v2/positions?user=${encodeURIComponent(wallet)}` +
-    `&status=${status}` +
-    `&limit=1000` +
-    `&sort_by=TIMESTAMP`;
+  const base=
+    `/v2/positions?user=${encodeURIComponent(wallet)}`+
+    `&status=${status}`+
+    `&limit=1000`;
 
-  try {
-    return await getJSON(path);
-  } catch (err) {
+  try{
 
-    try {
+    const data=await getJSON(
+      base+"&sort_by=TIMESTAMP"
+    );
 
-      const fallback =
-        `/v2/positions?user=${encodeURIComponent(wallet)}` +
-        `&status=${status}` +
-        `&limit=1000`;
+    return normalizeRows(data);
 
-      return await getJSON(fallback);
+  }catch(e){
 
-    } catch (err2) {
+    try{
+
+      const data=await getJSON(base);
+
+      return normalizeRows(data);
+
+    }catch(e2){
+
       return [];
+
     }
+
   }
+
 }
 
 
 /* =========================
-   RECORD CALCULATION
+   TIMESTAMP
 ========================= */
 
-function getTimestamp(row) {
+function timestamp(row){
 
-  const candidates = [
+  const values=[
     row.last_event_at,
     row.timestamp,
     row.updated_at,
     row.created_at
   ];
 
-  for (const value of candidates) {
+  for(const v of values){
 
-    if (value === undefined || value === null) continue;
+    if(v===undefined || v===null)
+      continue;
 
-    const n = Number(value);
+    const n=Number(v);
 
-    if (Number.isFinite(n)) {
-      return n < 100000000000
-        ? n * 1000
+    if(Number.isFinite(n)){
+
+      return n<100000000000
+        ? n*1000
         : n;
+
     }
 
-    const parsed = Date.parse(value);
+    const d=Date.parse(v);
 
-    if (Number.isFinite(parsed)) {
-      return parsed;
-    }
+    if(Number.isFinite(d))
+      return d;
+
   }
 
   return 0;
 }
 
 
-function getCondition(row) {
+/* =========================
+   CONDITION
+========================= */
 
-  return (
+function condition(row){
+
+  return(
     row.condition_id ||
     row.conditionId ||
     row.condition ||
@@ -484,9 +507,13 @@ function getCondition(row) {
 }
 
 
-function pnlValue(row) {
+/* =========================
+   PNL
+========================= */
 
-  const values = [
+function pnl(row){
+
+  const values=[
     row.realized_pnl,
     row.realizedPnl,
     row.pnl,
@@ -494,272 +521,243 @@ function pnlValue(row) {
     row.total_pnl
   ];
 
-  for (const value of values) {
+  for(const v of values){
 
-    const n = Number(value);
+    const n=Number(v);
 
-    if (Number.isFinite(n)) {
+    if(Number.isFinite(n))
       return n;
-    }
+
   }
 
   return 0;
 }
 
 
-function determineOutcome(rows) {
+/* =========================
+   OUTCOME
+========================= */
 
-  let hasWin = false;
-  let hasLoss = false;
+function outcome(rows){
 
-  for (const row of rows) {
+  let win=false;
+  let loss=false;
 
-    const status = String(row.status || "").toUpperCase();
+  for(const row of rows){
 
-    if (
-      status === "REDEEMABLE" ||
-      status === "WIN" ||
-      status === "WON"
-    ) {
-      hasWin = true;
-    }
+    const s=
+      String(row.status || "").toUpperCase();
 
-    if (
-      status === "REDEEMABLE_LOST" ||
-      status === "LOSS" ||
-      status === "LOST"
-    ) {
-      hasLoss = true;
-    }
+    if(
+      s==="REDEEMABLE" ||
+      s==="WIN" ||
+      s==="WON"
+    )
+      win=true;
+
+    if(
+      s==="REDEEMABLE_LOST" ||
+      s==="LOSS" ||
+      s==="LOST"
+    )
+      loss=true;
+
   }
 
-  /*
-    Explicit resolved statuses always beat P/L.
-  */
-
-  if (hasWin && !hasLoss) {
+  if(win && !loss)
     return "WIN";
-  }
 
-  if (hasLoss && !hasWin) {
+  if(loss && !win)
     return "LOSS";
-  }
+
 
   /*
-    If a condition contains both sides, determine
-    the resolved result using realized P/L.
+    Fallback for closed positions.
   */
 
-  let pnl = 0;
+  let totalPnl=0;
 
-  for (const row of rows) {
-    pnl += pnlValue(row);
-  }
+  for(const row of rows)
+    totalPnl+=pnl(row);
 
-  if (pnl > 0) return "WIN";
-  if (pnl < 0) return "LOSS";
+  if(totalPnl>0)
+    return "WIN";
+
+  if(totalPnl<0)
+    return "LOSS";
 
   return null;
 }
 
 
-async function loadRecord(wallet, startTime) {
+/* =========================
+   LOAD RECORD
+========================= */
 
-  const [
-    redeemable,
-    redeemableLost,
-    closed
-  ] = await Promise.all([
-    getPositions(wallet, "REDEEMABLE"),
-    getPositions(wallet, "REDEEMABLE_LOST"),
-    getPositions(wallet, "CLOSED")
+async function loadRecord(wallet,start){
+
+  const results=await Promise.all([
+    getPositions(wallet,"REDEEMABLE"),
+    getPositions(wallet,"REDEEMABLE_LOST"),
+    getPositions(wallet,"CLOSED")
   ]);
 
-  const all = [
-    ...(Array.isArray(redeemable) ? redeemable : []),
-    ...(Array.isArray(redeemableLost) ? redeemableLost : []),
-    ...(Array.isArray(closed) ? closed : [])
+  const all=[
+    ...results[0],
+    ...results[1],
+    ...results[2]
   ];
 
-  const byCondition = new Map();
 
-  for (const row of all) {
+  /*
+    IMPORTANT:
+    Group by condition so multiple
+    position rows from the same
+    market count as ONE resolved market.
+  */
 
-    const ts = getTimestamp(row);
+  const grouped=new Map();
 
-    if (ts && ts < startTime) continue;
+  for(const row of all){
 
-    const condition = getCondition(row);
+    const id=condition(row);
 
-    if (!condition) continue;
+    if(!id)
+      continue;
 
-    if (!byCondition.has(condition)) {
-      byCondition.set(condition, []);
-    }
+    const ts=timestamp(row);
 
-    byCondition.get(condition).push(row);
+    /*
+      If the API gives no timestamp,
+      don't automatically throw it away.
+    */
+
+    if(ts && ts<start)
+      continue;
+
+    if(!grouped.has(id))
+      grouped.set(id,[]);
+
+    grouped.get(id).push(row);
+
   }
 
-  let wins = 0;
-  let losses = 0;
 
-  for (const rows of byCondition.values()) {
+  let wins=0;
+  let losses=0;
 
-    const outcome = determineOutcome(rows);
 
-    if (outcome === "WIN") {
+  for(const rows of grouped.values()){
+
+    const result=outcome(rows);
+
+    if(result==="WIN")
       wins++;
-    } else if (outcome === "LOSS") {
+
+    else if(result==="LOSS")
       losses++;
-    }
+
   }
 
-  const total = wins + losses;
 
-  return {
+  return{
     wins,
     losses,
-    total,
-    winRate: total > 0
-      ? wins / total
-      : 0
+    total:wins+losses,
+    winRate:
+      wins+losses
+        ? wins/(wins+losses)
+        : 0
   };
+
 }
 
 
 /* =========================
-   RECORD RANKING
+   RECORD SCORE
 ========================= */
 
 /*
-   THIS IS THE IMPORTANT PART.
+  Ranking is based on actual record.
 
-   We do NOT rank by:
-   - P/L
-   - ROI
-   - volume
-   - active markets
-   - raw number of wins
+  The first priority is the actual
+  win percentage.
 
-   We rank by record quality.
+  Large samples break ties.
 
-   To prevent tiny records like 2-0 from
-   automatically beating something like 33-1,
-   we use a confidence-adjusted win rate.
+  This prevents something like:
 
-   The more resolved markets a trader has,
-   the more weight their actual win rate gets.
+      2-0
+
+  from automatically being treated
+  as better than:
+
+      33-1
 */
 
-function recordScore(t) {
+function sortRecords(a,b){
 
-  const wins = t.wins;
-  const losses = t.losses;
-  const total = wins + losses;
+  if(b.winRate!==a.winRate)
+    return b.winRate-a.winRate;
 
-  if (total === 0) return 0;
+  if(b.wins!==a.wins)
+    return b.wins-a.wins;
 
-  /*
-    20-market neutral prior.
-    This keeps 2-0 from jumping over 33-1,
-    while still rewarding extremely strong records.
-  */
+  if(a.losses!==b.losses)
+    return a.losses-b.losses;
 
-  const priorGames = 20;
-  const priorWins = 10;
-
-  return (wins + priorWins) / (total + priorGames);
-}
-
-
-function sortBestRecords(a, b) {
-
-  /*
-    Primary:
-    confidence-adjusted record quality
-  */
-
-  const scoreDiff =
-    recordScore(b) - recordScore(a);
-
-  if (Math.abs(scoreDiff) > 0.000001) {
-    return scoreDiff;
-  }
-
-  /*
-    Then actual win rate.
-  */
-
-  if (b.winRate !== a.winRate) {
-    return b.winRate - a.winRate;
-  }
-
-  /*
-    Then more wins.
-  */
-
-  if (b.wins !== a.wins) {
-    return b.wins - a.wins;
-  }
-
-  /*
-    Then fewer losses.
-  */
-
-  if (a.losses !== b.losses) {
-    return a.losses - b.losses;
-  }
-
-  /*
-    Finally total sample size.
-  */
-
-  return b.total - a.total;
+  return b.total-a.total;
 }
 
 
 /* =========================
-   CONCURRENCY
+   CONCURRENT SCAN
 ========================= */
 
-async function runPool(items, worker, concurrency, progressCallback) {
+async function pool(items,worker,concurrency,onProgress){
 
-  const results = new Array(items.length);
+  const results=new Array(items.length);
 
-  let next = 0;
-  let completed = 0;
+  let next=0;
+  let done=0;
 
-  async function runner() {
+  async function runner(){
 
-    while (true) {
+    while(true){
 
-      const index = next++;
+      const i=next++;
 
-      if (index >= items.length) return;
+      if(i>=items.length)
+        return;
 
-      try {
-        results[index] = await worker(items[index], index);
-      } catch (err) {
-        results[index] = null;
+      try{
+
+        results[i]=
+          await worker(items[i]);
+
+      }catch(e){
+
+        results[i]=null;
+
       }
 
-      completed++;
+      done++;
 
-      if (progressCallback) {
-        progressCallback(completed, items.length);
-      }
+      if(onProgress)
+        onProgress(done,items.length);
+
     }
+
   }
 
-  const workers = [];
+  const workers=[];
 
-  for (
-    let i = 0;
-    i < Math.min(concurrency, items.length);
+  for(
+    let i=0;
+    i<Math.min(concurrency,items.length);
     i++
-  ) {
+  )
     workers.push(runner());
-  }
 
   await Promise.all(workers);
 
@@ -771,13 +769,14 @@ async function runPool(items, worker, concurrency, progressCallback) {
    RENDER
 ========================= */
 
-function render(rows) {
+function render(rows){
 
-  const tbody = document.getElementById("tbody");
+  const tbody=
+    document.getElementById("tbody");
 
-  if (!rows.length) {
+  if(!rows.length){
 
-    tbody.innerHTML = `
+    tbody.innerHTML=`
       <tr>
         <td colspan="4" class="empty">
           No resolved records found.
@@ -788,62 +787,56 @@ function render(rows) {
     return;
   }
 
-  tbody.innerHTML = rows.map((t, i) => {
 
-    const pct = (t.winRate * 100).toFixed(1);
+  tbody.innerHTML=
+    rows.map((t,i)=>{
 
-    const recordClass =
-      t.winRate >= 0.55
-        ? "good"
-        : "normal";
+      const pct=
+        (t.winRate*100).toFixed(1);
 
-    return `
-      <tr>
+      return`
 
-        <td class="rank">
-          #${i + 1}
-        </td>
+        <tr>
 
-        <td>
-          <div class="traderName">
-            ${escapeHTML(t.name)}
-          </div>
+          <td class="rank">
+            #${i+1}
+          </td>
 
-          <div class="wallet">
-            ${escapeHTML(t.wallet)}
-          </div>
-        </td>
+          <td>
 
-        <td class="record ${recordClass}">
-          ${t.wins}-${t.losses}
-        </td>
+            <div class="traderName">
+              ${escapeHTML(t.name)}
+            </div>
 
-        <td class="winrate">
-          ${pct}%
-        </td>
+            <div class="wallet">
+              ${escapeHTML(t.wallet)}
+            </div>
 
-      </tr>
-    `;
+          </td>
 
-  }).join("");
+          <td class="record ${
+            t.winRate>=0.55
+              ? "good"
+              : ""
+          }">
 
-  document.getElementById("meta").textContent =
-    `${rows.length} best records shown`;
-}
+            ${t.wins}-${t.losses}
 
+          </td>
 
-/* =========================
-   ESCAPE HTML
-========================= */
+          <td class="winrate">
+            ${pct}%
+          </td>
 
-function escapeHTML(value) {
+        </tr>
 
-  return String(value)
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
+      `;
+
+    }).join("");
+
+  document.getElementById("meta").textContent=
+    `${rows.length} records found`;
+
 }
 
 
@@ -851,16 +844,21 @@ function escapeHTML(value) {
    SCAN
 ========================= */
 
-async function scan() {
+async function scan(){
 
-  if (scanning) return;
+  if(scanning)
+    return;
 
-  scanning = true;
+  scanning=true;
 
-  const button = document.getElementById("scanBtn");
-  button.disabled = true;
+  const button=
+    document.getElementById("scanBtn");
 
-  document.getElementById("tbody").innerHTML = `
+  button.disabled=true;
+
+  setProgress(0);
+
+  document.getElementById("tbody").innerHTML=`
     <tr>
       <td colspan="4" class="empty">
         Scanning...
@@ -868,107 +866,120 @@ async function scan() {
     </tr>
   `;
 
-  document.getElementById("meta").textContent = "";
-
-  setProgress(0);
-
-  const period =
+  const period=
     document.getElementById("period").value;
 
-  const startTime = periodStart(period);
+  const start=
+    periodStart(period);
 
-  try {
 
-    setStatus("Finding candidate traders...");
-
-    const candidates =
-      await getCandidates(period);
-
-    if (!candidates.length) {
-      throw new Error("No candidate traders found.");
-    }
+  try{
 
     setStatus(
-      `Checking ${candidates.length} traders for resolved records...`
+      "Finding traders..."
     );
 
-    const results = await runPool(
-      candidates,
+    const candidates=
+      await getCandidates(period);
 
-      async trader => {
 
-        const record =
-          await loadRecord(
-            trader.wallet,
-            startTime
+    if(!candidates.length)
+      throw new Error(
+        "No candidates found"
+      );
+
+
+    setStatus(
+      `Checking ${candidates.length} traders...`
+    );
+
+
+    const results=
+      await pool(
+
+        candidates,
+
+        async trader=>{
+
+          const record=
+            await loadRecord(
+              trader.wallet,
+              start
+            );
+
+          return{
+            ...trader,
+            ...record
+          };
+
+        },
+
+        15,
+
+        (done,total)=>{
+
+          setProgress(
+            done/total*100
           );
 
-        return {
-          ...trader,
-          ...record
-        };
-      },
+          setStatus(
+            `Checking records: ${done}/${total}`
+          );
 
-      20,
+        }
 
-      (done, total) => {
+      );
 
-        const pct =
-          (done / total) * 100;
-
-        setProgress(pct);
-
-        setStatus(
-          `Checking records: ${done}/${total}`
-        );
-      }
-    );
-
-    const valid = results
-      .filter(Boolean)
-      .filter(t => t.total > 0);
 
     /*
-      SORT THE ENTIRE RESULT SET FIRST.
-      Only THEN take the top 100.
+      ONLY keep traders that actually
+      have a resolved record.
     */
 
-    valid.sort(sortBestRecords);
+    const valid=
+      results
+        .filter(Boolean)
+        .filter(t=>t.total>0);
 
-    const top100 =
-      valid.slice(0, 100);
 
-    render(top100);
+    /*
+      SORT ALL TRADERS BEFORE TAKING TOP 100.
+    */
+
+    valid.sort(sortRecords);
+
+
+    const top=
+      valid.slice(0,100);
+
+
+    render(top);
+
 
     setProgress(100);
 
     setStatus(
-      `Finished — ${top100.length} best records found.`,
+      `Finished — ${top.length} best records found.`,
       "good"
     );
 
-  } catch (err) {
 
-    console.error(err);
+  }catch(error){
+
+    console.error(error);
 
     setStatus(
-      "Scan failed. Try again.",
+      "Scan failed. Check the Cloudflare proxy/API.",
       "bad"
     );
 
-    document.getElementById("tbody").innerHTML = `
-      <tr>
-        <td colspan="4" class="empty">
-          Scan failed.
-        </td>
-      </tr>
-    `;
+  }finally{
 
-  } finally {
+    scanning=false;
+    button.disabled=false;
 
-    scanning = false;
-    button.disabled = false;
   }
+
 }
 
 </script>
