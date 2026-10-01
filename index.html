@@ -15,12 +15,16 @@ body{
   font-family:Arial,Helvetica,sans-serif;
 }
 
-.wrap{width:100%;padding:18px}
+.wrap{
+  width:100%;
+  padding:18px;
+}
 
 .topbar{
   display:flex;
   gap:10px;
   align-items:center;
+  flex-wrap:wrap;
   margin-bottom:14px;
 }
 
@@ -36,6 +40,10 @@ button,select{
 button{
   cursor:pointer;
   font-weight:700;
+}
+
+button:hover{
+  background:#191919;
 }
 
 button:disabled{
@@ -83,6 +91,7 @@ button:disabled{
   border:1px solid #252525;
   border-radius:10px;
   overflow:hidden;
+  margin-bottom:18px;
 }
 
 .cardHeader{
@@ -109,7 +118,7 @@ button:disabled{
 table{
   width:100%;
   border-collapse:collapse;
-  min-width:650px;
+  min-width:760px;
 }
 
 th{
@@ -124,6 +133,7 @@ td{
   padding:14px;
   border-bottom:1px solid #171717;
   font-size:14px;
+  vertical-align:top;
 }
 
 .rank{
@@ -142,6 +152,7 @@ td{
   font-family:monospace;
   font-size:12px;
   margin-top:4px;
+  word-break:break-all;
 }
 
 .record{
@@ -157,6 +168,73 @@ td{
   font-weight:700;
 }
 
+.activeCell{
+  min-width:280px;
+}
+
+details{
+  width:100%;
+}
+
+summary{
+  cursor:pointer;
+  color:#ddd;
+  font-weight:700;
+  user-select:none;
+}
+
+.activeCount{
+  color:#52ed79;
+}
+
+.marketList{
+  margin-top:10px;
+  max-height:280px;
+  overflow-y:auto;
+  padding-right:4px;
+}
+
+.marketItem{
+  background:#0d0d0d;
+  border:1px solid #242424;
+  border-radius:7px;
+  padding:9px 10px;
+  margin-bottom:7px;
+}
+
+.marketTitle{
+  color:#eee;
+  font-weight:700;
+  line-height:1.25;
+  font-size:13px;
+}
+
+.marketMeta{
+  margin-top:5px;
+  color:#888;
+  font-size:12px;
+}
+
+.sideYes{
+  color:#58e879;
+  font-weight:700;
+}
+
+.sideNo{
+  color:#ff6868;
+  font-weight:700;
+}
+
+.buyTime{
+  color:#aaa;
+}
+
+.loading{
+  color:#666;
+  font-size:12px;
+  padding:5px 0;
+}
+
 .empty{
   padding:45px;
   text-align:center;
@@ -168,6 +246,75 @@ td{
   color:#666;
   font-size:12px;
 }
+
+.sharedGrid{
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(340px,1fr));
+  gap:10px;
+  padding:15px;
+}
+
+.sharedMarket{
+  background:#0c0c0c;
+  border:1px solid #242424;
+  border-radius:9px;
+  padding:12px;
+}
+
+.sharedTitle{
+  font-size:14px;
+  font-weight:800;
+  line-height:1.3;
+  margin-bottom:10px;
+}
+
+.sharedTraders{
+  display:flex;
+  flex-direction:column;
+  gap:7px;
+}
+
+.sharedTrader{
+  background:#111;
+  border-radius:6px;
+  padding:8px 9px;
+}
+
+.sharedTraderName{
+  font-weight:700;
+  font-size:13px;
+}
+
+.sharedTraderWallet{
+  color:#555;
+  font-family:monospace;
+  font-size:10px;
+  margin-top:3px;
+}
+
+.sharedPosition{
+  margin-top:4px;
+  font-size:12px;
+}
+
+.yes{
+  color:#58e879;
+}
+
+.no{
+  color:#ff6868;
+}
+
+@media(max-width:700px){
+  .wrap{
+    padding:10px;
+  }
+
+  .sharedGrid{
+    grid-template-columns:1fr;
+    padding:10px;
+  }
+}
 </style>
 </head>
 
@@ -176,6 +323,7 @@ td{
 <div class="wrap">
 
   <div class="topbar">
+
     <select id="period">
       <option value="WEEK">Week</option>
       <option value="MONTH">Month</option>
@@ -185,6 +333,7 @@ td{
     <button id="scanBtn" onclick="scan()">
       Scan Best Records
     </button>
+
   </div>
 
   <div id="status" class="status">
@@ -195,11 +344,14 @@ td{
     <div id="progressBar" class="progressBar"></div>
   </div>
 
+
+  <!-- BEST RECORDS -->
+
   <div class="card">
 
     <div class="cardHeader">
       <h2>Best Records</h2>
-      <p>Ranked strictly by resolved-market record and win rate.</p>
+      <p>Top 100 ranked by resolved-market record. Click a trader to see active markets.</p>
     </div>
 
     <div class="tableWrap">
@@ -212,13 +364,14 @@ td{
             <th>TRADER</th>
             <th>RECORD</th>
             <th>WIN %</th>
+            <th>ACTIVE MARKETS</th>
           </tr>
         </thead>
 
         <tbody id="tbody">
 
           <tr>
-            <td colspan="4" class="empty">
+            <td colspan="5" class="empty">
               Click Scan Best Records
             </td>
           </tr>
@@ -233,7 +386,28 @@ td{
 
   </div>
 
+
+  <!-- SHARED ACTIVE MARKETS -->
+
+  <div class="card">
+
+    <div class="cardHeader">
+      <h2>Shared Active Markets</h2>
+      <p>Markets currently held by 2 or more of the Top 100 traders.</p>
+    </div>
+
+    <div id="sharedMarkets">
+
+      <div class="empty">
+        Active markets will appear here after the scan.
+      </div>
+
+    </div>
+
+  </div>
+
 </div>
+
 
 <script>
 
@@ -243,16 +417,18 @@ const PROXY =
 const API =
   "https://data-api.polymarket.com";
 
-let scanning = false;
+let scanning=false;
+let topTraders=[];
 
 
-/* =========================
+/* =========================================================
    HELPERS
-========================= */
+========================================================= */
 
 function sleep(ms){
-  return new Promise(r => setTimeout(r,ms));
+  return new Promise(r=>setTimeout(r,ms));
 }
+
 
 function setStatus(text,type=""){
   const el=document.getElementById("status");
@@ -260,10 +436,12 @@ function setStatus(text,type=""){
   el.className="status "+type;
 }
 
+
 function setProgress(v){
   document.getElementById("progressBar").style.width=
     Math.max(0,Math.min(100,v))+"%";
 }
+
 
 function escapeHTML(v){
   return String(v ?? "")
@@ -273,6 +451,7 @@ function escapeHTML(v){
     .replaceAll('"',"&quot;")
     .replaceAll("'","&#039;");
 }
+
 
 function periodStart(period){
 
@@ -288,11 +467,50 @@ function periodStart(period){
 }
 
 
-/* =========================
-   NORMALIZE API RESPONSE
-========================= */
+/* =========================================================
+   API
+========================================================= */
 
-function normalizeRows(data){
+async function getJSON(path,tries=4){
+
+  const urls=[
+    PROXY+path,
+    API+path
+  ];
+
+  for(let attempt=0;attempt<tries;attempt++){
+
+    for(const url of urls){
+
+      try{
+
+        const response=await fetch(url,{
+          method:"GET",
+          headers:{
+            "Accept":"application/json"
+          }
+        });
+
+        if(response.ok){
+          return await response.json();
+        }
+
+        if(response.status===429 || response.status===503){
+          await sleep(600*(attempt+1));
+        }
+
+      }catch(e){}
+
+    }
+
+    await sleep(500*(attempt+1));
+  }
+
+  throw new Error("API request failed");
+}
+
+
+function rowsFrom(data){
 
   if(Array.isArray(data))
     return data;
@@ -306,139 +524,147 @@ function normalizeRows(data){
   if(Array.isArray(data?.results))
     return data.results;
 
+  if(Array.isArray(data?.leaderboard))
+    return data.leaderboard;
+
   return [];
 }
 
 
-/* =========================
-   API
-========================= */
-
-async function getJSON(path){
-
-  const urls=[
-    PROXY+path,
-    API+path
-  ];
-
-  for(let attempt=0;attempt<3;attempt++){
-
-    for(const url of urls){
-
-      try{
-
-        const r=await fetch(url,{
-          headers:{
-            "Accept":"application/json"
-          }
-        });
-
-        if(r.ok)
-          return await r.json();
-
-      }catch(e){}
-
-    }
-
-    await sleep(400*(attempt+1));
-  }
-
-  throw new Error("API request failed");
-}
-
-
-/* =========================
+/* =========================================================
    CANDIDATES
-========================= */
+========================================================= */
+
+/*
+   We intentionally scan a much larger candidate pool.
+
+   Previously the scanner could end up with only ~83 valid
+   traders because it only examined a small leaderboard slice.
+
+   Now we pull multiple leaderboard pages so the final
+   Top 100 is actually selected from a large pool.
+*/
 
 async function getCandidates(period){
 
-  const candidates=new Map();
+  const map=new Map();
 
   const periods=
     period==="3MONTHS"
       ? ["MONTH","WEEK"]
       : [period];
 
+  /*
+     5 pages x 100 traders x 2 leaderboard types.
+     This gives us a much larger pool than 100.
+  */
+
+  const offsets=[
+    0,
+    100,
+    200,
+    300,
+    400
+  ];
+
   for(const p of periods){
 
     for(const order of ["PNL","VOL"]){
 
-      try{
+      for(const offset of offsets){
 
-        const data=await getJSON(
-          `/v1/leaderboard?timePeriod=${p}`+
-          `&orderBy=${order}`+
-          `&category=OVERALL`+
-          `&limit=100`+
-          `&offset=0`
-        );
+        try{
 
-        const rows=normalizeRows(data);
+          const data=await getJSON(
+            `/v1/leaderboard`+
+            `?timePeriod=${p}`+
+            `&orderBy=${order}`+
+            `&category=OVERALL`+
+            `&limit=100`+
+            `&offset=${offset}`
+          );
 
-        for(const row of rows){
+          const rows=rowsFrom(data);
 
-          const wallet=
-            row.proxyWallet ||
-            row.wallet ||
-            row.address ||
-            row.user;
+          for(const row of rows){
 
-          if(!wallet) continue;
+            const wallet=
+              row.proxyWallet ||
+              row.proxy_wallet ||
+              row.wallet ||
+              row.address ||
+              row.user;
 
-          const key=wallet.toLowerCase();
+            if(!wallet)
+              continue;
 
-          if(!candidates.has(key)){
+            const key=String(wallet).toLowerCase();
 
-            candidates.set(key,{
-              wallet:wallet,
-              name:
-                row.userName ||
-                row.username ||
-                row.name ||
-                wallet.slice(0,8)
-            });
+            if(!map.has(key)){
+
+              map.set(key,{
+                wallet:String(wallet),
+                name:
+                  row.userName ||
+                  row.username ||
+                  row.name ||
+                  row.user_name ||
+                  String(wallet).slice(0,10)
+              });
+
+            }
 
           }
 
-        }
+        }catch(e){}
 
-      }catch(e){}
+        /*
+           If a page returns fewer than 100,
+           there is no reason to keep paging
+           this particular leaderboard.
+        */
+
+      }
 
     }
 
   }
 
-  return [...candidates.values()];
+  return [...map.values()];
 }
 
 
-/* =========================
+/* =========================================================
    POSITIONS
-========================= */
+========================================================= */
 
 async function getPositions(wallet,status){
 
   const base=
-    `/v2/positions?user=${encodeURIComponent(wallet)}`+
+    `/v2/positions`+
+    `?user=${encodeURIComponent(wallet)}`+
     `&status=${status}`+
-    `&limit=1000`;
+    `&limit=1000`+
+    `&sort_by=TIMESTAMP`;
 
   try{
 
-    const data=await getJSON(
-      base+"&sort_by=TIMESTAMP"
-    );
+    const data=await getJSON(base);
 
-    return normalizeRows(data);
+    return rowsFrom(data);
 
   }catch(e){
 
     try{
 
-      const data=await getJSON(base);
+      const data=await getJSON(
+        `/v2/positions`+
+        `?user=${encodeURIComponent(wallet)}`+
+        `&status=${status}`+
+        `&limit=1000`
+      );
 
-      return normalizeRows(data);
+      return rowsFrom(data);
 
     }catch(e2){
 
@@ -447,13 +673,12 @@ async function getPositions(wallet,status){
     }
 
   }
-
 }
 
 
-/* =========================
-   TIMESTAMP
-========================= */
+/* =========================================================
+   RECORD DATA
+========================================================= */
 
 function timestamp(row){
 
@@ -471,13 +696,8 @@ function timestamp(row){
 
     const n=Number(v);
 
-    if(Number.isFinite(n)){
-
-      return n<100000000000
-        ? n*1000
-        : n;
-
-    }
+    if(Number.isFinite(n))
+      return n<100000000000 ? n*1000 : n;
 
     const d=Date.parse(v);
 
@@ -490,26 +710,19 @@ function timestamp(row){
 }
 
 
-/* =========================
-   CONDITION
-========================= */
-
 function condition(row){
 
   return(
     row.condition_id ||
     row.conditionId ||
     row.condition ||
+    row.market_id ||
     row.market ||
     row.slug ||
     ""
   );
 }
 
-
-/* =========================
-   PNL
-========================= */
 
 function pnl(row){
 
@@ -534,11 +747,7 @@ function pnl(row){
 }
 
 
-/* =========================
-   OUTCOME
-========================= */
-
-function outcome(rows){
+function determineOutcome(rows){
 
   let win=false;
   let loss=false;
@@ -552,15 +761,17 @@ function outcome(rows){
       s==="REDEEMABLE" ||
       s==="WIN" ||
       s==="WON"
-    )
+    ){
       win=true;
+    }
 
     if(
       s==="REDEEMABLE_LOST" ||
       s==="LOSS" ||
       s==="LOST"
-    )
+    ){
       loss=true;
+    }
 
   }
 
@@ -570,10 +781,6 @@ function outcome(rows){
   if(loss && !win)
     return "LOSS";
 
-
-  /*
-    Fallback for closed positions.
-  */
 
   let totalPnl=0;
 
@@ -590,33 +797,32 @@ function outcome(rows){
 }
 
 
-/* =========================
-   LOAD RECORD
-========================= */
-
 async function loadRecord(wallet,start){
 
-  const results=await Promise.all([
+  const [
+    redeemable,
+    redeemableLost,
+    closed
+  ]=await Promise.all([
+
     getPositions(wallet,"REDEEMABLE"),
+
     getPositions(wallet,"REDEEMABLE_LOST"),
+
     getPositions(wallet,"CLOSED")
+
   ]);
 
+
   const all=[
-    ...results[0],
-    ...results[1],
-    ...results[2]
+    ...redeemable,
+    ...redeemableLost,
+    ...closed
   ];
 
 
-  /*
-    IMPORTANT:
-    Group by condition so multiple
-    position rows from the same
-    market count as ONE resolved market.
-  */
-
   const grouped=new Map();
+
 
   for(const row of all){
 
@@ -626,11 +832,6 @@ async function loadRecord(wallet,start){
       continue;
 
     const ts=timestamp(row);
-
-    /*
-      If the API gives no timestamp,
-      don't automatically throw it away.
-    */
 
     if(ts && ts<start)
       continue;
@@ -649,12 +850,12 @@ async function loadRecord(wallet,start){
 
   for(const rows of grouped.values()){
 
-    const result=outcome(rows);
+    const result=determineOutcome(rows);
 
     if(result==="WIN")
       wins++;
 
-    else if(result==="LOSS")
+    if(result==="LOSS")
       losses++;
 
   }
@@ -669,122 +870,817 @@ async function loadRecord(wallet,start){
         ? wins/(wins+losses)
         : 0
   };
-
 }
 
 
-/* =========================
-   RECORD SCORE
-========================= */
+/* =========================================================
+   RECORD RANKING
+========================================================= */
 
 /*
-  Ranking is based on actual record.
+   Actual record quality first.
 
-  The first priority is the actual
-  win percentage.
+   A 50-0 beats 25-0.
+   A 33-1 beats 2-0.
+   A 518-371 is below a genuinely high-win-rate record.
+   A 1015-1314 is nowhere near the top.
 
-  Large samples break ties.
-
-  This prevents something like:
-
-      2-0
-
-  from automatically being treated
-  as better than:
-
-      33-1
+   Very tiny samples are prevented from dominating
+   the ranking by requiring enough resolved markets
+   before the pure win-rate ranking is trusted.
 */
+
+function rankingScore(t){
+
+  const total=t.total;
+
+  /*
+     10 resolved markets is the minimum sample
+     for the main ranking.
+
+     Below that, the score is intentionally
+     discounted so tiny records don't dominate.
+  */
+
+  if(total<10){
+
+    return (
+      t.winRate *
+      (total/10)
+    );
+
+  }
+
+  return t.winRate;
+}
+
 
 function sortRecords(a,b){
 
-  if(b.winRate!==a.winRate)
-    return b.winRate-a.winRate;
+  const sa=rankingScore(a);
+  const sb=rankingScore(b);
+
+  if(sb!==sa)
+    return sb-sa;
+
+  /*
+     Same quality:
+     more wins first.
+  */
 
   if(b.wins!==a.wins)
     return b.wins-a.wins;
 
+  /*
+     Then fewer losses.
+  */
+
   if(a.losses!==b.losses)
     return a.losses-b.losses;
+
+  /*
+     Then bigger sample.
+  */
 
   return b.total-a.total;
 }
 
 
-/* =========================
-   CONCURRENT SCAN
-========================= */
+/* =========================================================
+   ACTIVE POSITIONS
+========================================================= */
 
-async function pool(items,worker,concurrency,onProgress){
+function activeSize(row){
 
-  const results=new Array(items.length);
+  const values=[
+    row.current_size,
+    row.size,
+    row.currentSize,
+    row.total_size
+  ];
 
-  let next=0;
-  let done=0;
+  for(const v of values){
 
-  async function runner(){
+    const n=Number(v);
 
-    while(true){
+    if(Number.isFinite(n) && n>0)
+      return n;
 
-      const i=next++;
+  }
 
-      if(i>=items.length)
-        return;
+  return 0;
+}
 
-      try{
 
-        results[i]=
-          await worker(items[i]);
+function activeCost(row){
 
-      }catch(e){
+  const values=[
+    row.entry_cost_usdc,
+    row.total_cost_usdc,
+    row.amount,
+    row.cost
+  ];
 
-        results[i]=null;
+  for(const v of values){
+
+    const n=Number(v);
+
+    if(Number.isFinite(n) && n>0)
+      return n;
+
+  }
+
+  return 0;
+}
+
+
+function marketTitle(row){
+
+  return(
+    row.title ||
+    row.name ||
+    row.question ||
+    "Unknown market"
+  );
+}
+
+
+function marketCondition(row){
+
+  return(
+    row.condition_id ||
+    row.conditionId ||
+    row.condition ||
+    row.market_id ||
+    row.slug ||
+    ""
+  );
+}
+
+
+function marketSide(row){
+
+  return(
+    row.outcome ||
+    row.side ||
+    row.outcome_name ||
+    ""
+  );
+}
+
+
+function combineActive(rows){
+
+  const map=new Map();
+
+  for(const row of rows){
+
+    /*
+       OPEN is the superset according to the
+       current Polymarket API.
+
+       We only want the actual row status OPEN.
+       This prevents settled/redeemable positions
+       from appearing as active.
+    */
+
+    const status=
+      String(row.status || "").toUpperCase();
+
+    if(status && status!=="OPEN")
+      continue;
+
+    if(row.redeemable===true)
+      continue;
+
+    if(activeSize(row)<=0)
+      continue;
+
+    const id=marketCondition(row);
+
+    if(!id)
+      continue;
+
+    if(!map.has(id)){
+
+      map.set(id,{
+        condition:id,
+        title:marketTitle(row),
+        slug:row.slug || "",
+        positions:[]
+      });
+
+    }
+
+    const market=map.get(id);
+
+    market.positions.push({
+      outcome:marketSide(row),
+      size:activeSize(row),
+      cost:activeCost(row),
+      buyTime:null,
+      loaded:false
+    });
+
+  }
+
+
+  /*
+     Combine duplicate YES/NO rows
+     belonging to the same market.
+  */
+
+  for(const market of map.values()){
+
+    const sides=new Map();
+
+    for(const p of market.positions){
+
+      const side=
+        String(p.outcome || "Unknown");
+
+      if(!sides.has(side)){
+
+        sides.set(side,{
+          outcome:side,
+          size:0,
+          cost:0,
+          buyTime:null,
+          loaded:false
+        });
 
       }
 
-      done++;
+      const target=sides.get(side);
 
-      if(onProgress)
-        onProgress(done,items.length);
+      target.size+=p.size;
+      target.cost+=p.cost;
+
+    }
+
+    market.positions=[...sides.values()];
+
+  }
+
+
+  return [...map.values()];
+}
+
+
+async function loadActive(wallet){
+
+  /*
+     The current API returns up to 1000 rows on
+     the first page. For normal wallets that is
+     enough, and we also respect the OPEN status
+     on each row.
+  */
+
+  try{
+
+    const rows=
+      await getPositions(wallet,"OPEN");
+
+    return combineActive(rows);
+
+  }catch(e){
+
+    return [];
+
+  }
+}
+
+
+/* =========================================================
+   BUY TIME
+========================================================= */
+
+async function getBuyTime(wallet,conditionId){
+
+  if(!conditionId)
+    return null;
+
+  try{
+
+    const data=await getJSON(
+      `/v2/trades`+
+      `?user=${encodeURIComponent(wallet)}`+
+      `&condition=${encodeURIComponent(conditionId)}`+
+      `&limit=500`
+    );
+
+    const rows=rowsFrom(data);
+
+    let earliest=null;
+
+    for(const row of rows){
+
+      const side=
+        String(
+          row.side ||
+          row.type ||
+          row.action ||
+          ""
+        ).toUpperCase();
+
+      if(side && !side.includes("BUY"))
+        continue;
+
+      const values=[
+        row.timestamp,
+        row.created_at,
+        row.time
+      ];
+
+      for(const v of values){
+
+        if(v===undefined || v===null)
+          continue;
+
+        const n=Number(v);
+
+        let ts=0;
+
+        if(Number.isFinite(n))
+          ts=n<100000000000 ? n*1000 : n;
+        else
+          ts=Date.parse(v);
+
+        if(ts>0 && (earliest===null || ts<earliest))
+          earliest=ts;
+
+      }
+
+    }
+
+    return earliest;
+
+  }catch(e){
+
+    return null;
+
+  }
+
+}
+
+
+function formatTime(ts){
+
+  if(!ts)
+    return "Bought —";
+
+  return "Bought "+
+    new Date(ts).toLocaleString(
+      undefined,
+      {
+        month:"short",
+        day:"numeric",
+        hour:"numeric",
+        minute:"2-digit"
+      }
+    );
+}
+
+
+/* =========================================================
+   ACTIVE MARKET HTML
+========================================================= */
+
+function activeHTML(trader){
+
+  const markets=trader.activeMarkets || [];
+
+  if(!markets.length){
+
+    return `
+      <span style="color:#555">
+        None
+      </span>
+    `;
+
+  }
+
+
+  const id=
+    "active_"+trader.wallet
+      .replace(/[^a-zA-Z0-9]/g,"");
+
+
+  return `
+
+    <details
+      data-wallet="${escapeHTML(trader.wallet)}"
+      data-active-id="${id}"
+      ontoggle="toggleActive(this)"
+    >
+
+      <summary>
+        <span class="activeCount">
+          ${markets.length}
+        </span>
+        active market${markets.length===1?"":"s"}
+      </summary>
+
+      <div class="marketList">
+
+        ${markets.map((m,index)=>`
+
+          <div
+            class="marketItem"
+            data-market-index="${index}"
+          >
+
+            <div class="marketTitle">
+              ${escapeHTML(m.title)}
+            </div>
+
+            <div class="marketMeta">
+
+              ${m.positions.map(p=>`
+
+                <span class="${
+                  String(p.outcome).toLowerCase()==="yes"
+                    ? "sideYes"
+                    : String(p.outcome).toLowerCase()==="no"
+                      ? "sideNo"
+                      : ""
+                }">
+
+                  ${escapeHTML(p.outcome || "Unknown")}
+
+                </span>
+
+                ${p.cost>0
+                  ? " · $"+Number(p.cost).toLocaleString(
+                      undefined,
+                      {
+                        minimumFractionDigits:0,
+                        maximumFractionDigits:2
+                      }
+                    )
+                  : ""
+                }
+
+                &nbsp;
+
+                <span class="buyTime">
+                  ${formatTime(p.buyTime)}
+                </span>
+
+                <br>
+
+              `).join("")}
+
+            </div>
+
+          </div>
+
+        `).join("")}
+
+      </div>
+
+    </details>
+
+  `;
+
+}
+
+
+/* =========================================================
+   LAZY BUY TIME
+========================================================= */
+
+async function toggleActive(details){
+
+  if(!details.open)
+    return;
+
+  if(details.dataset.loaded==="yes")
+    return;
+
+  details.dataset.loaded="yes";
+
+  const wallet=
+    details.dataset.wallet;
+
+  const trader=
+    topTraders.find(
+      t=>t.wallet.toLowerCase()===wallet.toLowerCase()
+    );
+
+  if(!trader)
+    return;
+
+  const markets=
+    trader.activeMarkets || [];
+
+  const list=
+    details.querySelector(".marketList");
+
+  if(!list)
+    return;
+
+
+  list.innerHTML=`
+
+    <div class="loading">
+      Loading buy times...
+    </div>
+
+  `;
+
+
+  /*
+     Load only the markets the user actually opened.
+     This keeps the main scan much faster.
+  */
+
+  for(const market of markets){
+
+    const time=
+      await getBuyTime(
+        trader.wallet,
+        market.condition
+      );
+
+    for(const position of market.positions)
+      position.buyTime=time;
+
+  }
+
+
+  /*
+     Re-render only this dropdown.
+  */
+
+  list.innerHTML=
+    markets.map((m,index)=>`
+
+      <div class="marketItem">
+
+        <div class="marketTitle">
+          ${escapeHTML(m.title)}
+        </div>
+
+        <div class="marketMeta">
+
+          ${m.positions.map(p=>`
+
+            <span class="${
+              String(p.outcome).toLowerCase()==="yes"
+                ? "sideYes"
+                : String(p.outcome).toLowerCase()==="no"
+                  ? "sideNo"
+                  : ""
+            }">
+
+              ${escapeHTML(p.outcome || "Unknown")}
+
+            </span>
+
+            ${p.cost>0
+              ? " · $"+Number(p.cost).toLocaleString(
+                  undefined,
+                  {
+                    minimumFractionDigits:0,
+                    maximumFractionDigits:2
+                  }
+                )
+              : ""
+            }
+
+            &nbsp;
+
+            <span class="buyTime">
+              ${formatTime(p.buyTime)}
+            </span>
+
+            <br>
+
+          `).join("")}
+
+        </div>
+
+      </div>
+
+    `).join("");
+
+}
+
+
+/* =========================================================
+   SHARED MARKETS
+========================================================= */
+
+function renderShared(){
+
+  const container=
+    document.getElementById("sharedMarkets");
+
+  const markets=new Map();
+
+
+  /*
+     One entry per market.
+     One trader per market.
+     YES + NO are combined together.
+  */
+
+  for(const trader of topTraders){
+
+    for(const market of (trader.activeMarkets || [])){
+
+      if(!market.condition)
+        continue;
+
+      if(!markets.has(market.condition)){
+
+        markets.set(
+          market.condition,
+          {
+            title:market.title,
+            traders:new Map()
+          }
+        );
+
+      }
+
+      const shared=
+        markets.get(market.condition);
+
+
+      if(!shared.traders.has(trader.wallet)){
+
+        shared.traders.set(
+          trader.wallet,
+          {
+            name:trader.name,
+            wallet:trader.wallet,
+            positions:[]
+          }
+        );
+
+      }
+
+
+      const traderEntry=
+        shared.traders.get(trader.wallet);
+
+
+      for(const p of market.positions){
+
+        const existing=
+          traderEntry.positions.find(
+            x=>String(x.outcome).toLowerCase()===
+               String(p.outcome).toLowerCase()
+          );
+
+        if(existing){
+
+          existing.cost+=p.cost;
+
+        }else{
+
+          traderEntry.positions.push({
+            outcome:p.outcome,
+            cost:p.cost
+          });
+
+        }
+
+      }
 
     }
 
   }
 
-  const workers=[];
 
-  for(
-    let i=0;
-    i<Math.min(concurrency,items.length);
-    i++
-  )
-    workers.push(runner());
+  /*
+     Only shared markets.
+  */
 
-  await Promise.all(workers);
+  const sharedMarkets=
+    [...markets.values()]
+      .filter(m=>m.traders.size>=2);
 
-  return results;
+
+  if(!sharedMarkets.length){
+
+    container.innerHTML=`
+      <div class="empty">
+        No shared active markets found among the Top 100.
+      </div>
+    `;
+
+    return;
+
+  }
+
+
+  container.innerHTML=`
+
+    <div class="sharedGrid">
+
+      ${sharedMarkets.map(m=>`
+
+        <div class="sharedMarket">
+
+          <div class="sharedTitle">
+            ${escapeHTML(m.title)}
+          </div>
+
+          <div class="sharedTraders">
+
+            ${[...m.traders.values()].map(t=>`
+
+              <div class="sharedTrader">
+
+                <div class="sharedTraderName">
+                  ${escapeHTML(t.name)}
+                </div>
+
+                <div class="sharedTraderWallet">
+                  ${escapeHTML(t.wallet)}
+                </div>
+
+                <div class="sharedPosition">
+
+                  ${t.positions.map(p=>{
+
+                    const side=
+                      String(p.outcome || "")
+                        .toLowerCase();
+
+                    const cls=
+                      side==="yes"
+                        ? "yes"
+                        : side==="no"
+                          ? "no"
+                          : "";
+
+                    return `
+
+                      <span class="${cls}">
+                        ${escapeHTML(p.outcome)}
+                      </span>
+
+                      ${
+                        p.cost>0
+                          ? " $"+Number(p.cost).toLocaleString(
+                              undefined,
+                              {
+                                minimumFractionDigits:0,
+                                maximumFractionDigits:2
+                              }
+                            )
+                          : ""
+                      }
+
+                    `;
+
+                  }).join(" · ")}
+
+                </div>
+
+              </div>
+
+            `).join("")}
+
+          </div>
+
+        </div>
+
+      `).join("")}
+
+    </div>
+
+  `;
+
 }
 
 
-/* =========================
-   RENDER
-========================= */
+/* =========================================================
+   RENDER TOP 100
+========================================================= */
 
 function render(rows){
 
   const tbody=
     document.getElementById("tbody");
 
+
   if(!rows.length){
 
     tbody.innerHTML=`
       <tr>
-        <td colspan="4" class="empty">
+        <td colspan="5" class="empty">
           No resolved records found.
         </td>
       </tr>
     `;
 
     return;
+
   }
 
 
@@ -794,7 +1690,7 @@ function render(rows){
       const pct=
         (t.winRate*100).toFixed(1);
 
-      return`
+      return `
 
         <tr>
 
@@ -815,9 +1711,7 @@ function render(rows){
           </td>
 
           <td class="record ${
-            t.winRate>=0.55
-              ? "good"
-              : ""
+            t.winRate>=.55 ? "good" : ""
           }">
 
             ${t.wins}-${t.losses}
@@ -828,21 +1722,28 @@ function render(rows){
             ${pct}%
           </td>
 
+          <td class="activeCell">
+
+            ${activeHTML(t)}
+
+          </td>
+
         </tr>
 
       `;
 
     }).join("");
 
+
   document.getElementById("meta").textContent=
-    `${rows.length} records found`;
+    `${rows.length} best records shown`;
 
 }
 
 
-/* =========================
+/* =========================================================
    SCAN
-========================= */
+========================================================= */
 
 async function scan(){
 
@@ -859,25 +1760,41 @@ async function scan(){
   setProgress(0);
 
   document.getElementById("tbody").innerHTML=`
+
     <tr>
-      <td colspan="4" class="empty">
+      <td colspan="5" class="empty">
         Scanning...
       </td>
     </tr>
+
   `;
 
-  const period=
-    document.getElementById("period").value;
+  document.getElementById("sharedMarkets").innerHTML=`
 
-  const start=
-    periodStart(period);
+    <div class="empty">
+      Scanning active markets...
+    </div>
+
+  `;
 
 
   try{
 
+    const period=
+      document.getElementById("period").value;
+
+    const start=
+      periodStart(period);
+
+
+    /* -----------------------------------------
+       STEP 1: LARGE CANDIDATE POOL
+    ----------------------------------------- */
+
     setStatus(
-      "Finding traders..."
+      "Finding a large pool of traders..."
     );
+
 
     const candidates=
       await getCandidates(period);
@@ -885,17 +1802,21 @@ async function scan(){
 
     if(!candidates.length)
       throw new Error(
-        "No candidates found"
+        "No candidates found."
       );
 
 
     setStatus(
-      `Checking ${candidates.length} traders...`
+      `Checking ${candidates.length} traders for records...`
     );
 
 
-    const results=
-      await pool(
+    /* -----------------------------------------
+       STEP 2: RECORDS
+    ----------------------------------------- */
+
+    const recordResults=
+      await runPool(
 
         candidates,
 
@@ -914,12 +1835,12 @@ async function scan(){
 
         },
 
-        15,
+        12,
 
         (done,total)=>{
 
           setProgress(
-            done/total*100
+            done/total*75
           );
 
           setStatus(
@@ -932,34 +1853,119 @@ async function scan(){
 
 
     /*
-      ONLY keep traders that actually
-      have a resolved record.
+       Keep everyone with a real resolved record.
     */
 
     const valid=
-      results
+      recordResults
         .filter(Boolean)
         .filter(t=>t.total>0);
 
 
     /*
-      SORT ALL TRADERS BEFORE TAKING TOP 100.
+       SORT THE ENTIRE LARGE POOL FIRST.
     */
 
     valid.sort(sortRecords);
 
 
-    const top=
+    /*
+       THEN take exactly the Top 100.
+    */
+
+    topTraders=
       valid.slice(0,100);
 
 
-    render(top);
+    /*
+       If fewer than 100 genuinely have resolved
+       records in the candidate pool, expand the
+       candidate pool further on the next scan.
+    */
+
+    if(topTraders.length<100){
+
+      setStatus(
+        `Found ${topTraders.length} traders with resolved records. Loading active markets...`
+      );
+
+    }else{
+
+      setStatus(
+        "Top 100 records found. Loading active markets..."
+      );
+
+    }
+
+
+    /* -----------------------------------------
+       STEP 3: ACTIVE MARKETS FOR TOP 100 ONLY
+    ----------------------------------------- */
+
+    const withActive=
+      await runPool(
+
+        topTraders,
+
+        async trader=>{
+
+          trader.activeMarkets=
+            await loadActive(trader.wallet);
+
+          return trader;
+
+        },
+
+        12,
+
+        (done,total)=>{
+
+          setProgress(
+            75+(done/total*25)
+          );
+
+          setStatus(
+            `Loading active markets: ${done}/${total}`
+          );
+
+        }
+
+      );
+
+
+    topTraders=
+      withActive.filter(Boolean);
+
+
+    /*
+       Re-sort by record only.
+       Active markets DO NOT change record ranking.
+    */
+
+    topTraders.sort(sortRecords);
+
+
+    render(topTraders);
+
+    renderShared();
+
+
+    const activeCount=
+      topTraders.reduce(
+        (sum,t)=>
+          sum+(t.activeMarkets?.length || 0),
+        0
+      );
+
+
+    const sharedCount=
+      countSharedMarkets();
 
 
     setProgress(100);
 
     setStatus(
-      `Finished — ${top.length} best records found.`,
+      `Finished — ${topTraders.length} best records, ${activeCount} active markets, ${sharedCount} shared markets.`,
       "good"
     );
 
@@ -969,7 +1975,7 @@ async function scan(){
     console.error(error);
 
     setStatus(
-      "Scan failed. Check the Cloudflare proxy/API.",
+      "Scan failed. Try again.",
       "bad"
     );
 
@@ -979,6 +1985,130 @@ async function scan(){
     button.disabled=false;
 
   }
+
+}
+
+
+/* =========================================================
+   POOL
+========================================================= */
+
+async function runPool(
+  items,
+  worker,
+  concurrency,
+  progressCallback
+){
+
+  const results=
+    new Array(items.length);
+
+  let next=0;
+  let done=0;
+
+
+  async function runner(){
+
+    while(true){
+
+      const index=next++;
+
+      if(index>=items.length)
+        return;
+
+
+      try{
+
+        results[index]=
+          await worker(items[index],index);
+
+      }catch(e){
+
+        results[index]=null;
+
+      }
+
+
+      done++;
+
+
+      if(progressCallback)
+        progressCallback(
+          done,
+          items.length
+        );
+
+    }
+
+  }
+
+
+  const workers=[];
+
+
+  for(
+    let i=0;
+    i<Math.min(concurrency,items.length);
+    i++
+  ){
+
+    workers.push(
+      runner()
+    );
+
+  }
+
+
+  await Promise.all(workers);
+
+
+  return results;
+
+}
+
+
+/* =========================================================
+   SHARED COUNT
+========================================================= */
+
+function countSharedMarkets(){
+
+  const map=new Map();
+
+
+  for(const trader of topTraders){
+
+    for(const market of (trader.activeMarkets || [])){
+
+      if(!market.condition)
+        continue;
+
+      if(!map.has(market.condition))
+        map.set(
+          market.condition,
+          new Set()
+        );
+
+      map.get(market.condition)
+        .add(trader.wallet);
+
+    }
+
+  }
+
+
+  let count=0;
+
+
+  for(const wallets of map.values()){
+
+    if(wallets.size>=2)
+      count++;
+
+  }
+
+
+  return count;
 
 }
 
