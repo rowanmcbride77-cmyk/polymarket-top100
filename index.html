@@ -178,7 +178,8 @@ select{
     90px
     125px
     90px
-    145px;
+    145px
+    80px;
   align-items:center;
 }
 
@@ -490,7 +491,7 @@ Click a trader to show their current active positions.
 </div>
 
 <div class="foot">
-W/L ratio is the primary ranking metric, followed by Win %, then ROI.
+W/L is calculated from resolved positions. Ranking prioritizes the best win/loss record.
 </div>
 
 </section>
@@ -737,102 +738,85 @@ async function loadLeaderboard(){
       ? 'MONTH'
       : S.period;
 
-  /*
-    Load a 1,000-trader candidate pool.
-    The Top Traders table still shows only the
-    best 100 after the requested metrics are calculated.
-  */
+  const urls = [
 
-  const offsets =
-    Array.from(
-      {length:20},
-      (_,i)=>i*50
+    DATA_API+
+    '/v1/leaderboard?'+
+    new URLSearchParams({
+      timePeriod:period,
+      orderBy:'PNL',
+      category:'OVERALL',
+      limit:'50',
+      offset:'0'
+    }),
+
+    DATA_API+
+    '/v1/leaderboard?'+
+    new URLSearchParams({
+      timePeriod:period,
+      orderBy:'PNL',
+      category:'OVERALL',
+      limit:'50',
+      offset:'50'
+    })
+
+  ];
+
+  const results =
+    await Promise.all(
+      urls.map(url =>
+        getJSON(url)
+      )
     );
 
-  const rows = [];
-  const seen = new Set();
+  let rows = [];
 
-  const concurrency = 8;
-  let next = 0;
+  for(
+    const result of results
+  ){
 
-  async function worker(){
+    if(Array.isArray(result))
+      rows.push(...result);
 
-    while(true){
+    else if(
+      Array.isArray(result?.data)
+    )
+      rows.push(...result.data);
 
-      const index = next++;
-
-      if(index >= offsets.length)
-        return;
-
-      const offset = offsets[index];
-
-      const url =
-        DATA_API+
-        '/v1/leaderboard?'+
-        new URLSearchParams({
-          timePeriod:period,
-          orderBy:'PNL',
-          category:'OVERALL',
-          limit:'50',
-          offset:String(offset)
-        });
-
-      try{
-
-        const result =
-          await getJSON(url,2);
-
-        const page =
-          Array.isArray(result)
-            ? result
-            : Array.isArray(result?.data)
-              ? result.data
-              : Array.isArray(result?.leaderboard)
-                ? result.leaderboard
-                : [];
-
-        for(const row of page){
-
-          const wallet =
-            String(
-              row?.proxyWallet ||
-              row?.proxy_wallet ||
-              row?.user_id ||
-              row?.userId ||
-              row?.address ||
-              row?.user ||
-              ''
-            ).toLowerCase();
-
-          if(!wallet || seen.has(wallet))
-            continue;
-
-          seen.add(wallet);
-          rows.push(row);
-
-        }
-
-      }catch(error){
-
-        console.warn(
-          'Leaderboard page '+offset+' failed',
-          error
-        );
-
-      }
-
-    }
+    else if(
+      Array.isArray(result?.leaderboard)
+    )
+      rows.push(...result.leaderboard);
 
   }
 
-  await Promise.all(
-    Array.from(
-      {length:concurrency},
-      () => worker()
-    )
-  );
+  const seen =
+    new Set();
 
-  return rows.slice(0,1000);
+  rows =
+    rows.filter(row=>{
+
+      const wallet =
+        String(
+          row?.proxyWallet ||
+          row?.proxy_wallet ||
+          row?.address ||
+          ''
+        ).toLowerCase();
+
+      if(
+        !wallet ||
+        seen.has(wallet)
+      )
+        return false;
+
+      seen.add(wallet);
+
+      return true;
+
+    }).slice(0,100);
+
+  return rows;
 
 }
 
@@ -841,35 +825,12 @@ async function loadLeaderboard(){
    NORMALIZE LEADERBOARD
 ========================= */
 
-function firstNumber(obj, keys){
-
-  for(const key of keys){
-
-    const value = obj?.[key];
-
-    if(value !== undefined && value !== null && value !== ''){
-
-      const n = Number(value);
-
-      if(Number.isFinite(n))
-        return n;
-
-    }
-
-  }
-
-  return null;
-
-}
-
 function normalizeTrader(row){
 
   const wallet =
     String(
       row?.proxyWallet ||
       row?.proxy_wallet ||
-      row?.user_id ||
-      row?.userId ||
       row?.address ||
       row?.user ||
       ''
@@ -878,7 +839,6 @@ function normalizeTrader(row){
   const userName =
     String(
       row?.userName ||
-      row?.user_name ||
       row?.username ||
       row?.name ||
       row?.pseudonym ||
@@ -903,39 +863,8 @@ function normalizeTrader(row){
     Number(
       row?.pnl ??
       row?.PNL ??
-      row?.profit ??
       0
     ) || 0;
-
-  const leaderboardRoi =
-    firstNumber(row,[
-      'roi',
-      'ROI',
-      'returnOnInvestment',
-      'return_on_investment'
-    ]);
-
-  const leaderboardWins =
-    firstNumber(row,[
-      'wins',
-      'totalWins',
-      'total_wins'
-    ]);
-
-  const leaderboardLosses =
-    firstNumber(row,[
-      'losses',
-      'totalLosses',
-      'total_losses'
-    ]);
-
-  const leaderboardWinRate =
-    firstNumber(row,[
-      'winRate',
-      'win_rate',
-      'winPct',
-      'win_pct'
-    ]);
 
   return {
 
@@ -951,29 +880,18 @@ function normalizeTrader(row){
     leaderboard:
       row,
 
-    wins:
-      leaderboardWins !== null
-        ? leaderboardWins
-        : 0,
+    wins:0,
 
-    losses:
-      leaderboardLosses !== null
-        ? leaderboardLosses
-        : 0,
+    losses:0,
 
     total:0,
 
-    winRate:
-      leaderboardWinRate !== null
-        ? leaderboardWinRate
-        : 0,
+    winRate:0,
 
     roi:
-      leaderboardRoi !== null
-        ? leaderboardRoi
-        : volume > 0
-          ? pnl / volume * 100
-          : 0,
+      volume > 0
+        ? pnl / volume * 100
+        : 0,
 
     active:[],
 
@@ -1018,394 +936,32 @@ function periodStart(){
    CLOSED POSITIONS
 ========================= */
 
-async function loadUserStats(trader){
-
-  const interval =
-    S.period==='WEEK'
-      ? '1w'
-      : S.period==='MONTH'
-        ? '1m'
-        : S.period==='3M'
-          ? '3m'
-          : 'all';
-
-  const urls = [
-
-    DATA_API+
-    '/v2/user-stats?'+
-    new URLSearchParams({
-      user:trader.wallet,
-      interval
-    }),
-
-    DATA_API+
-    '/v2/user-stats?'+
-    new URLSearchParams({
-      user:trader.wallet
-    })
-
-  ];
-
-  for(const url of urls){
-
-    try{
-
-      const result =
-        await getJSON(url,1);
-
-      const data =
-        result?.data &&
-        !Array.isArray(result.data)
-          ? result.data
-          : result;
-
-      const wins =
-        firstNumber(data,[
-          'wins',
-          'totalWins',
-          'total_wins',
-          'winningTrades',
-          'winning_trades'
-        ]);
-
-      const losses =
-        firstNumber(data,[
-          'losses',
-          'totalLosses',
-          'total_losses',
-          'losingTrades',
-          'losing_trades'
-        ]);
-
-      const winRate =
-        firstNumber(data,[
-          'winRate',
-          'win_rate',
-          'winPct',
-          'win_pct',
-          'winningPercentage',
-          'winning_percentage'
-        ]);
-
-      const roi =
-        firstNumber(data,[
-          'roi',
-          'ROI',
-          'returnOnInvestment',
-          'return_on_investment'
-        ]);
-
-      const pnl =
-        firstNumber(data,[
-          'pnl',
-          'PNL',
-          'profit',
-          'profitLoss',
-          'profit_loss'
-        ]);
-
-      if(
-        wins !== null ||
-        losses !== null ||
-        winRate !== null ||
-        roi !== null ||
-        pnl !== null
-      ){
-
-        return {
-          wins,
-          losses,
-          winRate,
-          roi,
-          pnl
-        };
-
-      }
-
-    }catch(error){
-      /* Try the next form. */
-    }
-
-  }
-
-  return null;
-
-}
-
-async function loadClosedForTrader(trader){
-
-  try{
-
-    const result =
-      await getJSON(
-        WORKER+
-        '/records?period='+
-        encodeURIComponent(S.period)+
-        '&wallets='+
-        encodeURIComponent(trader.wallet)
-      ,1);
-
-    const rows =
-      Array.isArray(result?.records)
-        ? result.records
-        : Array.isArray(result?.data)
-          ? result.data
-          : [];
-
-    const record =
-      rows.find(row=>
-        String(
-          row?.wallet ||
-          row?.proxyWallet ||
-          row?.proxy_wallet ||
-          row?.user ||
-          ''
-        ).toLowerCase() ===
-        trader.wallet.toLowerCase()
-      ) || rows[0];
-
-    if(record){
-
-      const wins =
-        firstNumber(record,[
-          'wins',
-          'totalWins',
-          'total_wins'
-        ]);
-
-      const losses =
-        firstNumber(record,[
-          'losses',
-          'totalLosses',
-          'total_losses'
-        ]);
-
-      const resolved =
-        firstNumber(record,[
-          'resolved',
-          'totalResolved',
-          'total_resolved'
-        ]);
-
-      const winRate =
-        firstNumber(record,[
-          'winRate',
-          'win_rate',
-          'winPct',
-          'win_pct'
-        ]);
-
-      const pnl =
-        firstNumber(record,[
-          'pnl',
-          'PNL',
-          'profit',
-          'profitLoss',
-          'profit_loss'
-        ]);
-
-      const invested =
-        firstNumber(record,[
-          'invested',
-          'investment',
-          'investmentVolume',
-          'investment_volume',
-          'costBasis',
-          'cost_basis'
-        ]);
-
-      const roi =
-        firstNumber(record,[
-          'roi',
-          'ROI',
-          'returnOnInvestment',
-          'return_on_investment'
-        ]);
-
-      if(
-        wins !== null ||
-        losses !== null ||
-        resolved !== null ||
-        winRate !== null ||
-        pnl !== null ||
-        invested !== null ||
-        roi !== null
-      ){
-
-        trader.wins =
-          wins !== null
-            ? Math.max(0,Math.round(wins))
-            : 0;
-
-        trader.losses =
-          losses !== null
-            ? Math.max(0,Math.round(losses))
-            : 0;
-
-        trader.total =
-          resolved !== null
-            ? Math.max(
-                0,
-                Math.round(resolved)
-              )
-            : trader.wins + trader.losses;
-
-        if(
-          trader.total <
-          trader.wins + trader.losses
-        ){
-          trader.total =
-            trader.wins + trader.losses;
-        }
-
-        trader.winRate =
-          winRate !== null
-            ? (
-                winRate <= 1
-                  ? winRate * 100
-                  : winRate
-              )
-            : trader.total > 0
-              ? trader.wins /
-                trader.total * 100
-              : 0;
-
-        trader.periodPnl =
-          pnl !== null
-            ? pnl
-            : trader.pnl;
-
-        trader.periodVolume =
-          trader.volume;
-
-        if(roi !== null){
-
-          trader.roi =
-            roi <= 1
-              ? roi * 100
-              : roi;
-
-        }else if(
-          invested !== null &&
-          invested > 0
-        ){
-
-          trader.roi =
-            trader.periodPnl /
-            invested * 100;
-
-        }else if(
-          trader.periodVolume > 0
-        ){
-
-          trader.roi =
-            trader.periodPnl /
-            trader.periodVolume * 100;
-
-        }
-
-        trader.recordsLoaded = true;
-        trader.recordsError = false;
-
-        return;
-
-      }
-
-    }
-
-  }catch(error){
-    console.warn(
-      'Batch record endpoint unavailable for '+
-      trader.wallet,
-      error
-    );
-  }
-
-  try{
-
-    const stats =
-      await loadUserStats(trader);
-
-    if(stats){
-
-      trader.wins =
-        stats.wins !== null
-          ? Math.max(0,Math.round(stats.wins))
-          : 0;
-
-      trader.losses =
-        stats.losses !== null
-          ? Math.max(0,Math.round(stats.losses))
-          : 0;
-
-      trader.total =
-        trader.wins + trader.losses;
-
-      trader.winRate =
-        stats.winRate !== null
-          ? (
-              stats.winRate <= 1
-                ? stats.winRate * 100
-                : stats.winRate
-            )
-          : trader.total > 0
-            ? trader.wins /
-              trader.total * 100
-            : 0;
-
-      trader.periodPnl =
-        stats.pnl !== null
-          ? stats.pnl
-          : trader.pnl;
-
-      if(stats.roi !== null){
-
-        trader.roi =
-          stats.roi <= 1
-            ? stats.roi * 100
-            : stats.roi;
-
-      }else if(trader.volume > 0){
-
-        trader.roi =
-          trader.periodPnl /
-          trader.volume * 100;
-
-      }
-
-      trader.periodVolume =
-        trader.volume;
-
-      trader.recordsLoaded = true;
-      trader.recordsError = false;
-
-      return;
-
-    }
-
-  }catch(error){
-    console.warn(
-      'User stats failed for '+
-      trader.wallet,
-      error
-    );
-  }
+async function loadClosedForTrader(
+  trader
+){
 
   const params =
     new URLSearchParams({
+
       user:trader.wallet,
+
       status:'CLOSED',
+
       sort_by:'TIMESTAMP',
+
       sort_direction:'DESC',
+
       limit:'1000'
+
     });
 
+  const url =
+    DATA_API+
+    '/v2/positions?'+
+    params.toString();
+
   const result =
-    await getJSON(
-      DATA_API+
-      '/v2/positions?'+
-      params.toString()
-    );
+    await getJSON(url);
 
   let positions =
     Array.isArray(result?.data)
@@ -1427,16 +983,21 @@ async function loadClosedForTrader(trader){
           0
         );
 
-      return !timestamp || timestamp >= start;
+      if(!timestamp)
+        return true;
+
+      return timestamp >= start;
 
     });
 
   let wins = 0;
   let losses = 0;
   let pnl = 0;
-  let invested = 0;
+  let volume = 0;
 
-  for(const position of positions){
+  for(
+    const position of positions
+  ){
 
     const realized =
       Number(
@@ -1446,43 +1007,47 @@ async function loadClosedForTrader(trader){
         0
       ) || 0;
 
-    if(realized > 0)
+    if(realized > 0){
       wins++;
-    else if(realized < 0)
+    }else if(realized < 0){
       losses++;
+    }
 
     pnl += realized;
 
-    invested +=
+    volume +=
       Number(
-        position?.entry_cost_usdc ??
         position?.total_cost_usdc ??
-        position?.initial_value ??
+        position?.entry_cost_usdc ??
         0
       ) || 0;
 
   }
 
-  trader.wins = wins;
-  trader.losses = losses;
-  trader.total = wins + losses;
+  trader.wins =
+    wins;
+
+  trader.losses =
+    losses;
+
+  trader.total =
+    wins + losses;
+
   trader.winRate =
     trader.total > 0
       ? wins / trader.total * 100
       : 0;
+
   trader.periodPnl =
     trader.total > 0
       ? pnl
       : trader.pnl;
-  trader.periodVolume = trader.volume;
-  trader.roi =
-    invested > 0
-      ? trader.periodPnl / invested * 100
-      : trader.volume > 0
-        ? trader.periodPnl / trader.volume * 100
-        : trader.roi;
-  trader.recordsLoaded = true;
-  trader.recordsError = false;
+
+  trader.periodVolume =
+    volume;
+
+  trader.recordsLoaded =
+    true;
 
 }
 
@@ -1496,247 +1061,64 @@ async function scanRecords(){
   const traders =
     S.traders;
 
-  if(!traders.length)
-    return;
-
-  const batchSize = 100;
-  const batches = [];
-
-  for(
-    let i=0;
-    i<traders.length;
-    i+=batchSize
-  ){
-    batches.push(
-      traders.slice(i,i+batchSize)
-    );
-  }
-
   let completed = 0;
-  let nextBatch = 0;
-  const concurrency = 5;
 
-  async function runBatch(batch){
+  const concurrency = 8;
 
-    const wallets =
-      batch
-        .map(trader=>trader.wallet)
-        .filter(Boolean);
-
-    if(!wallets.length)
-      return;
-
-    const result =
-      await getJSON(
-        WORKER+
-        '/records?period='+
-        encodeURIComponent(S.period)+
-        '&wallets='+
-        encodeURIComponent(wallets.join(',')),
-        2
-      );
-
-    const rows =
-      Array.isArray(result?.records)
-        ? result.records
-        : Array.isArray(result?.data)
-          ? result.data
-          : [];
-
-    const byWallet =
-      new Map(
-        rows.map(row=>[
-          String(
-            row?.wallet ||
-            row?.proxyWallet ||
-            row?.proxy_wallet ||
-            row?.user ||
-            ''
-          ).toLowerCase(),
-          row
-        ])
-      );
-
-    for(const trader of batch){
-
-      const row =
-        byWallet.get(
-          trader.wallet.toLowerCase()
-        );
-
-      if(!row)
-        continue;
-
-      const wins =
-        firstNumber(row,[
-          'wins','totalWins','total_wins'
-        ]);
-
-      const losses =
-        firstNumber(row,[
-          'losses','totalLosses','total_losses'
-        ]);
-
-      const resolved =
-        firstNumber(row,[
-          'resolved','totalResolved','total_resolved'
-        ]);
-
-      const winRate =
-        firstNumber(row,[
-          'winRate','win_rate','winPct','win_pct'
-        ]);
-
-      const pnl =
-        firstNumber(row,[
-          'pnl','PNL','profit','profitLoss','profit_loss'
-        ]);
-
-      const invested =
-        firstNumber(row,[
-          'invested','investment','investmentVolume',
-          'investment_volume','costBasis','cost_basis'
-        ]);
-
-      const roi =
-        firstNumber(row,[
-          'roi','ROI','returnOnInvestment',
-          'return_on_investment'
-        ]);
-
-      if(
-        wins === null &&
-        losses === null &&
-        resolved === null &&
-        winRate === null &&
-        pnl === null &&
-        invested === null &&
-        roi === null
-      ){
-        continue;
-      }
-
-      trader.wins =
-        wins !== null
-          ? Math.max(0,Math.round(wins))
-          : 0;
-
-      trader.losses =
-        losses !== null
-          ? Math.max(0,Math.round(losses))
-          : 0;
-
-      trader.total =
-        resolved !== null
-          ? Math.max(0,Math.round(resolved))
-          : trader.wins + trader.losses;
-
-      if(
-        trader.total <
-        trader.wins + trader.losses
-      ){
-        trader.total =
-          trader.wins + trader.losses;
-      }
-
-      trader.winRate =
-        winRate !== null
-          ? (
-              winRate <= 1
-                ? winRate * 100
-                : winRate
-            )
-          : trader.total > 0
-            ? trader.wins /
-              trader.total * 100
-            : 0;
-
-      trader.periodPnl =
-        pnl !== null
-          ? pnl
-          : trader.pnl;
-
-      trader.periodVolume =
-        trader.volume;
-
-      if(roi !== null){
-
-        trader.roi =
-          roi <= 1
-            ? roi * 100
-            : roi;
-
-      }else if(
-        invested !== null &&
-        invested > 0
-      ){
-
-        trader.roi =
-          trader.periodPnl /
-          invested * 100;
-
-      }else if(
-        trader.volume > 0
-      ){
-
-        trader.roi =
-          trader.periodPnl /
-          trader.volume * 100;
-
-      }
-
-      trader.recordsLoaded = true;
-      trader.recordsError = false;
-
-    }
-
-  }
+  let nextIndex = 0;
 
   async function worker(){
 
     while(true){
 
       const index =
-        nextBatch++;
+        nextIndex++;
 
-      if(index >= batches.length)
+      if(
+        index >= traders.length
+      )
         return;
+
+      const trader =
+        traders[index];
 
       try{
 
-        await runBatch(
-          batches[index]
+        await loadClosedForTrader(
+          trader
         );
 
       }catch(error){
 
-        console.warn(
-          'Record batch failed',
-          index,
+        console.error(
+          trader.wallet,
           error
         );
 
-        for(const trader of batches[index]){
-          trader.recordsError = true;
-        }
+        trader.recordsError =
+          true;
 
       }
 
-      completed +=
-        batches[index].length;
+      completed++;
 
       progress(
-        10 +
-        completed /
-        traders.length *
-        80
+        15 +
+        (completed /
+          traders.length) *
+        70
       );
 
+      updateStats();
+
+      renderTraders();
+
       setStatus(
-        'Calculating W/L, Win % and ROI — '+
-        Math.min(completed,traders.length)+
+        'Loading trader data '+
+        completed+
         '/'+
-        traders.length
+        traders.length+
+        '...'
       );
 
     }
@@ -1749,56 +1131,6 @@ async function scanRecords(){
       () => worker()
     )
   );
-
-  const usable =
-    traders.filter(
-      trader => trader.recordsLoaded
-    ).length;
-
-  if(usable===0){
-
-    const fallback =
-      traders.slice(0,100);
-
-    let next = 0;
-    const fallbackConcurrency = 10;
-
-    async function fallbackWorker(){
-
-      while(true){
-
-        const index = next++;
-
-        if(index >= fallback.length)
-          return;
-
-        const trader =
-          fallback[index];
-
-        try{
-          await loadClosedForTrader(
-            trader
-          );
-        }catch(error){
-          trader.recordsError = true;
-          console.error(
-            trader.wallet,
-            error
-          );
-        }
-
-      }
-
-    }
-
-    await Promise.all(
-      Array.from(
-        {length:fallbackConcurrency},
-        () => fallbackWorker()
-      )
-    );
-
-  }
 
 }
 
@@ -1851,10 +1183,18 @@ function sortedTraders(){
     if(mode==='roi'){
 
       const ar =
-        Number(a.roi) || 0;
+        a.periodVolume > 0
+          ? a.periodPnl /
+            a.periodVolume *
+            100
+          : a.roi;
 
       const br =
-        Number(b.roi) || 0;
+        b.periodVolume > 0
+          ? b.periodPnl /
+            b.periodVolume *
+            100
+          : b.roi;
 
       return (
         br-ar ||
@@ -1874,17 +1214,38 @@ function sortedTraders(){
 
     }
 
-    const ratio = trader =>
-      trader.losses > 0
-        ? trader.wins / trader.losses
-        : trader.wins > 0
-          ? trader.wins
+    /*
+      BEST WIN/LOSS RECORD:
+
+      Any trader with 0 losses gets
+      priority over every trader
+      with one or more losses.
+
+      Among 0-loss traders:
+      most wins first.
+
+      Among traders with losses:
+      highest W/L ratio first.
+    */
+
+    const aRatio =
+      a.losses > 0
+        ? a.wins / a.losses
+        : a.wins > 0
+          ? Infinity
+          : 0;
+
+    const bRatio =
+      b.losses > 0
+        ? b.wins / b.losses
+        : b.wins > 0
+          ? Infinity
           : 0;
 
     return (
-      ratio(b)-ratio(a) ||
-      b.winRate-a.winRate ||
+      bRatio-aRatio ||
       b.wins-a.wins ||
+      b.winRate-a.winRate ||
       b.total-a.total ||
       b.periodPnl-a.periodPnl
     );
@@ -1956,6 +1317,8 @@ function renderTraders(){
 
       <div class="cell">Investment Volume</div>
 
+      <div class="cell">Active</div>
+
     </div>
 
   `;
@@ -1984,9 +1347,11 @@ function renderTraders(){
         0;
 
       const roi =
-        Number.isFinite(Number(trader.roi))
-          ? Number(trader.roi)
-          : 0;
+        trader.periodVolume > 0
+          ? pnl /
+            trader.periodVolume *
+            100
+          : trader.roi;
 
       const pnlClass =
         pnl>0
@@ -2047,6 +1412,10 @@ function renderTraders(){
 
             </div>
 
+            <div class="wallet">
+              ${esc(trader.wallet)}
+            </div>
+
           </div>
 
           <div class="cell ${recordClass}">
@@ -2079,11 +1448,24 @@ function renderTraders(){
           </div>
 
           <div class="cell ${roiClass}">
-            ${pct(roi)}
+            ${
+              trader.recordsLoaded &&
+              trader.periodVolume>0
+                ? pct(roi)
+                : pct(trader.roi)
+            }
           </div>
 
           <div class="cell">
             ${money(trader.volume)}
+          </div>
+
+          <div class="cell">
+            ${
+              trader.active.length
+                ? trader.active.length
+                : '—'
+            }
           </div>
 
         </div>
@@ -2869,57 +2251,31 @@ async function scan(){
 
     }
 
-    const pool =
+    S.traders =
       leaderboard.map(
         normalizeTrader
       );
 
+    renderTraders();
+
+    updateStats();
+
+    progress(12);
+
     setStatus(
-      pool.length.toLocaleString() +
-      ' traders loaded. Calculating W/L, Win % and ROI...'
+      '100 traders loaded. Loading records in parallel...'
     );
-
-    progress(10);
-
-    /*
-      Calculate metrics for the full candidate pool first,
-      then keep only the best 100 for the dashboard.
-    */
-
-    S.traders = pool;
 
     await scanRecords();
 
-    S.traders =
-      pool
-        .sort((a,b)=>{
-
-          const ratio = trader =>
-            trader.losses > 0
-              ? trader.wins / trader.losses
-              : trader.wins > 0
-                ? trader.wins
-                : -1;
-
-          return (
-            ratio(b)-ratio(a) ||
-            b.winRate-a.winRate ||
-            b.roi-a.roi ||
-            b.wins-a.wins ||
-            b.total-a.total ||
-            b.periodPnl-a.periodPnl
-          );
-
-        })
-        .slice(0,100);
-
     renderTraders();
+
     updateStats();
 
     progress(90);
 
     setStatus(
-      'Trader scan complete — Top 100 ranked by W/L, Win % and ROI.',
+      'Trader scan complete.',
       'ok'
     );
 
