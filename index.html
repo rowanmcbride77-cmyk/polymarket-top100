@@ -3,358 +3,294 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Polymarket W/L & Shared Markets</title>
+
+<title>Polymarket Top Trader Scanner</title>
 
 <style>
+:root{
+  --bg:#050505;
+  --panel:#0d0d0d;
+  --panel2:#111;
+  --line:#242424;
+  --text:#f5f5f5;
+  --muted:#999;
+  --good:#4ade80;
+  --bad:#fb7185;
+}
 
 *{
-  box-sizing:border-box
+  box-sizing:border-box;
 }
 
 body{
   margin:0;
-  background:#08090b;
-  color:#f5f5f5;
-  font-family:
-    -apple-system,
-    BlinkMacSystemFont,
-    "Segoe UI",
-    Arial,
-    sans-serif
+  background:var(--bg);
+  color:var(--text);
+  font:14px/1.4 -apple-system,
+       BlinkMacSystemFont,
+       "Segoe UI",
+       Arial,
+       sans-serif;
 }
 
 .wrap{
-  max-width:1500px;
+  max-width:1450px;
   margin:auto;
-  padding:24px
+  padding:24px 18px 60px;
+}
+
+.head{
+  display:flex;
+  justify-content:space-between;
+  gap:20px;
+  align-items:flex-end;
+  margin-bottom:18px;
 }
 
 .title{
-  font-size:29px;
-  font-weight:850
+  font-size:26px;
+  font-weight:800;
 }
 
 .sub{
-  color:#8c919b;
-  margin-top:4px
+  color:var(--muted);
+  margin-top:3px;
 }
 
 .controls{
   display:flex;
-  gap:9px;
+  gap:8px;
   flex-wrap:wrap;
-  margin:19px 0 12px
+  align-items:center;
 }
 
-select,
-input,
-button{
-  background:#14171c;
+.select,
+.btn{
+  background:#111;
+  border:1px solid #333;
   color:#fff;
-  border:1px solid #30353e;
-  border-radius:9px;
-  padding:10px 12px;
-  font:inherit
+  border-radius:8px;
+  padding:9px 12px;
 }
 
-button{
-  font-weight:750;
-  cursor:pointer
+.btn{
+  cursor:pointer;
+  font-weight:700;
 }
 
-button:hover{
-  background:#1d2128
-}
-
-button:disabled{
-  opacity:.5;
-  cursor:not-allowed
+.btn:hover{
+  background:#181818;
 }
 
 .status{
-  background:#101318;
-  border:1px solid #292e36;
-  border-radius:9px;
+  margin:12px 0;
   padding:11px 13px;
-  margin-bottom:14px;
-  color:#aeb3bd
+  border:1px solid var(--line);
+  border-radius:8px;
+  background:var(--panel);
+  color:#bbb;
 }
 
-.status.ok{
-  color:#75dfa0;
-  border-color:#245b3d
-}
-
-.status.err{
-  color:#ff818a;
-  border-color:#663139
-}
-
-.stats{
-  display:grid;
-  grid-template-columns:
-    repeat(4,1fr);
-  gap:9px;
-  margin-bottom:16px
-}
-
-.stat{
-  background:#101318;
-  border:1px solid #252a32;
-  border-radius:11px;
-  padding:14px
-}
-
-.stat small{
-  color:#858b95
-}
-
-.stat b{
-  display:block;
-  font-size:22px;
-  margin-top:3px
-}
-
-.panel{
-  background:#0f1115;
-  border:1px solid #252a32;
-  border-radius:12px;
+.bar{
+  height:5px;
+  background:#171717;
+  border-radius:99px;
   overflow:hidden;
-  margin-bottom:18px
+  margin-top:8px;
 }
 
-.head{
-  padding:17px;
-  border-bottom:1px solid #252a32
+.bar i{
+  display:block;
+  height:100%;
+  width:0;
+  background:#fff;
+  transition:width .15s;
 }
 
-.head h2{
-  margin:0;
-  font-size:20px
-}
-
-.head p{
-  margin:3px 0 0;
-  color:#858b95
-}
-
-.tablehead,
-.trader{
+.grid{
   display:grid;
-  grid-template-columns:
-    55px
-    minmax(230px,1fr)
-    140px
-    130px
-    100px;
-  gap:10px;
-  align-items:center
+  grid-template-columns:1fr;
+  gap:16px;
 }
 
-.tablehead{
-  padding:10px 17px;
-  color:#858b95;
-  font-size:12px
+.card{
+  background:var(--panel);
+  border:1px solid var(--line);
+  border-radius:10px;
+  overflow:hidden;
 }
 
-.trader{
-  padding:14px 17px;
-  border-top:1px solid #1e2229;
-  cursor:pointer
+.card h2{
+  font-size:17px;
+  margin:0;
+  padding:15px 16px;
+  border-bottom:1px solid var(--line);
 }
 
-.trader:hover{
-  background:#15181e
+.hint{
+  padding:10px 16px;
+  color:var(--muted);
+  border-bottom:1px solid var(--line);
+}
+
+.tablewrap{
+  overflow:auto;
+}
+
+.table{
+  width:100%;
+  border-collapse:collapse;
+  min-width:850px;
+}
+
+.table th,
+.table td{
+  padding:10px 12px;
+  border-bottom:1px solid #1d1d1d;
+  text-align:left;
+  white-space:nowrap;
+}
+
+.table th{
+  font-size:11px;
+  text-transform:uppercase;
+  color:#888;
+  letter-spacing:.06em;
 }
 
 .name{
-  font-weight:800
+  font-weight:750;
 }
 
-.record{
-  font-weight:850
+.rank{
+  color:#777;
+  width:50px;
 }
 
-.positive{
-  color:#70dda0
+.ratio{
+  font-weight:800;
 }
 
-.negative{
-  color:#ff7c86
+.ratio.inf{
+  color:var(--good);
 }
 
-.muted{
-  color:#858b95
+.win{
+  color:var(--good);
 }
 
-.empty{
-  text-align:center;
-  padding:45px 20px;
-  color:#858b95
+.loss{
+  color:var(--bad);
 }
 
-.detail{
-  grid-column:1/-1;
-  background:#0a0c10;
-  border:1px solid #2a3038;
-  border-radius:9px;
-  padding:13px;
-  margin-top:3px
+.pnl{
+  font-variant-numeric:tabular-nums;
 }
 
-.metrics{
-  display:flex;
-  gap:8px;
-  flex-wrap:wrap;
-  margin-bottom:11px
-}
-
-.metric{
-  background:#13161b;
-  border:1px solid #292f37;
-  border-radius:8px;
-  padding:8px 11px
-}
-
-.metric small{
-  display:block;
-  color:#858b95
-}
-
-.metric b{
-  font-size:15px
-}
-
-.pos{
+.market-grid{
   display:grid;
   grid-template-columns:
-    minmax(260px,1fr)
-    65px
-    110px
-    110px
-    105px;
-  gap:9px;
-  padding:10px 0;
-  border-top:1px solid #1d2128;
-  align-items:center
-}
-
-.pos-title{
-  font-weight:700
-}
-
-.yes{
-  color:#67dc99;
-  font-weight:850
-}
-
-.no{
-  color:#ff7b84;
-  font-weight:850
+    repeat(auto-fill,minmax(390px,1fr));
+  gap:10px;
+  padding:12px;
 }
 
 .market{
-  padding:17px;
-  border-top:1px solid #252a32
+  border:1px solid #242424;
+  background:#101010;
+  border-radius:9px;
+  padding:13px;
 }
 
-.market:first-child{
-  border-top:0
-}
-
-.market-title{
-  font-size:17px;
-  font-weight:850
-}
-
-.market-meta{
-  color:#858b95;
-  margin-top:3px
-}
-
-.consensus{
-  margin-top:7px;
-  font-weight:900
-}
-
-.market-buttons{
+.markettop{
   display:flex;
-  flex-wrap:wrap;
-  gap:7px;
-  margin-top:12px
+  justify-content:space-between;
+  gap:10px;
+}
+
+.markettitle{
+  font-weight:800;
+  font-size:15px;
 }
 
 .pill{
-  background:#15181e;
-  border:1px solid #30353d;
+  border:1px solid #333;
   border-radius:999px;
-  padding:7px 10px
+  padding:3px 8px;
+  color:#ddd;
+  font-size:11px;
+  white-space:nowrap;
 }
 
-.market-detail{
-  margin-top:12px;
-  background:#090b0f;
-  border:1px solid #292e36;
-  border-radius:9px;
-  padding:12px
+.side{
+  font-weight:800;
+  margin:10px 0;
+}
+
+.holders{
+  display:grid;
+  gap:6px;
 }
 
 .holder{
   display:grid;
   grid-template-columns:
-    minmax(150px,1.4fr)
-    65px
-    110px
-    120px
-    120px;
-  gap:9px;
-  padding:9px 0;
-  border-top:1px solid #1d2128;
-  align-items:center
+    1.2fr .8fr .8fr;
+  gap:8px;
+  padding:7px 0;
+  border-top:1px solid #1f1f1f;
 }
 
-.holder:first-child{
-  border-top:0
+.holder span{
+  color:#aaa;
 }
 
-.tiny{
+.holder b{
+  font-weight:700;
+}
+
+.small{
   font-size:12px;
-  color:#858b95
+  color:#888;
 }
 
-@media(max-width:850px){
+.error{
+  color:#ff8b9a;
+}
 
-  .stats{
-    grid-template-columns:1fr 1fr
+.empty{
+  padding:25px;
+  color:#888;
+}
+
+.foot{
+  margin-top:14px;
+  color:#666;
+  font-size:12px;
+}
+
+@media(max-width:700px){
+
+  .head{
+    display:block;
   }
 
-  .tablehead,
-  .trader{
-    grid-template-columns:
-      40px
-      minmax(130px,1fr)
-      90px
-      95px
+  .controls{
+    margin-top:12px;
   }
 
-  .tablehead>:last-child,
-  .trader>:nth-child(5){
-    display:none
+  .market-grid{
+    grid-template-columns:1fr;
   }
 
-  .pos,
   .holder{
-    grid-template-columns:
-      1fr
-      60px
+    grid-template-columns:1fr 1fr;
   }
 
-  .pos>:nth-child(n+3),
-  .holder>:nth-child(n+3){
-    display:none
+  .holder span:last-child{
+    grid-column:1/-1;
   }
 }
-
 </style>
 </head>
 
@@ -362,2484 +298,1353 @@ button:disabled{
 
 <div class="wrap">
 
-  <div class="title">
-    Polymarket W/L & Shared Markets
-  </div>
+  <div class="head">
 
-  <div class="sub">
-    Top 100 by resolved win/loss record • weekly top-1,000 shared positions
-  </div>
+    <div>
+      <div class="title">
+        Polymarket Top Trader Scanner
+      </div>
 
-  <div class="controls">
-
-    <select id="period">
-      <option value="week">
-        Week
-      </option>
-
-      <option value="month">
-        Month
-      </option>
-
-      <option value="3m">
-        3 Months
-      </option>
-    </select>
-
-    <input
-      id="search"
-      placeholder="Search trader..."
-    >
-
-    <button id="scanBtn">
-      Scan Top 100
-    </button>
-
-    <select id="minShared">
-
-      <option value="1">
-        1+ shared traders
-      </option>
-
-      <option value="2">
-        2+ shared traders
-      </option>
-
-      <option value="5">
-        5+ shared traders
-      </option>
-
-      <option value="10">
-        10+ shared traders
-      </option>
-
-    </select>
-
-    <button id="marketBtn">
-      Scan Shared Markets
-    </button>
-
-  </div>
-
-  <div
-    id="status"
-    class="status"
-  >
-    Ready.
-  </div>
-
-  <div class="stats">
-
-    <div class="stat">
-      <small>
-        Qualified traders
-      </small>
-
-      <b id="sTraders">
-        0
-      </b>
+      <div class="sub">
+        Top 100 by win/loss consistency •
+        shared active positions from the top 1,000
+      </div>
     </div>
 
-    <div class="stat">
-      <small>
-        Resolved results
-      </small>
+    <div class="controls">
 
-      <b id="sResolved">
-        0
-      </b>
-    </div>
+      <select id="period" class="select">
+        <option value="week">
+          Week
+        </option>
 
-    <div class="stat">
-      <small>
-        Active positions scanned
-      </small>
+        <option value="month">
+          Month
+        </option>
 
-      <b id="sPositions">
-        0
-      </b>
-    </div>
+        <option value="3m">
+          3 Months
+        </option>
+      </select>
 
-    <div class="stat">
-      <small>
-        Weekly top-1,000
-      </small>
+      <select id="threshold" class="select">
 
-      <b id="sPool">
-        0
-      </b>
+        <option value="1">
+          1+ traders
+        </option>
+
+        <option value="2" selected>
+          2+ traders
+        </option>
+
+        <option value="5">
+          5+ traders
+        </option>
+
+        <option value="10">
+          10+ traders
+        </option>
+
+      </select>
+
+      <button id="scan" class="btn">
+        Scan
+      </button>
+
     </div>
 
   </div>
 
-  <section class="panel">
+  <div id="status" class="status">
+    Loading Polymarket...
+  </div>
 
-    <div class="head">
+  <div class="bar">
+    <i id="bar"></i>
+  </div>
+
+
+  <div class="grid" style="margin-top:16px">
+
+    <section class="card">
 
       <h2>
         Top 100 Traders
       </h2>
 
-      <p>
-        Best resolved win/loss ratios first.
-        Zero-loss records rank ahead of any
-        record with a loss.
-      </p>
-
-    </div>
-
-    <div class="tablehead">
-      <div>#</div>
-      <div>Trader</div>
-      <div>Win/Loss</div>
-      <div>Profit</div>
-      <div>Resolved</div>
-    </div>
-
-    <div id="traders">
-
-      <div class="empty">
-        Click Scan Top 100.
+      <div class="hint">
+        No-loss records rank first.
+        Within the same ratio, more wins rank higher.
+        Wallet IDs are hidden.
       </div>
 
-    </div>
+      <div class="tablewrap">
 
-  </section>
+        <table class="table">
 
-  <section class="panel">
+          <thead>
 
-    <div class="head">
+            <tr>
+              <th>#</th>
+              <th>Trader</th>
+              <th>W-L</th>
+              <th>W/L</th>
+              <th>PnL</th>
+              <th>Volume</th>
+            </tr>
+
+          </thead>
+
+          <tbody id="traders">
+
+            <tr>
+              <td colspan="6" class="empty">
+                Loading...
+              </td>
+            </tr>
+
+          </tbody>
+
+        </table>
+
+      </div>
+
+    </section>
+
+
+    <section class="card">
 
       <h2>
         Shared Active Markets
       </h2>
 
-      <p>
-        Only markets where every tracked
-        top-1,000 holder is on the same
-        YES or NO side.
-      </p>
-
-    </div>
-
-    <div id="markets">
-
-      <div class="empty">
-        Click Scan Shared Markets.
+      <div class="hint">
+        Only markets where every tracked holder
+        is on the same outcome are shown.
+        Entry is the earliest BUY fill found
+        for that market in the fetched trade window.
       </div>
 
-    </div>
+      <div id="markets" class="market-grid">
 
-  </section>
+        <div class="empty">
+          Loading...
+        </div>
+
+      </div>
+
+    </section>
+
+  </div>
+
+
+  <div class="foot">
+    Data source: Polymarket public Data API v2
+    and Gamma market API.
+  </div>
 
 </div>
+
 
 <script>
 
 const WORKER =
-  "https://YOUR-WORKER.workers.dev";
+  "https://polymarket-proxy.rowanmcbride77.workers.dev";
 
-let traders = [];
-let weeklyTop1000 = [];
-let markets = [];
 
-let openTrader = null;
-let openMarket = null;
-let busy = false;
+const $ = id =>
+  document.getElementById(id);
 
-const $ =
-  id =>
-    document.getElementById(id);
 
-function esc(v){
+let state = {
+  traders: [],
+  records: new Map(),
+  positions: [],
+  markets: []
+};
 
-  return String(v ?? "")
-    .replace(
-      /[&<>"']/g,
-      c => ({
-        "&":"&amp;",
-        "<":"&lt;",
-        ">":"&gt;",
-        '"':"&quot;",
-        "'":"&#39;"
-      }[c])
-    );
+
+function esc(value){
+
+  return String(value ?? "")
+    .replace(/[&<>'"]/g, c => ({
+      "&":"&amp;",
+      "<":"&lt;",
+      ">":"&gt;",
+      "'":"&#39;",
+      '"':"&quot;"
+    }[c]));
 
 }
 
-function money(v){
 
-  if(
-    v == null ||
-    v === ""
-  ){
+function money(value){
+
+  const n = Number(value);
+
+  if (!Number.isFinite(n)){
     return "—";
   }
 
-  const n =
-    Number(v);
-
-  if(
-    !Number.isFinite(n)
-  ){
-    return "—";
-  }
-
-  const a =
-    Math.abs(n);
-
-  let s;
-
-  if(a >= 1e6){
-
-    s =
-      "$" +
-      (a / 1e6)
-        .toFixed(2) +
-      "M";
-
-  }else if(a >= 1e3){
-
-    s =
-      "$" +
-      (a / 1e3)
-        .toFixed(1) +
-      "K";
-
-  }else{
-
-    s =
-      "$" +
-      a.toFixed(2);
-
-  }
-
-  return n < 0
-    ? "-" + s
-    : s;
-}
-
-function num(v){
-
-  return Number(
-    v || 0
-  ).toLocaleString();
-
-}
-
-function status(
-  text,
-  type = ""
-){
-
-  $("status")
-    .textContent =
-      text;
-
-  $("status")
-    .className =
-      "status " +
-      type;
-
-}
-
-async function api(
-  path
-){
-
-  let last;
-
-  for(
-    let i = 0;
-    i < 4;
-    i++
-  ){
-
-    try{
-
-      const r =
-        await fetch(
-          WORKER + path,
-          {
-            cache:
-              "no-store"
-          }
-        );
-
-      const text =
-        await r.text();
-
-      let body;
-
-      try{
-
-        body =
-          JSON.parse(text);
-
-      }catch{
-
-        throw new Error(
-          "Worker returned invalid JSON"
-        );
-
-      }
-
-      if(
-        !r.ok ||
-        body?.ok === false
-      ){
-
-        throw new Error(
-          body?.error ||
-          "HTTP " +
-          r.status
-        );
-
-      }
-
-      return body;
-
-    }catch(e){
-
-      last = e;
-
-      if(
-        i < 3
-      ){
-
-        await new Promise(
-          resolve =>
-            setTimeout(
-              resolve,
-              1000 *
-              (i + 1)
-            )
-        );
-
-      }
-
+  return (
+    n < 0 ? "-" : ""
+  ) +
+  "$" +
+  Math.abs(n).toLocaleString(
+    undefined,
+    {
+      maximumFractionDigits:0
     }
-
-  }
-
-  throw last;
+  );
 
 }
 
-function rows(body){
 
-  if(
-    Array.isArray(
-      body?.data
-    )
-  ){
+function num(value){
 
-    return body.data;
-
-  }
-
-  if(
-    Array.isArray(body)
-  ){
-
-    return body;
-
-  }
-
-  return [];
-
-}
-
-async function board(
-  period,
-  sort
-){
-
-  let p;
-
-  if(
-    period === "week"
-  ){
-
-    p = "week";
-
-  }else if(
-    period === "month"
-  ){
-
-    p = "month";
-
-  }else{
-
-    p = "all";
-
-  }
-
-  const body =
-    await api(
-      "/api/leaderboard" +
-      "?time_period=" +
-      encodeURIComponent(p) +
-      "&sort_by=" +
-      encodeURIComponent(sort) +
-      "&limit=1000" +
-      "&category=overall"
+  return Number(value || 0)
+    .toLocaleString(
+      undefined,
+      {
+        maximumFractionDigits:1
+      }
     );
 
-  return rows(body);
+}
+
+
+function nameOf(trader){
+
+  return (
+    trader.user_name ||
+    trader.username ||
+    trader.name ||
+    trader.x_username ||
+    "Anonymous trader"
+  );
 
 }
 
-function normalizeBoard(
-  row,
-  index
-){
 
-  return {
+async function api(path){
 
-    wallet:
-      String(
-        row?.user_id ||
-        row?.proxy_wallet ||
-        row?.proxyWallet ||
-        row?.address ||
-        ""
-      ).toLowerCase(),
+  const response =
+    await fetch(
+      WORKER + path,
+      {
+        cache:"no-store"
+      }
+    );
 
-    name:
-      String(
-        row?.user_name ||
-        row?.userName ||
-        row?.name ||
-        "Trader"
-      ),
+  let body;
 
-    rank:
-      Number(
-        row?.rank
-      ) ||
-      index + 1,
+  try{
+    body = await response.json();
+  }catch{
+    throw new Error(
+      "Worker returned non-JSON data."
+    );
+  }
 
-    pnl:
-      Number(
-        row?.pnl
-      ) ||
+  if (
+    !response.ok ||
+    body?.ok === false
+  ){
+    throw new Error(
+      body?.error ||
+      ("HTTP " + response.status)
+    );
+  }
+
+  return body;
+
+}
+
+
+function status(text, percent){
+
+  $("status").textContent =
+    text;
+
+  $("bar").style.width =
+    Math.max(
       0,
-
-    volume:
-      Number(
-        row?.volume
-      ) ||
-      0
-
-  };
-
-}
-
-async function candidates(
-  period
-){
-
-  let sets = [];
-
-  if(
-    period === "3m"
-  ){
-
-    sets =
-      await Promise.all([
-        board(
-          "month",
-          "PNL"
-        ),
-
-        board(
-          "month",
-          "VOLUME"
-        ),
-
-        board(
-          "all",
-          "PNL"
-        ),
-
-        board(
-          "all",
-          "VOLUME"
-        )
-      ]);
-
-  }else{
-
-    sets =
-      await Promise.all([
-        board(
-          period,
-          "PNL"
-        ),
-
-        board(
-          period,
-          "VOLUME"
-        )
-      ]);
-
-  }
-
-  const map =
-    new Map();
-
-  sets.forEach(
-    (
-      array,
-      setIndex
-    ) => {
-
-      array.forEach(
-        (
-          row,
-          index
-        ) => {
-
-          const x =
-            normalizeBoard(
-              row,
-              index
-            );
-
-          if(!x.wallet){
-            return;
-          }
-
-          const old =
-            map.get(
-              x.wallet
-            );
-
-          if(
-            !old ||
-            index < old.rank
-          ){
-
-            map.set(
-              x.wallet,
-              {
-                ...x,
-                source:
-                  setIndex
-              }
-            );
-
-          }
-
-        }
-      );
-
-    }
-  );
-
-  return [
-    ...map.values()
-  ].slice(
-    0,
-    1500
-  );
-
-}
-
-function windowSeconds(
-  period
-){
-
-  if(
-    period === "month"
-  ){
-
-    return 30 * 86400;
-
-  }
-
-  if(
-    period === "3m"
-  ){
-
-    return 90 * 86400;
-
-  }
-
-  return 7 * 86400;
-
-}
-
-async function positions(
-  wallet,
-  statusName,
-  start,
-  end
-){
-
-  const output = [];
-
-  let cursor = null;
-
-  while(true){
-
-    let url =
-      "/api/positions" +
-      "?user=" +
-      encodeURIComponent(wallet) +
-      "&status=" +
-      encodeURIComponent(
-        statusName
-      ) +
-      "&limit=1000";
-
-    if(
-      start != null
-    ){
-
-      url +=
-        "&start=" +
-        start;
-
-    }
-
-    if(
-      end != null
-    ){
-
-      url +=
-        "&end=" +
-        end;
-
-    }
-
-    if(cursor){
-
-      url +=
-        "&cursor=" +
-        encodeURIComponent(
-          cursor
-        );
-
-    }
-
-    const body =
-      await api(url);
-
-    output.push(
-      ...rows(body)
-    );
-
-    cursor =
-      body?.pagination
-        ?.next_cursor ||
-      null;
-
-    if(!cursor){
-      break;
-    }
-
-  }
-
-  return output;
-
-}
-
-async function record(
-  trader,
-  period
-){
-
-  const end =
-    Math.floor(
-      Date.now() /
-      1000
-    );
-
-  const start =
-    end -
-    windowSeconds(
-      period
-    );
-
-  const [
-    wins,
-    losses
-  ] =
-    await Promise.all([
-
-      positions(
-        trader.wallet,
-        "REDEEMABLE",
-        start,
-        end
-      ),
-
-      positions(
-        trader.wallet,
-        "REDEEMABLE_LOST",
-        start,
-        end
+      Math.min(
+        100,
+        percent || 0
       )
-
-    ]);
-
-  const result =
-    new Map();
-
-  for(
-    const position
-    of losses
-  ){
-
-    const id =
-      String(
-        position?.condition_id ||
-        position?.conditionId ||
-        ""
-      );
-
-    if(id){
-
-      result.set(
-        id,
-        "L"
-      );
-
-    }
-
-  }
-
-  for(
-    const position
-    of wins
-  ){
-
-    const id =
-      String(
-        position?.condition_id ||
-        position?.conditionId ||
-        ""
-      );
-
-    if(id){
-
-      result.set(
-        id,
-        "W"
-      );
-
-    }
-
-  }
-
-  let winCount = 0;
-  let lossCount = 0;
-
-  for(
-    const value
-    of result.values()
-  ){
-
-    if(
-      value === "W"
-    ){
-
-      winCount++;
-
-    }else{
-
-      lossCount++;
-
-    }
-
-  }
-
-  return {
-
-    ...trader,
-
-    wins:
-      winCount,
-
-    losses:
-      lossCount,
-
-    resolved:
-      winCount +
-      lossCount
-
-  };
+    ) + "%";
 
 }
 
-function score(
-  trader
-){
 
-  if(
-    !trader.resolved
-  ){
+function ratioText(wins, losses){
 
-    return -1;
+  if (losses === 0){
 
-  }
-
-  if(
-    !trader.losses
-  ){
-
-    return trader.wins;
+    return wins
+      ? "∞"
+      : "0.00";
 
   }
 
   return (
-    trader.wins /
-    trader.losses
-  );
+    wins / losses
+  ).toFixed(2);
 
 }
 
-async function scanRecords(
-  list,
-  period
-){
 
-  const output =
-    new Array(
-      list.length
-    );
+function renderTraders(){
 
-  let next = 0;
-  let done = 0;
+  const rows =
+    state.traders.map(
+      trader => {
 
-  async function worker(){
+        const wallet =
+          trader.user_id ||
+          trader.proxy_wallet ||
+          trader.wallet;
 
-    while(true){
+        const record =
+          state.records.get(wallet)
+          || {
+            wins:0,
+            losses:0
+          };
 
-      const index =
-        next++;
+        const wins =
+          Number(record.wins || 0);
 
-      if(
-        index >=
-        list.length
-      ){
+        const losses =
+          Number(record.losses || 0);
 
-        return;
+        const ratio =
+          losses === 0
+            ? Infinity
+            : wins / losses;
 
-      }
-
-      try{
-
-        output[index] =
-          await record(
-            list[index],
-            period
-          );
-
-      }catch{
-
-        output[index] = {
-
-          ...list[index],
-
-          wins:0,
-          losses:0,
-          resolved:0,
-          failed:true
-
+        return {
+          ...trader,
+          wallet,
+          wins,
+          losses,
+          ratio
         };
 
       }
-
-      done++;
-
-      if(
-        done % 10 === 0 ||
-        done ===
-        list.length
-      ){
-
-        status(
-          "Calculating " +
-          period +
-          " win/loss: " +
-          done +
-          " / " +
-          list.length +
-          "..."
-        );
-
-      }
-
-    }
-
-  }
-
-  await Promise.all(
-    Array.from(
-      {
-        length:
-          8
-      },
-      worker
-    )
-  );
-
-  return output
-    .filter(
-      x =>
-        x &&
-        !x.failed &&
-        x.resolved > 0
-    )
-    .sort(
-      (
-        a,
-        b
-      ) =>
-        score(b) -
-        score(a) ||
-
-        b.wins -
-        a.wins ||
-
-        a.losses -
-        b.losses ||
-
-        b.resolved -
-        a.resolved
     );
 
-}
 
-async function profit(
-  wallet,
-  period
-){
+  rows.sort(
+    (a,b) => {
 
-  try{
-
-    const interval =
-      period === "week"
-        ? "1w"
-        : period === "month"
-          ? "1m"
-          : "max";
-
-    const body =
-      await api(
-        "/api/user-pnl" +
-        "?user=" +
-        encodeURIComponent(
-          wallet
-        ) +
-        "&interval=" +
-        interval +
-        "&fidelity=1d"
-      );
-
-    const points =
-      (
-        body?.data?.points ||
-        []
-      )
-      .filter(
-        point =>
-          Number.isFinite(
-            Number(
-              point.timestamp
-            )
-          )
-      );
-
-    if(
-      !points.length
-    ){
-
-      return null;
-
-    }
-
-    const latest =
-      points[
-        points.length - 1
-      ];
-
-    const cutoff =
-      Math.floor(
-        Date.now() /
-        1000
-      ) -
-      windowSeconds(
-        period
-      );
-
-    let base =
-      points[0];
-
-    for(
-      const point
-      of points
-    ){
-
-      if(
-        Number(
-          point.timestamp
-        ) <= cutoff
+      if (
+        b.ratio !==
+        a.ratio
       ){
-
-        base =
-          point;
-
+        return (
+          b.ratio -
+          a.ratio
+        );
       }
 
-    }
-
-    const value =
-      point =>
-        Number(
-          point?.economic_pnl ??
-          point?.realized_pnl ??
-          point?.realized_market_pnl
+      if (
+        b.wins !==
+        a.wins
+      ){
+        return (
+          b.wins -
+          a.wins
         );
-
-    const latestValue =
-      value(latest);
-
-    const baseValue =
-      value(base);
-
-    if(
-      Number.isFinite(
-        latestValue
-      ) &&
-      Number.isFinite(
-        baseValue
-      )
-    ){
+      }
 
       return (
-        latestValue -
-        baseValue
+        Number(b.pnl || 0) -
+        Number(a.pnl || 0)
       );
 
     }
+  );
 
-    return null;
 
-  }catch{
+  state.top100 =
+    rows.slice(0,100);
 
-    return null;
 
-  }
+  $("traders").innerHTML =
+    state.top100.map(
+      (trader,index) => {
+
+        return `
+          <tr>
+
+            <td class="rank">
+              ${index + 1}
+            </td>
+
+            <td class="name">
+              ${esc(
+                nameOf(trader)
+              )}
+            </td>
+
+            <td>
+              <span class="win">
+                ${trader.wins}
+              </span>
+              -
+              <span class="loss">
+                ${trader.losses}
+              </span>
+            </td>
+
+            <td class="ratio ${
+              trader.losses === 0
+                ? "inf"
+                : ""
+            }">
+              ${ratioText(
+                trader.wins,
+                trader.losses
+              )}
+            </td>
+
+            <td class="pnl">
+              ${money(
+                trader.pnl
+              )}
+            </td>
+
+            <td>
+              ${num(
+                trader.volume
+              )}
+            </td>
+
+          </tr>
+        `;
+
+      }
+    ).join("");
+
 
 }
 
-async function addProfits(
+
+async function batch(
   list,
-  period
+  size,
+  pathBuilder,
+  concurrency
 ){
 
-  const output =
-    list.slice(
-      0,
-      100
-    );
+  const results = [];
 
-  let next = 0;
-  let done = 0;
+  let index = 0;
+
 
   async function worker(){
 
     while(true){
 
-      const index =
-        next++;
+      const current =
+        index++;
 
-      if(
-        index >=
-        output.length
+      if (
+        current >=
+        list.length
       ){
-
         return;
-
       }
 
-      output[index].profit =
-        await profit(
-          output[index].wallet,
-          period
+      const chunk =
+        list.slice(
+          current,
+          current + size
         );
 
-      done++;
-
-      if(
-        done % 10 === 0 ||
-        done ===
-        output.length
-      ){
-
-        status(
-          "Loading profit: " +
-          done +
-          " / " +
-          output.length +
-          "..."
-        );
-
-      }
+      results.push(
+        await api(
+          pathBuilder(chunk)
+        )
+      );
 
     }
 
   }
 
+
+  const count =
+    Math.min(
+      concurrency,
+      Math.ceil(
+        list.length /
+        size
+      ) || 1
+    );
+
+
   await Promise.all(
     Array.from(
       {
-        length:5
+        length:count
       },
       worker
     )
   );
 
-  return output;
+
+  return results;
 
 }
 
-async function scanTop(){
 
-  if(busy){
-    return;
+function buildMarkets(){
+
+  const grouped =
+    new Map();
+
+
+  for (
+    const position
+    of state.positions
+  ){
+
+    const condition =
+      position.condition_id;
+
+    if (!condition){
+      continue;
+    }
+
+
+    const end =
+      Date.parse(
+        position.end_date || ""
+      );
+
+
+    if (
+      end &&
+      end < Date.now()
+    ){
+      continue;
+    }
+
+
+    const size =
+      Number(
+        position.current_size || 0
+      );
+
+
+    if (
+      size <= 0
+    ){
+      continue;
+    }
+
+
+    const wallet =
+      position.proxy_wallet;
+
+
+    if (!wallet){
+      continue;
+    }
+
+
+    if (
+      !grouped.has(
+        condition
+      )
+    ){
+
+      grouped.set(
+        condition,
+        {
+          condition_id:
+            condition,
+
+          title:
+            position.title ||
+            position.name ||
+            "Untitled market",
+
+          end_date:
+            position.end_date,
+
+          outcomes:
+            new Map(),
+
+          holders:
+            new Map()
+        }
+      );
+
+    }
+
+
+    const market =
+      grouped.get(
+        condition
+      );
+
+
+    const outcome =
+      position.outcome ||
+      String(
+        position.outcome_index ??
+        ""
+      );
+
+
+    if (
+      !market.outcomes.has(
+        outcome
+      )
+    ){
+
+      market.outcomes.set(
+        outcome,
+        []
+      );
+
+    }
+
+
+    market.outcomes
+      .get(outcome)
+      .push(wallet);
+
+
+    market.holders.set(
+      wallet,
+      position
+    );
+
   }
 
-  busy = true;
 
-  buttons(true);
+  const threshold =
+    Number(
+      $("threshold").value || 2
+    );
 
-  openTrader = null;
+
+  const markets = [];
+
+
+  for (
+    const market
+    of grouped.values()
+  ){
+
+    /*
+     * If tracked holders are on
+     * more than one outcome,
+     * this market is discarded.
+     */
+    if (
+      market.outcomes.size !== 1
+    ){
+      continue;
+    }
+
+
+    const holders =
+      [...market.holders.values()];
+
+
+    if (
+      holders.length <
+      threshold
+    ){
+      continue;
+    }
+
+
+    const side =
+      [...market.outcomes.keys()][0];
+
+
+    markets.push({
+      ...market,
+      side,
+      holders
+    });
+
+  }
+
+
+  markets.sort(
+    (a,b) =>
+      b.holders.length -
+      a.holders.length
+  );
+
+
+  state.markets =
+    markets;
+
+}
+
+
+function renderMarkets(
+  tradeMap = new Map()
+){
+
+  const markets =
+    state.markets;
+
+
+  if (
+    !markets.length
+  ){
+
+    $("markets").innerHTML =
+      `
+        <div class="empty">
+          No same-side shared active
+          markets met the threshold.
+        </div>
+      `;
+
+    return;
+
+  }
+
+
+  $("markets").innerHTML =
+    markets
+      .slice(0,100)
+      .map(
+        market => {
+
+          const end =
+            market.end_date
+              ? new Date(
+                  market.end_date
+                ).toLocaleString()
+              : "—";
+
+
+          const holders =
+            market.holders
+              .map(position => {
+
+                const trader =
+                  state.traderMap.get(
+                    position.proxy_wallet
+                  ) || {};
+
+
+                const traderName =
+                  nameOf(trader);
+
+
+                const key =
+                  position.proxy_wallet +
+                  "|" +
+                  market.condition_id;
+
+
+                const trade =
+                  tradeMap.get(
+                    key
+                  );
+
+
+                let entry =
+                  "Older / not found";
+
+
+                if (
+                  trade &&
+                  trade.time
+                ){
+
+                  entry =
+                    new Date(
+                      trade.time * 1000
+                    ).toLocaleString();
+
+                }
+
+
+                const spent =
+                  position.entry_cost_usdc ??
+                  position.total_cost_usdc ??
+                  position.current_value ??
+                  0;
+
+
+                return `
+                  <div class="holder">
+
+                    <b>
+                      ${esc(
+                        traderName
+                      )}
+                    </b>
+
+                    <span>
+                      Entry:
+                      ${esc(entry)}
+                    </span>
+
+                    <span>
+                      Spent:
+                      ${money(spent)}
+                    </span>
+
+                  </div>
+                `;
+
+              })
+              .join("");
+
+
+          return `
+            <article class="market">
+
+              <div class="markettop">
+
+                <div class="markettitle">
+                  ${esc(
+                    market.title
+                  )}
+                </div>
+
+                <div class="pill">
+                  ${
+                    market.holders.length
+                  }
+                  traders
+                </div>
+
+              </div>
+
+
+              <div class="side">
+                Same side:
+                ${esc(market.side)}
+              </div>
+
+
+              <div class="small">
+                Ends:
+                ${esc(end)}
+              </div>
+
+
+              <div class="holders">
+                ${holders}
+              </div>
+
+            </article>
+          `;
+
+        }
+      )
+      .join("");
+
+}
+
+
+async function loadTradesForMarkets(
+  markets,
+  period
+){
+
+  const now =
+    Math.floor(
+      Date.now() / 1000
+    );
+
+
+  let days = 7;
+
+  if (
+    period === "month"
+  ){
+    days = 30;
+  }
+
+  if (
+    period === "3m"
+  ){
+    days = 90;
+  }
+
+
+  const start =
+    now -
+    days * 86400;
+
+
+  const conditions =
+    [
+      ...new Set(
+        markets
+          .slice(0,100)
+          .map(
+            market =>
+              market.condition_id
+          )
+      )
+    ];
+
+
+  const batches = [];
+
+
+  for (
+    let i = 0;
+    i < conditions.length;
+    i += 20
+  ){
+
+    batches.push(
+      conditions.slice(
+        i,
+        i + 20
+      )
+    );
+
+  }
+
+
+  const tradeMap =
+    new Map();
+
+
+  let complete = 0;
+
+
+  for (
+    const group
+    of batches
+  ){
+
+    try{
+
+      const response =
+        await api(
+          "/trades?conditions=" +
+          encodeURIComponent(
+            group.join(",")
+          ) +
+          "&limit=1000" +
+          "&start=" +
+          start +
+          "&end=" +
+          now
+        );
+
+
+      for (
+        const trade
+        of response.data || []
+      ){
+
+        if (
+          String(
+            trade.side || ""
+          ).toUpperCase() !==
+          "BUY"
+        ){
+          continue;
+        }
+
+
+        const wallet =
+          trade.proxy_wallet;
+
+
+        const key =
+          wallet +
+          "|" +
+          trade.condition_id;
+
+
+        const old =
+          tradeMap.get(key);
+
+
+        if (
+          !old ||
+          Number(
+            trade.timestamp
+          ) <
+          Number(
+            old.time
+          )
+        ){
+
+          tradeMap.set(
+            key,
+            {
+              time:
+                Number(
+                  trade.timestamp
+                )
+            }
+          );
+
+        }
+
+      }
+
+    }catch{
+      /*
+       * A missing trade batch does not
+       * kill the whole scanner.
+       */
+    }
+
+
+    complete++;
+
+
+    status(
+      "Finding entry times… " +
+      complete +
+      "/" +
+      batches.length,
+      86 +
+      Math.round(
+        (
+          complete /
+          Math.max(
+            batches.length,
+            1
+          )
+        ) * 8
+      )
+    );
+
+  }
+
+
+  return tradeMap;
+
+}
+
+
+async function scan(){
+
+  $("scan").disabled =
+    true;
+
+
+  $("traders").innerHTML =
+    `
+      <tr>
+        <td
+          colspan="6"
+          class="empty"
+        >
+          Scanning…
+        </td>
+      </tr>
+    `;
+
+
+  $("markets").innerHTML =
+    `
+      <div class="empty">
+        Scanning…
+      </div>
+    `;
+
+
+  state = {
+    traders:[],
+    records:new Map(),
+    positions:[],
+    markets:[]
+  };
+
 
   try{
 
     const period =
       $("period").value;
 
+
+    /*
+     * STEP 1
+     * Get the top 1,000
+     * candidate traders.
+     */
     status(
-      "Loading Polymarket leaderboard candidates..."
+      "Loading the top 1,000 candidate traders…",
+      5
     );
 
-    const candidateList =
-      await candidates(
-        period
+
+    const leaderboard =
+      await api(
+        "/scan?period=" +
+        encodeURIComponent(
+          period
+        )
       );
 
-    if(
-      !candidateList.length
+
+    state.traders =
+      Array.isArray(
+        leaderboard.traders
+      )
+        ? leaderboard.traders
+        : [];
+
+
+    state.traderMap =
+      new Map(
+        state.traders.map(
+          trader => [
+
+            trader.user_id ||
+            trader.proxy_wallet ||
+            trader.wallet,
+
+            trader
+
+          ]
+        )
+      );
+
+
+    if (
+      !state.traders.length
+    ){
+      throw new Error(
+        "Polymarket returned no leaderboard rows."
+      );
+    }
+
+
+    /*
+     * STEP 2
+     * Calculate W/L for
+     * the first 100 candidates.
+     */
+    status(
+      "Calculating win/loss records for the top 100 candidates…",
+      15
+    );
+
+
+    const topUsers =
+      state.traders
+        .slice(0,100)
+        .map(
+          trader =>
+            trader.user_id ||
+            trader.proxy_wallet ||
+            trader.wallet
+        )
+        .filter(Boolean);
+
+
+    const recordBatches =
+      await batch(
+        topUsers,
+        10,
+
+        users =>
+          "/batch-records?period=" +
+          encodeURIComponent(
+            period
+          ) +
+          "&users=" +
+          encodeURIComponent(
+            users.join(",")
+          ),
+
+        3
+      );
+
+
+    for (
+      const batchResult
+      of recordBatches
     ){
 
-      throw new Error(
-        "Polymarket returned no leaderboard candidates."
-      );
+      for (
+        const record
+        of batchResult.results || []
+      ){
+
+        state.records.set(
+          record.wallet,
+          record
+        );
+
+      }
 
     }
 
-    status(
-      "Loaded " +
-      candidateList.length +
-      " candidates. Calculating resolved records..."
-    );
-
-    const ranked =
-      await scanRecords(
-        candidateList,
-        period
-      );
-
-    if(
-      !ranked.length
-    ){
-
-      throw new Error(
-        "No resolved records were returned for this candidate pool."
-      );
-
-    }
-
-    traders =
-      await addProfits(
-        ranked,
-        period
-      );
-
-    $("sTraders")
-      .textContent =
-        num(
-          traders.length
-        );
-
-    $("sResolved")
-      .textContent =
-        num(
-          traders.reduce(
-            (
-              total,
-              trader
-            ) =>
-              total +
-              trader.resolved,
-            0
-          )
-        );
 
     renderTraders();
 
+
+    /*
+     * STEP 3
+     * Fetch active positions
+     * for all 1,000.
+     */
     status(
-      "Finished: " +
-      traders.length +
-      " traders ranked for " +
-      period +
-      ".",
-      "ok"
+      "Top 100 ready. Loading active positions for all 1,000 candidates…",
+      30
     );
 
-  }catch(error){
 
-    $("traders")
-      .innerHTML =
-        '<div class="empty">' +
-        esc(
-          error.message
-        ) +
-        '</div>';
-
-    status(
-      "Scan failed: " +
-      error.message,
-      "err"
-    );
-
-  }finally{
-
-    busy = false;
-
-    buttons(false);
-
-  }
-
-}
-
-function renderTraders(){
-
-  const query =
-    $("search")
-      .value
-      .trim()
-      .toLowerCase();
-
-  const list =
-    traders.filter(
-      trader =>
-        !query ||
-        trader.name
-          .toLowerCase()
-          .includes(query)
-    );
-
-  if(
-    !list.length
-  ){
-
-    $("traders")
-      .innerHTML =
-        '<div class="empty">' +
-        'No traders found.' +
-        '</div>';
-
-    return;
-
-  }
-
-  $("traders")
-    .innerHTML =
-      list
+    const allUsers =
+      state.traders
         .map(
-          (
-            trader,
-            index
-          ) => {
-
-            const expanded =
-              openTrader ===
-              trader.wallet;
-
-            return `
-
-              <div
-                class="trader"
-                data-wallet="${esc(
-                  trader.wallet
-                )}"
-              >
-
-                <div>
-                  ${num(index + 1)}
-                </div>
-
-                <div class="name">
-                  ${esc(
-                    trader.name
-                  )}
-                </div>
-
-                <div class="record">
-                  ${trader.wins}-${trader.losses}
-                </div>
-
-                <div class="${
-                  trader.profit > 0
-                    ? "positive"
-                    : trader.profit < 0
-                      ? "negative"
-                      : ""
-                }">
-                  ${money(
-                    trader.profit
-                  )}
-                </div>
-
-                <div>
-                  ${num(
-                    trader.resolved
-                  )}
-                </div>
-
-                ${
-                  expanded
-                    ? `
-                      <div class="detail">
-                        Loading...
-                      </div>
-                    `
-                    : ""
-                }
-
-              </div>
-
-            `;
-
-          }
+          trader =>
+            trader.user_id ||
+            trader.proxy_wallet ||
+            trader.wallet
         )
-        .join("");
+        .filter(Boolean);
 
-  document
-    .querySelectorAll(
-      ".trader"
-    )
-    .forEach(
-      element => {
 
-        element.onclick =
-          async () => {
+    const positionBatches =
+      await batch(
+        allUsers,
+        20,
 
-            const wallet =
-              element.dataset
-                .wallet;
+        users =>
+          "/batch-positions?users=" +
+          encodeURIComponent(
+            users.join(",")
+          ),
 
-            if(
-              openTrader ===
-              wallet
-            ){
-
-              openTrader = null;
-
-              renderTraders();
-
-              return;
-
-            }
-
-            openTrader =
-              wallet;
-
-            renderTraders();
-
-            const detail =
-              element.querySelector(
-                ".detail"
-              );
-
-            if(detail){
-
-              await traderDetail(
-                wallet,
-                detail
-              );
-
-            }
-
-          };
-
-      }
-    );
-
-}
-
-async function traderDetail(
-  wallet,
-  detail
-){
-
-  const trader =
-    traders.find(
-      x =>
-        x.wallet ===
-        wallet
-    );
-
-  try{
-
-    const positionsList =
-      await positions(
-        wallet,
-        "OPEN"
+        4
       );
 
-    $("sPositions")
-      .textContent =
-        num(
-          positionsList.length
+
+    for (
+      const batchResult
+      of positionBatches
+    ){
+
+      for (
+        const result
+        of batchResult.results || []
+      ){
+
+        state.positions.push(
+          ...(result.data || [])
         );
-
-    detail.innerHTML = `
-
-      <div class="metrics">
-
-        <div class="metric">
-          <small>
-            Week record
-          </small>
-
-          <b>
-            ${trader.wins}-
-            ${trader.losses}
-          </b>
-        </div>
-
-        <div class="metric">
-
-          <small>
-            Week P&L
-          </small>
-
-          <b class="${
-            trader.profit >= 0
-              ? "positive"
-              : "negative"
-          }">
-            ${money(
-              trader.profit
-            )}
-          </b>
-
-        </div>
-
-        <div class="metric">
-
-          <small>
-            Active trades
-          </small>
-
-          <b>
-            ${
-              positionsList.length
-            }
-          </b>
-
-        </div>
-
-      </div>
-
-      ${
-        positionsList.length
-
-          ? positionsList
-              .map(
-                position => `
-
-                  <div class="pos">
-
-                    <div class="pos-title">
-                      ${esc(
-                        position.title ||
-                        position.name ||
-                        "Market"
-                      )}
-                    </div>
-
-                    <div class="${
-                      String(
-                        position.outcome
-                      ).toUpperCase() ===
-                      "YES"
-                        ? "yes"
-                        : "no"
-                    }">
-
-                      ${esc(
-                        String(
-                          position.outcome ||
-                          ""
-                        ).toUpperCase()
-                      )}
-
-                    </div>
-
-                    <div>
-                      ${money(
-                        position.current_value
-                      )}
-                    </div>
-
-                    <div>
-                      ${num(
-                        position.current_size
-                      )}
-                      shares
-                    </div>
-
-                    <div>
-                      ${money(
-                        position.total_pnl
-                      )}
-                    </div>
-
-                  </div>
-
-                `
-              )
-              .join("")
-
-          : `
-            <div class="muted">
-              No active positions.
-            </div>
-          `
-      }
-
-    `;
-
-  }catch(error){
-
-    detail.innerHTML =
-      '<div class="negative">' +
-      esc(
-        error.message
-      ) +
-      '</div>';
-
-  }
-
-}
-
-async function weeklyPool(){
-
-  if(
-    weeklyTop1000.length
-  ){
-
-    return weeklyTop1000;
-
-  }
-
-  const candidateList =
-    await candidates(
-      "week"
-    );
-
-  status(
-    "Calculating weekly records for the shared-market pool..."
-  );
-
-  const ranked =
-    await scanRecords(
-      candidateList,
-      "week"
-    );
-
-  weeklyTop1000 =
-    ranked.slice(
-      0,
-      1000
-    );
-
-  $("sPool")
-    .textContent =
-      num(
-        weeklyTop1000.length
-      );
-
-  return weeklyTop1000;
-
-}
-
-async function activePositionsForTrader(
-  trader
-){
-
-  return positions(
-    trader.wallet,
-    "OPEN"
-  );
-
-}
-
-async function scanMarkets(){
-
-  if(busy){
-    return;
-  }
-
-  busy = true;
-
-  buttons(true);
-
-  openMarket = null;
-
-  $("markets")
-    .innerHTML =
-      '<div class="empty">' +
-      'Scanning...' +
-      '</div>';
-
-  try{
-
-    const pool =
-      await weeklyPool();
-
-    const groups =
-      new Map();
-
-    let done = 0;
-    let next = 0;
-
-    async function worker(){
-
-      while(true){
-
-        const index =
-          next++;
-
-        if(
-          index >=
-          pool.length
-        ){
-
-          return;
-
-        }
-
-        const trader =
-          pool[index];
-
-        try{
-
-          const positionsList =
-            await activePositionsForTrader(
-              trader
-            );
-
-          for(
-            const position
-            of positionsList
-          ){
-
-            const id =
-              String(
-                position?.condition_id ||
-                ""
-              );
-
-            const side =
-              String(
-                position?.outcome ||
-                ""
-              ).toUpperCase();
-
-            if(
-              !id ||
-              (
-                side !== "YES" &&
-                side !== "NO"
-              )
-            ){
-
-              continue;
-
-            }
-
-            let market =
-              groups.get(id);
-
-            if(!market){
-
-              market = {
-
-                id,
-
-                title:
-                  position.title ||
-                  position.name ||
-                  "Market",
-
-                holders:
-                  new Map(),
-
-                value:0
-
-              };
-
-            }
-
-            market.holders.set(
-              trader.wallet,
-              {
-
-                wallet:
-                  trader.wallet,
-
-                name:
-                  trader.name,
-
-                side,
-
-                entry:
-                  Number(
-                    position.entry_cost_usdc
-                  ) || 0,
-
-                current:
-                  Number(
-                    position.current_value
-                  ) || 0,
-
-                shares:
-                  Number(
-                    position.current_size
-                  ) || 0,
-
-                position
-
-              }
-            );
-
-            market.value +=
-              Number(
-                position.current_value
-              ) || 0;
-
-            groups.set(
-              id,
-              market
-            );
-
-          }
-
-        }catch{
-
-        }
-
-        done++;
-
-        if(
-          done % 10 === 0 ||
-          done ===
-          pool.length
-        ){
-
-          status(
-            "Scanning active markets: " +
-            done +
-            " / " +
-            pool.length +
-            " weekly traders..."
-          );
-
-        }
 
       }
 
     }
 
-    await Promise.all(
-      Array.from(
-        {
-          length:8
-        },
-        worker
-      )
+
+    /*
+     * STEP 4
+     * Group shared same-side markets.
+     */
+    status(
+      "Grouping same-side active markets…",
+      82
     );
 
-    const minimum =
-      Number(
-        $("minShared")
-          .value
-      );
 
-    markets =
-      [
-        ...groups.values()
-      ]
-      .map(
-        market => {
-
-          const holders =
-            [
-              ...market.holders
-                .values()
-            ];
-
-          return {
-
-            ...market,
-
-            holders,
-
-            side:
-              new Set(
-                holders.map(
-                  holder =>
-                    holder.side
-                )
-              )
-
-          };
-
-        }
-      )
-      .filter(
-        market =>
-          market.holders.length >=
-          minimum &&
-          market.side.size ===
-          1
-      )
-      .sort(
-        (
-          a,
-          b
-        ) =>
-          b.holders.length -
-          a.holders.length ||
-
-          b.value -
-          a.value
-      );
+    buildMarkets();
 
     renderMarkets();
 
+
+    /*
+     * STEP 5
+     * Find actual BUY timestamps.
+     */
     status(
-      "Finished: found " +
-      markets.length +
-      " pure same-side shared markets.",
-      "ok"
+      "Finding entry times for the shared markets…",
+      86
+    );
+
+
+    const tradeMap =
+      await loadTradesForMarkets(
+        state.markets,
+        period
+      );
+
+
+    renderMarkets(
+      tradeMap
+    );
+
+
+    status(
+      "Done — " +
+      state.top100.length +
+      " traders ranked and " +
+      state.markets.length +
+      " same-side shared markets found.",
+      100
     );
 
   }catch(error){
 
-    $("markets")
-      .innerHTML =
-        '<div class="empty">' +
-        esc(
-          error.message
-        ) +
-        '</div>';
+    $("status").innerHTML =
+      `
+        <span class="error">
+          Scan failed:
+          ${esc(
+            error.message ||
+            error
+          )}
+        </span>
+      `;
 
-    status(
-      "Market scan failed: " +
-      error.message,
-      "err"
-    );
+    $("bar").style.width =
+      "0%";
 
   }finally{
 
-    busy = false;
-
-    buttons(false);
+    $("scan").disabled =
+      false;
 
   }
 
 }
 
-async function firstBuy(
-  wallet,
-  condition
-){
 
-  try{
+$("scan").onclick =
+  scan;
 
-    const body =
-      await api(
-        "/api/trades" +
-        "?user=" +
-        encodeURIComponent(wallet) +
-        "&condition=" +
-        encodeURIComponent(condition) +
-        "&limit=100" +
-        "&taker_only=true"
-      );
 
-    const trades =
-      rows(body)
-        .filter(
-          trade =>
-            String(
-              trade.side ||
-              ""
-            ).toUpperCase() ===
-            "BUY"
-        )
-        .sort(
-          (
-            a,
-            b
-          ) =>
-            Number(
-              a.timestamp
-            ) -
-            Number(
-              b.timestamp
-            )
-        );
+$("period").onchange =
+  scan;
 
-    if(
-      !trades.length
+
+$("threshold").onchange =
+  () => {
+
+    if (
+      state.positions.length
     ){
 
-      return null;
+      buildMarkets();
 
-    }
-
-    return trades[0];
-
-  }catch{
-
-    return null;
-
-  }
-
-}
-
-async function loadMarketDetails(
-  market,
-  detail
-){
-
-  detail.innerHTML =
-    '<div class="muted">' +
-    'Loading buy times and trade volume...' +
-    '</div>';
-
-  const holderRows =
-    new Array(
-      market.holders.length
-    );
-
-  let next = 0;
-
-  async function worker(){
-
-    while(true){
-
-      const index =
-        next++;
-
-      if(
-        index >=
-        market.holders.length
-      ){
-
-        return;
-
-      }
-
-      const holder =
-        market.holders[index];
-
-      const buy =
-        await firstBuy(
-          holder.wallet,
-          market.id
-        );
-
-      holderRows[index] = {
-
-        ...holder,
-
-        buy
-
-      };
-
-    }
-
-  }
-
-  await Promise.all(
-    Array.from(
-      {
-        length:
-          Math.min(
-            5,
-            market.holders.length
-          )
-      },
-      worker
-    )
-  );
-
-  detail.innerHTML = `
-
-    <div class="holder">
-
-      <b>Trader</b>
-      <b>Side</b>
-      <b>Bought</b>
-      <b>Volume</b>
-      <b>Week W/L</b>
-
-    </div>
-
-    ${
-      holderRows
-        .map(
-          holder => {
-
-            const trader =
-              weeklyTop1000.find(
-                x =>
-                  x.wallet ===
-                  holder.wallet
-              );
-
-            const tradeVolume =
-              holder.buy?.price &&
-              holder.buy?.size
-                ? Number(
-                    holder.buy.price
-                  ) *
-                  Number(
-                    holder.buy.size
-                  )
-                : holder.entry;
-
-            return `
-
-              <div class="holder">
-
-                <div>
-
-                  <b>
-                    ${esc(
-                      holder.name
-                    )}
-                  </b>
-
-                  <div class="tiny">
-                    ${money(
-                      holder.entry
-                    )}
-                    entry •
-                    ${num(
-                      holder.shares
-                    )}
-                    shares
-                  </div>
-
-                </div>
-
-                <div class="${
-                  holder.side ===
-                  "YES"
-                    ? "yes"
-                    : "no"
-                }">
-
-                  ${holder.side}
-
-                </div>
-
-                <div>
-
-                  ${
-                    holder.buy?.timestamp
-                      ? new Date(
-                          Number(
-                            holder.buy.timestamp
-                          ) *
-                          1000
-                        ).toLocaleString()
-                      : "—"
-                  }
-
-                </div>
-
-                <div>
-                  ${money(
-                    tradeVolume
-                  )}
-                </div>
-
-                <div>
-
-                  ${
-                    trader?.wins ??
-                    0
-                  }-${
-                    trader?.losses ??
-                    0
-                  }
-
-                </div>
-
-              </div>
-
-            `;
-
-          }
-        )
-        .join("")
-    }
-
-  `;
-
-}
-
-function renderMarkets(){
-
-  if(
-    !markets.length
-  ){
-
-    $("markets")
-      .innerHTML =
-        '<div class="empty">' +
-        'No same-side shared markets met the selected threshold.' +
-        '</div>';
-
-    return;
-
-  }
-
-  $("markets")
-    .innerHTML =
-      markets
-        .map(
-          (
-            market,
-            index
-          ) => {
-
-            const expanded =
-              openMarket ===
-              market.id;
-
-            const side =
-              [
-                ...market.side
-              ][0];
-
-            return `
-
-              <div class="market">
-
-                <div class="market-title">
-
-                  ${
-                    index + 1
-                  }.
-
-                  ${esc(
-                    market.title
-                  )}
-
-                </div>
-
-                <div class="market-meta">
-
-                  ${
-                    market.holders.length
-                  }
-                  shared top-1,000 traders
-
-                  •
-
-                  ${
-                    money(
-                      market.value
-                    )
-                  }
-                  current value
-
-                </div>
-
-                <div
-                  class="consensus ${
-                    side === "YES"
-                      ? "yes"
-                      : "no"
-                  }"
-                >
-
-                  100% ${side}
-
-                </div>
-
-                <div class="market-buttons">
-
-                  ${
-                    market.holders
-                      .map(
-                        holder => `
-
-                          <button
-                            class="pill"
-                            data-market="${
-                              esc(
-                                market.id
-                              )
-                            }"
-                            data-wallet="${
-                              esc(
-                                holder.wallet
-                              )
-                            }"
-                          >
-
-                            ${esc(
-                              holder.name
-                            )}
-
-                          </button>
-
-                        `
-                      )
-                      .join("")
-                  }
-
-                </div>
-
-                ${
-                  expanded
-                    ? `
-                      <div class="market-detail">
-                        Loading...
-                      </div>
-                    `
-                    : ""
-                }
-
-              </div>
-
-            `;
-
-          }
-        )
-        .join("");
-
-  document
-    .querySelectorAll(
-      ".market"
-    )
-    .forEach(
-      element => {
-
-        element.onclick =
-          async event => {
-
-            if(
-              event.target
-                .classList
-                .contains(
-                  "pill"
-                )
-            ){
-
-              return;
-
-            }
-
-            const pill =
-              element.querySelector(
-                ".pill"
-              );
-
-            if(!pill){
-              return;
-            }
-
-            const id =
-              pill.dataset
-                .market;
-
-            openMarket =
-              openMarket ===
-              id
-                ? null
-                : id;
-
-            renderMarkets();
-
-            const detail =
-              element.querySelector(
-                ".market-detail"
-              );
-
-            if(detail){
-
-              const market =
-                markets.find(
-                  x =>
-                    x.id ===
-                    id
-                );
-
-              if(market){
-
-                await loadMarketDetails(
-                  market,
-                  detail
-                );
-
-              }
-
-            }
-
-          };
-
-      }
-    );
-
-  document
-    .querySelectorAll(
-      ".pill"
-    )
-    .forEach(
-      button => {
-
-        button.onclick =
-          async event => {
-
-            event.stopPropagation();
-
-            const id =
-              button.dataset
-                .market;
-
-            openMarket =
-              openMarket ===
-              id
-                ? null
-                : id;
-
-            renderMarkets();
-
-            const element =
-              [
-                ...document
-                  .querySelectorAll(
-                    ".market"
-                  )
-              ]
-              .find(
-                x =>
-                  x.querySelector(
-                    ".pill"
-                  )?.dataset
-                    .market ===
-                  id
-              );
-
-            const detail =
-              element?.querySelector(
-                ".market-detail"
-              );
-
-            const market =
-              markets.find(
-                x =>
-                  x.id ===
-                  id
-              );
-
-            if(
-              detail &&
-              market
-            ){
-
-              await loadMarketDetails(
-                market,
-                detail
-              );
-
-            }
-
-          };
-
-      }
-    );
-
-}
-
-function buttons(
-  disabled
-){
-
-  $("scanBtn")
-    .disabled =
-      disabled;
-
-  $("marketBtn")
-    .disabled =
-      disabled;
-
-}
-
-$("scanBtn")
-  .onclick =
-    scanTop;
-
-$("marketBtn")
-  .onclick =
-    scanMarkets;
-
-$("search")
-  .oninput =
-    renderTraders;
-
-$("period")
-  .onchange =
-    () => {
-
-      traders = [];
-
-      openTrader = null;
-
-      $("traders")
-        .innerHTML =
-          '<div class="empty">' +
-          'Click Scan Top 100.' +
-          '</div>';
-
-      status(
-        "Ready."
-      );
-
-    };
-
-$("minShared")
-  .onchange =
-    () =>
       renderMarkets();
+
+    }
+
+  };
+
+
+scan();
 
 </script>
 
