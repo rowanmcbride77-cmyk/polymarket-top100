@@ -1,1611 +1,862 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-
-<title>Polymarket Top Traders</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Polymarket Scanner</title>
 
 <style>
-
-:root{
-  --bg:#050505;
-  --panel:#0c0c0c;
-  --line:#242424;
-  --text:#f4f4f4;
-  --muted:#9a9a9a;
-  --green:#4ade80;
-  --red:#fb7185;
+* {
+  box-sizing: border-box;
 }
 
-*{
-  box-sizing:border-box;
+body {
+  margin: 0;
+  background: #000;
+  color: #fff;
+  font-family: Arial, Helvetica, sans-serif;
 }
 
-body{
-  margin:0;
-  background:var(--bg);
-  color:var(--text);
-  font:14px/1.45 Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+.container {
+  width: min(1400px, 94%);
+  margin: 0 auto;
+  padding: 28px 0 60px;
 }
 
-main{
-  max-width:1100px;
-  margin:0 auto;
-  padding:28px 18px 50px;
+h1 {
+  margin: 0 0 6px;
+  font-size: 30px;
 }
 
-h1{
-  font-size:25px;
-  margin:0 0 18px;
+.subtitle {
+  color: #888;
+  margin-bottom: 25px;
 }
 
-h2{
-  font-size:18px;
-  margin:0 0 12px;
-}
-
-.bar{
-  display:flex;
-  gap:10px;
-  align-items:center;
-  margin-bottom:14px;
-  flex-wrap:wrap;
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 20px;
 }
 
 select,
-button{
-  background:#101010;
-  color:#fff;
-  border:1px solid #303030;
-  border-radius:8px;
-  padding:9px 12px;
-  font:inherit;
+button {
+  background: #111;
+  color: #fff;
+  border: 1px solid #333;
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 14px;
 }
 
-button{
-  cursor:pointer;
+button {
+  cursor: pointer;
 }
 
-button:hover{
-  border-color:#555;
+button:hover {
+  background: #1c1c1c;
 }
 
-.status{
-  color:var(--muted);
-  min-height:21px;
+button.primary {
+  background: #fff;
+  color: #000;
+  border-color: #fff;
+  font-weight: 700;
 }
 
-.panel{
-  border:1px solid var(--line);
-  background:var(--panel);
-  border-radius:12px;
-  overflow:hidden;
-  margin-bottom:28px;
+.status {
+  background: #0b0b0b;
+  border: 1px solid #222;
+  border-radius: 10px;
+  padding: 13px 15px;
+  margin-bottom: 25px;
+  color: #aaa;
 }
 
-.table{
-  width:100%;
-  border-collapse:collapse;
+.status strong {
+  color: #fff;
 }
 
-.table th,
-.table td{
-  padding:11px 13px;
-  border-bottom:1px solid #1d1d1d;
-  text-align:left;
-  vertical-align:middle;
+.section {
+  margin-top: 30px;
 }
 
-.table th{
-  font-size:12px;
-  color:#8f8f8f;
-  text-transform:uppercase;
-  letter-spacing:.04em;
+.section-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
 }
 
-.table tr:last-child td{
-  border-bottom:0;
+.section-title h2 {
+  margin: 0;
+  font-size: 21px;
 }
 
-.trader{
-  cursor:pointer;
+.count {
+  color: #777;
+  font-size: 13px;
 }
 
-.trader:hover{
-  background:#111;
+.table-wrap {
+  overflow-x: auto;
+  background: #080808;
+  border: 1px solid #222;
+  border-radius: 10px;
 }
 
-.rank{
-  width:55px;
-  color:#777;
+table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 850px;
 }
 
-.name{
-  font-weight:650;
+th {
+  text-align: left;
+  color: #777;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  padding: 12px;
+  border-bottom: 1px solid #222;
 }
 
-.ratio{
-  font-variant-numeric:tabular-nums;
+td {
+  padding: 13px 12px;
+  border-bottom: 1px solid #161616;
+  font-size: 14px;
 }
 
-.profit{
-  font-variant-numeric:tabular-nums;
+tr:last-child td {
+  border-bottom: 0;
 }
 
-.positive{
-  color:var(--green);
+tr:hover td {
+  background: #0d0d0d;
 }
 
-.negative{
-  color:var(--red);
+.rank {
+  color: #777;
+  width: 55px;
 }
 
-.detail{
-  display:none;
-  border-top:1px solid #292929;
-  background:#090909;
+.name {
+  font-weight: 700;
 }
 
-.detail.open{
-  display:table-row;
+.good {
+  color: #63e68b;
 }
 
-.detail td{
-  padding:0;
+.bad {
+  color: #ff6464;
 }
 
-.active{
-  padding:14px;
+.neutral {
+  color: #bbb;
 }
 
-.active-title{
-  font-weight:650;
-  margin-bottom:8px;
+.ratio {
+  font-weight: 700;
 }
 
-.mini{
-  width:100%;
-  border-collapse:collapse;
+.market-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+  gap: 12px;
 }
 
-.mini th,
-.mini td{
-  padding:8px 6px;
-  border-bottom:1px solid #1a1a1a;
-  text-align:left;
+.market {
+  background: #080808;
+  border: 1px solid #222;
+  border-radius: 10px;
+  padding: 16px;
 }
 
-.mini th{
-  font-size:11px;
-  color:#777;
+.market-title {
+  font-weight: 700;
+  line-height: 1.35;
+  margin-bottom: 10px;
 }
 
-.empty{
-  padding:22px;
-  color:#888;
+.market-meta {
+  color: #777;
+  font-size: 12px;
+  margin-bottom: 14px;
 }
 
-.shared-card{
-  padding:14px;
-  border-bottom:1px solid #1d1d1d;
+.side {
+  display: inline-block;
+  border: 1px solid #333;
+  border-radius: 6px;
+  padding: 4px 7px;
+  font-size: 11px;
+  font-weight: 700;
+  margin-bottom: 10px;
 }
 
-.shared-card:last-child{
-  border-bottom:0;
+.holders {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
 }
 
-.market-title{
-  font-weight:700;
-  margin-bottom:7px;
+.holder {
+  background: #101010;
+  border-radius: 7px;
+  padding: 9px 10px;
+  font-size: 13px;
 }
 
-.side{
-  display:inline-block;
-  font-weight:700;
-  margin-right:10px;
+.holder-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
 }
 
-.side.yes{
-  color:var(--green);
+.holder-name {
+  font-weight: 700;
 }
 
-.side.no{
-  color:var(--red);
+.holder-record {
+  color: #999;
 }
 
-.holders{
-  display:flex;
-  flex-wrap:wrap;
-  gap:6px;
+.holder-bottom {
+  margin-top: 5px;
+  color: #777;
+  font-size: 12px;
 }
 
-.holder{
-  border:1px solid #292929;
-  border-radius:7px;
-  padding:5px 7px;
-  color:#ddd;
-  background:#0a0a0a;
+.empty {
+  background: #080808;
+  border: 1px solid #222;
+  border-radius: 10px;
+  padding: 25px;
+  color: #777;
+  text-align: center;
 }
 
-.sub{
-  color:#777;
-  font-size:12px;
+.error {
+  color: #ff6464;
 }
 
-.loading{
-  padding:16px;
-  color:#999;
+.loading {
+  color: #aaa;
 }
 
-.topline{
-  display:flex;
-  justify-content:space-between;
-  gap:10px;
-  align-items:center;
-  padding:14px;
-  border-bottom:1px solid #202020;
-}
+@media(max-width:700px) {
+  .container {
+    width: 95%;
+    padding-top: 20px;
+  }
 
-.count{
-  color:#777;
-  font-size:12px;
-}
+  h1 {
+    font-size: 25px;
+  }
 
+  .market-grid {
+    grid-template-columns: 1fr;
+  }
+}
 </style>
 </head>
 
 <body>
 
-<main>
+<div class="container">
 
-<h1>Polymarket Top Traders</h1>
+  <h1>Polymarket Scanner</h1>
+  <div class="subtitle">
+    Top traders by win/loss performance and shared active positions
+  </div>
 
-<div class="bar">
+  <div class="controls">
+    <select id="period">
+      <option value="week">Week</option>
+      <option value="month">Month</option>
+      <option value="3month">3 Months</option>
+    </select>
 
-<select id="period">
-  <option value="week">Week</option>
-  <option value="month">Month</option>
-  <option value="3months">3 Months</option>
-</select>
+    <select id="threshold">
+      <option value="1">1+ Traders</option>
+      <option value="2" selected>2+ Traders</option>
+      <option value="5">5+ Traders</option>
+      <option value="10">10+ Traders</option>
+    </select>
 
-<button id="load">
-  Load
-</button>
+    <button class="primary" id="scanBtn">Scan</button>
+  </div>
 
-<span id="status" class="status"></span>
+  <div class="status" id="status">
+    <strong>Status:</strong> Ready
+  </div>
 
-</div>
+  <div class="section">
 
+    <div class="section-title">
+      <h2>Top 100 Traders</h2>
+      <div class="count" id="traderCount">0 traders</div>
+    </div>
 
-<section>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Rank</th>
+            <th>Trader</th>
+            <th>Wins</th>
+            <th>Losses</th>
+            <th>W/L</th>
+            <th>P&L</th>
+          </tr>
+        </thead>
 
-<h2>Top 100 Traders</h2>
+        <tbody id="traderBody">
+          <tr>
+            <td colspan="6" class="neutral">
+              Click Scan to begin.
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
 
-<div class="panel">
+  </div>
 
-<div id="topline" class="topline">
-  <span>Win-loss ratio, profit</span>
-  <span id="topcount" class="count"></span>
-</div>
+  <div class="section">
 
-<table class="table">
+    <div class="section-title">
+      <h2>Shared Active Markets</h2>
+      <div class="count" id="marketCount">0 markets</div>
+    </div>
 
-<thead>
+    <div id="markets" class="market-grid">
+      <div class="empty">
+        Run a scan to find active markets.
+      </div>
+    </div>
 
-<tr>
-  <th>#</th>
-  <th>Name</th>
-  <th>W-L</th>
-  <th>Ratio</th>
-  <th>Profit</th>
-</tr>
-
-</thead>
-
-<tbody id="traders"></tbody>
-
-</table>
-
-</div>
-
-</section>
-
-
-<section>
-
-<h2>Shared Active Markets — Top 1,000</h2>
-
-<div class="bar">
-
-<select id="threshold">
-
-  <option value="1">
-    1+ traders
-  </option>
-
-  <option value="2" selected>
-    2+ traders
-  </option>
-
-  <option value="5">
-    5+ traders
-  </option>
-
-  <option value="10">
-    10+ traders
-  </option>
-
-</select>
-
-<button id="sharedLoad">
-  Load Shared Markets
-</button>
-
-<span id="sharedStatus" class="status"></span>
+  </div>
 
 </div>
-
-<div class="panel" id="shared"></div>
-
-</section>
-
-</main>
-
 
 <script>
 
 const WORKER =
-  "https://polymarket-proxy.rowanmcbride77.workers.dev";
+  "https://polymarket-proxy.rowanmcbride.workers.dev";
 
-const $ = id =>
-  document.getElementById(id);
+const $ = id => document.getElementById(id);
 
-const state = {
-  leaders:[],
-  ranked:[],
-  period:"week"
-};
+const statusEl = $("status");
+const traderBody = $("traderBody");
+const traderCount = $("traderCount");
+const marketCount = $("marketCount");
+const marketsEl = $("markets");
+const scanBtn = $("scanBtn");
 
-
-function esc(s){
-
-  return String(s ?? "")
-    .replace(
-      /[&<>'"]/g,
-      c => ({
-        "&":"&amp;",
-        "<":"&lt;",
-        ">":"&gt;",
-        "'":"&#39;",
-        '"':"&quot;"
-      }[c])
-    );
-
+function setStatus(message, error = false) {
+  statusEl.innerHTML =
+    '<strong>Status:</strong> ' +
+    (error ? '<span class="error">' : '') +
+    escapeHtml(message) +
+    (error ? '</span>' : '');
 }
 
-
-function money(n){
-
-  n = Number(n || 0);
-
-  return (
-    n < 0 ? "-" : ""
-  ) +
-  "$" +
-  Math.abs(n).toLocaleString(
-    undefined,
-    {
-      maximumFractionDigits:2
-    }
-  );
-
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
 }
 
-
-function ratio(w,l){
-
-  w = Number(w || 0);
-  l = Number(l || 0);
-
-  if(l === 0){
-
-    return w > 0
-      ? "∞"
-      : "—";
-
-  }
-
-  return (
-    w / l
-  ).toFixed(2);
-
+function number(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : 0;
 }
 
+function money(value) {
+  const n = number(value);
 
-function fmtTime(ts){
+  if (Math.abs(n) >= 1000000) {
+    return "$" + (n / 1000000).toFixed(2) + "M";
+  }
 
-  if(!ts)
-    return "—";
+  if (Math.abs(n) >= 1000) {
+    return "$" + (n / 1000).toFixed(1) + "K";
+  }
 
-  return new Date(
-    Number(ts) * 1000
-  ).toLocaleString(
-    undefined,
-    {
-      month:"short",
-      day:"numeric",
-      hour:"numeric",
-      minute:"2-digit"
-    }
-  );
-
+  return "$" + n.toFixed(2);
 }
 
+function ratio(wins, losses) {
+  wins = number(wins);
+  losses = number(losses);
 
-async function api(
-  path,
-  params={}
-){
+  if (losses === 0 && wins > 0) return "∞";
+  if (wins === 0 && losses === 0) return "—";
 
-  const u =
-    new URL(WORKER + path);
-
-  Object.entries(params)
-    .forEach(
-      ([k,v]) => {
-
-        if(
-          v !== undefined &&
-          v !== null &&
-          v !== ""
-        ){
-
-          u.searchParams.set(
-            k,
-            v
-          );
-
-        }
-
-      }
-    );
-
-  const r =
-    await fetch(u);
-
-  const j =
-    await r.json();
-
-  if(!r.ok){
-
-    throw new Error(
-      j.error ||
-      "Request failed"
-    );
-
-  }
-
-  return j;
-
+  return (wins / losses).toFixed(2);
 }
 
+function recordClass(wins, losses) {
+  if (number(losses) === 0) return "good";
+  if (number(wins) > number(losses)) return "good";
+  if (number(wins) < number(losses)) return "bad";
+  return "neutral";
+}
 
-async function loadLeaders(){
+function normalizeTrader(t) {
+  return {
+    rank: t.rank ?? t.position ?? 0,
 
-  state.period =
-    $("period").value;
+    name:
+      t.userName ??
+      t.username ??
+      t.name ??
+      t.displayName ??
+      "Unknown Trader",
 
-  $("status").textContent =
-    "Loading Polymarket traders…";
+    wins:
+      t.wins ??
+      t.win ??
+      t.wins_count ??
+      t.resolvedWins ??
+      0,
 
-  $("traders").innerHTML = "";
+    losses:
+      t.losses ??
+      t.loss ??
+      t.losses_count ??
+      t.resolvedLosses ??
+      0,
 
-  $("topcount").textContent = "";
+    pnl:
+      t.pnl ??
+      t.profit ??
+      t.PNL ??
+      t.total_pnl ??
+      0,
 
-  const j =
-    await api(
-      "/leaderboard",
-      {
-        period:state.period,
-        limit:1000
-      }
-    );
+    wallet:
+      t.proxyWallet ??
+      t.wallet ??
+      t.address ??
+      ""
+  };
+}
 
-  state.leaders =
-    j.data ||
-    j.leaderboard ||
-    [];
+function renderTraders(data) {
 
-  if(
-    !state.leaders.length
-  ){
+  let traders = [];
 
-    throw new Error(
-      "Polymarket returned no traders"
-    );
-
+  if (Array.isArray(data)) {
+    traders = data;
+  } else if (Array.isArray(data.traders)) {
+    traders = data.traders;
+  } else if (Array.isArray(data.leaderboard)) {
+    traders = data.leaderboard;
+  } else if (Array.isArray(data.data)) {
+    traders = data.data;
   }
 
+  traders = traders
+    .map(normalizeTrader)
+    .sort((a, b) => {
 
-  $("status").textContent =
-    "Calculating win-loss records…";
-
-
-  const now =
-    Math.floor(
-      Date.now()/1000
-    );
-
-  const days =
-    state.period === "week"
-      ? 7
-      : state.period === "month"
-        ? 30
-        : 90;
-
-  const start =
-    now -
-    days * 86400;
-
-
-  const results = [];
-
-  let done = 0;
-
-  const queue =
-    [...state.leaders];
-
-  let stop = false;
-
-
-  async function worker(){
-
-    while(
-      queue.length &&
-      !stop
-    ){
-
-      const t =
-        queue.shift();
-
-      try{
-
-        const wallet =
-          t.user_id ||
-          t.proxy_wallet ||
-          t.proxyWallet;
-
-
-        const [
-          wins,
-          losses
-        ] =
-          await Promise.all([
-
-            api(
-              "/positions",
-              {
-                user:wallet,
-                status:"REDEEMABLE",
-                start,
-                end:now
-              }
-            ),
-
-            api(
-              "/positions",
-              {
-                user:wallet,
-                status:"REDEEMABLE_LOST",
-                start,
-                end:now
-              }
-            )
-
-          ]);
-
-
-        const w =
-          (wins.data || []).length;
-
-        const l =
-          (losses.data || []).length;
-
-
-        results.push({
-          ...t,
-          w,
-          l
-        });
-
-
-        done++;
-
-
-        if(
-          done % 10 === 0
-        ){
-
-          $("status").textContent =
-            `Calculating win-loss records… ${done} traders checked`;
-
-        }
-
-
-        const noLoss =
-          results.filter(
-            x =>
-              x.l === 0 &&
-              x.w > 0
-          ).length;
-
-
-        if(
-          noLoss >= 100
-        ){
-
-          stop = true;
-
-        }
-
-      }catch(e){
-
-        done++;
-
-      }
-
-    }
-
-  }
-
-
-  await Promise.all(
-    Array.from(
-      {length:18},
-      worker
-    )
-  );
-
-
-  if(!stop){
-
-    while(
-      queue.length
-    ){
-
-      await Promise.all(
-        Array.from(
-          {length:18},
-          worker
-        )
-      );
-
-    }
-
-  }
-
-
-  results.sort(
-    (a,b) => {
+      const aw = number(a.wins);
+      const al = number(a.losses);
+      const bw = number(b.wins);
+      const bl = number(b.losses);
 
       const ar =
-        a.l === 0
-          ? (
-              a.w
-                ? Infinity
-                : 0
-            )
-          : a.w / a.l;
+        al === 0
+          ? (aw > 0 ? Infinity : 0)
+          : aw / al;
 
       const br =
-        b.l === 0
-          ? (
-              b.w
-                ? Infinity
-                : 0
-            )
-          : b.w / b.l;
+        bl === 0
+          ? (bw > 0 ? Infinity : 0)
+          : bw / bl;
 
+      if (br !== ar) return br - ar;
 
-      return (
-        br - ar
-      )
-      ||
-      Number(b.pnl || 0) -
-      Number(a.pnl || 0)
-      ||
-      Number(a.rank || 99999) -
-      Number(b.rank || 99999);
+      return bw - aw;
+    })
+    .slice(0, 100);
 
-    }
-  );
+  traderCount.textContent =
+    traders.length + " traders";
 
+  if (!traders.length) {
+    traderBody.innerHTML = `
+      <tr>
+        <td colspan="6" class="neutral">
+          No trader data returned.
+        </td>
+      </tr>
+    `;
+    return;
+  }
 
-  state.ranked =
-    results.slice(0,100);
+  traderBody.innerHTML = traders.map((t, i) => {
 
+    const cls = recordClass(t.wins, t.losses);
 
-  /*
-   * Three-month profit.
-   *
-   * Polymarket's public leaderboard
-   * has week/month/all-time boards,
-   * not a 90-day board.
-   *
-   * For 3 months we calculate the
-   * 90-day change from the cumulative
-   * user PnL series.
-   */
+    return `
+      <tr>
+        <td class="rank">${i + 1}</td>
 
-  if(
-    state.period === "3months"
-  ){
+        <td class="name">
+          ${escapeHtml(t.name)}
+        </td>
 
-    $("status").textContent =
-      "Loading 3-month profit…";
+        <td class="${cls}">
+          ${number(t.wins)}
+        </td>
 
+        <td class="${number(t.losses) > 0 ? "bad" : "good"}">
+          ${number(t.losses)}
+        </td>
 
-    const q =
-      [...state.ranked];
+        <td class="ratio ${cls}">
+          ${ratio(t.wins, t.losses)}
+        </td>
 
-    let qi = 0;
+        <td class="${number(t.pnl) >= 0 ? "good" : "bad"}">
+          ${money(t.pnl)}
+        </td>
+      </tr>
+    `;
 
+  }).join("");
+}
 
-    async function pnlWorker(){
+function normalizeHolder(h) {
 
-      while(
-        qi < q.length
-      ){
+  return {
+    name:
+      h.userName ??
+      h.username ??
+      h.name ??
+      h.trader ??
+      "Unknown Trader",
 
-        const t =
-          q[qi++];
+    side:
+      h.side ??
+      h.outcome ??
+      h.position ??
+      "Unknown",
 
-        try{
+    volume:
+      h.volume ??
+      h.size ??
+      h.amount ??
+      h.totalValue ??
+      h.currentValue ??
+      0,
 
-          const wallet =
-            t.user_id ||
-            t.proxy_wallet ||
-            t.proxyWallet;
+    bought:
+      h.buyTime ??
+      h.boughtAt ??
+      h.firstBuy ??
+      h.first_seen ??
+      h.timestamp ??
+      h.last_event_at ??
+      "",
 
+    wins:
+      h.wins ??
+      h.weekWins ??
+      0,
 
-          const j =
-            await api(
-              "/pnl",
-              {
-                user:wallet,
-                interval:"max",
-                fidelity:"1d"
-              }
-            );
+    losses:
+      h.losses ??
+      h.weekLosses ??
+      0
+  };
+}
 
+function formatTime(value) {
 
-          const points =
-            j.data?.points || [];
+  if (!value) return "Unknown";
 
+  const d = new Date(value);
 
-          const cutoff =
-            Date.now()/1000 -
-            90 * 86400;
+  if (Number.isNaN(d.getTime())) {
+    return String(value);
+  }
 
+  return d.toLocaleString();
+}
 
-          let latest = 0;
+function renderMarkets(data) {
 
-          let base = 0;
+  let markets = [];
 
+  if (Array.isArray(data)) {
+    markets = data;
+  } else if (Array.isArray(data.markets)) {
+    markets = data.markets;
+  } else if (Array.isArray(data.sharedMarkets)) {
+    markets = data.sharedMarkets;
+  } else if (Array.isArray(data.data)) {
+    markets = data.data;
+  }
 
-          if(points.length){
+  marketCount.textContent =
+    markets.length + " markets";
 
-            const last =
-              points[
-                points.length - 1
-              ];
+  if (!markets.length) {
+    marketsEl.innerHTML = `
+      <div class="empty">
+        No matching shared active markets found.
+      </div>
+    `;
+    return;
+  }
 
-            latest =
-              Number(
-                last.realized_pnl ??
-                last.economic_pnl ??
-                0
-              );
+  marketsEl.innerHTML = markets.map(m => {
 
+    const title =
+      m.title ??
+      m.question ??
+      m.market ??
+      "Unknown Market";
 
-            for(
-              const point of points
-            ){
+    const side =
+      m.side ??
+      m.outcome ??
+      "Unknown";
 
-              if(
-                Number(point.timestamp) <=
-                cutoff
-              ){
+    let holders =
+      Array.isArray(m.holders)
+        ? m.holders
+        : Array.isArray(m.traders)
+          ? m.traders
+          : [];
 
-                base =
-                  Number(
-                    point.realized_pnl ??
-                    point.economic_pnl ??
-                    0
-                  );
+    holders = holders.map(normalizeHolder);
 
-              }else{
+    const traderCount =
+      m.traderCount ??
+      m.count ??
+      holders.length;
 
-                break;
+    return `
+      <div class="market">
 
-              }
+        <div class="market-title">
+          ${escapeHtml(title)}
+        </div>
 
-            }
+        <div class="market-meta">
+          ${traderCount} tracked trader${traderCount === 1 ? "" : "s"}
+        </div>
 
+        <div class="side">
+          ${escapeHtml(side)}
+        </div>
+
+        <div class="holders">
+
+          ${
+            holders.length
+              ? holders.map(h => `
+                <div class="holder">
+
+                  <div class="holder-top">
+
+                    <span class="holder-name">
+                      ${escapeHtml(h.name)}
+                    </span>
+
+                    <span class="holder-record">
+                      ${number(h.wins)}-${number(h.losses)}
+                    </span>
+
+                  </div>
+
+                  <div class="holder-bottom">
+                    Bought:
+                    ${escapeHtml(formatTime(h.bought))}
+                    &nbsp; • &nbsp;
+                    Volume:
+                    ${escapeHtml(money(h.volume))}
+                  </div>
+
+                </div>
+              `).join("")
+              : `
+                <div class="holder">
+                  No holder details returned.
+                </div>
+              `
           }
 
+        </div>
 
-          t.pnl =
-            latest - base;
+      </div>
+    `;
 
-        }catch(e){
+  }).join("");
+}
 
-          t.pnl = 0;
+async function getJSON(url) {
 
-        }
+  const response = await fetch(url, {
+    method: "GET",
+    headers: {
+      "Accept": "application/json"
+    },
+    cache: "no-store"
+  });
 
-      }
+  const text = await response.text();
 
-    }
+  let data;
 
+  try {
+    data = JSON.parse(text);
+  } catch {
+    throw new Error(
+      "Worker returned something that is not JSON."
+    );
+  }
 
-    await Promise.all(
-      Array.from(
-        {length:12},
-        pnlWorker
-      )
+  if (!response.ok) {
+
+    throw new Error(
+      data.error ||
+      data.message ||
+      `Worker HTTP ${response.status}`
     );
 
   }
 
-
-  renderTraders();
-
-
-  $("status").textContent =
-    `Loaded ${state.ranked.length} traders.`;
-
+  return data;
 }
 
+async function scan() {
 
-function renderTraders(){
+  scanBtn.disabled = true;
 
-  $("topcount").textContent =
-    `${state.ranked.length} traders`;
+  traderBody.innerHTML = `
+    <tr>
+      <td colspan="6" class="loading">
+        Loading traders...
+      </td>
+    </tr>
+  `;
 
+  marketsEl.innerHTML = `
+    <div class="empty loading">
+      Finding shared active markets...
+    </div>
+  `;
 
-  $("traders").innerHTML =
-    state.ranked
-      .map(
-        (t,i) => {
+  traderCount.textContent = "Loading...";
+  marketCount.textContent = "Loading...";
 
-          const wallet =
-            t.user_id ||
-            t.proxy_wallet ||
-            t.proxyWallet;
+  const period = $("period").value;
+  const threshold = $("threshold").value;
 
-          const p =
-            Number(t.pnl || 0);
+  try {
 
-
-          return `
-
-<tr
-  class="trader"
-  data-wallet="${esc(wallet)}"
->
-
-<td class="rank">
-  ${i+1}
-</td>
-
-<td class="name">
-  ${esc(
-    t.user_name ||
-    t.userName ||
-    "Unnamed"
-  )}
-</td>
-
-<td>
-  ${t.w}-${t.l}
-</td>
-
-<td class="ratio">
-  ${ratio(t.w,t.l)}
-</td>
-
-<td
-  class="profit ${
-    p >= 0
-      ? "positive"
-      : "negative"
-  }"
->
-  ${money(p)}
-</td>
-
-</tr>
-
-
-<tr
-  class="detail"
-  id="detail-${wallet}"
->
-
-<td colspan="5">
-
-<div class="active">
-
-<div class="loading">
-  Loading active markets…
-</div>
-
-</div>
-
-</td>
-
-</tr>
-
-`;
-
-        }
-      )
-      .join("");
-
-
-  document
-    .querySelectorAll(".trader")
-    .forEach(
-      row => {
-
-        row.addEventListener(
-          "click",
-          () =>
-            toggleTrader(
-              row.dataset.wallet,
-              row
-            )
-        );
-
-      }
-    );
-
-}
-
-
-async function toggleTrader(
-  wallet,
-  row
-){
-
-  const d =
-    $("detail-" + wallet);
-
-
-  if(
-    d.classList.contains("open")
-  ){
-
-    d.classList.remove("open");
-
-    return;
-
-  }
-
-
-  d.classList.add("open");
-
-
-  const box =
-    d.querySelector(".active");
-
-
-  box.innerHTML =
-    '<div class="loading">Loading active markets…</div>';
-
-
-  try{
-
-    const j =
-      await api(
-        "/positions",
-        {
-          user:wallet,
-          status:"OPEN",
-          sort_by:"CURRENT_VALUE",
-          sort_direction:"DESC"
-        }
-      );
-
-
-    let positions =
-      j.data || [];
-
-
-    positions =
-      positions.filter(
-        p =>
-          Number(
-            p.current_size ??
-            p.size ??
-            0
-          ) > 0
-      );
-
-
-    if(
-      !positions.length
-    ){
-
-      box.innerHTML =
-        '<div class="empty">No active markets.</div>';
-
-      return;
-
-    }
-
-
-    const ids =
-      positions
-        .map(
-          p =>
-            p.condition_id
-        )
-        .filter(Boolean);
-
-
-    const tradeMap = {};
-
+    setStatus("Connecting to Polymarket scanner...");
 
     /*
-     * Get the trader's BUY trades
-     * for the active markets.
-     *
-     * We use the earliest BUY as
-     * "Bought" and add the BUY
-     * notional to show how much
-     * they put into that market.
-     */
+      Main scan endpoint.
 
-    for(
-      let i=0;
-      i<ids.length;
-      i+=20
-    ){
+      The Worker should return:
 
-      const chunk =
-        ids.slice(
-          i,
-          i+20
-        );
-
-
-      try{
-
-        const tr =
-          await api(
-            "/trades",
-            {
-              user:wallet,
-              condition:chunk.join(","),
-              side:"BUY"
-            }
-          );
-
-
-        for(
-          const x of
-          (tr.data || [])
-        ){
-
-          const id =
-            x.condition_id ||
-            x.conditionId;
-
-
-          if(!id)
-            continue;
-
-
-          if(
-            !tradeMap[id]
-          ){
-
-            tradeMap[id] = {
-              timestamp:x.timestamp,
-              volume:0
-            };
-
-          }
-
-
-          if(
-            Number(x.timestamp) <
-            Number(
-              tradeMap[id].timestamp
-            )
-          ){
-
-            tradeMap[id].timestamp =
-              x.timestamp;
-
-          }
-
-
-          tradeMap[id].volume +=
-            Number(x.size || 0) *
-            Number(x.price || 0);
-
-        }
-
-      }catch(e){}
-
-    }
-
-
-    box.innerHTML = `
-
-<div class="active-title">
-  Active Markets
-</div>
-
-<table class="mini">
-
-<thead>
-
-<tr>
-  <th>Market</th>
-  <th>Side</th>
-  <th>Bought</th>
-  <th>Volume</th>
-</tr>
-
-</thead>
-
-<tbody>
-
-${
-  positions
-    .map(
-      p => {
-
-        const id =
-          p.condition_id;
-
-        const tr =
-          tradeMap[id];
-
-
-        const vol =
-          tr?.volume ||
-          Number(
-            p.entry_cost_usdc ??
-            p.total_cost_usdc ??
-            0
-          );
-
-
-        return `
-
-<tr>
-
-<td>
-  ${esc(
-    p.title ||
-    p.name ||
-    "Market"
-  )}
-</td>
-
-<td>
-  ${esc(
-    p.outcome || ""
-  )}
-</td>
-
-<td>
-  ${fmtTime(
-    tr?.timestamp
-  )}
-</td>
-
-<td>
-  ${money(vol)}
-</td>
-
-</tr>
-
-`;
-
-      }
-    )
-    .join("")
-}
-
-</tbody>
-
-</table>
-
-`;
-
-  }catch(e){
-
-    box.innerHTML =
-      `<div class="empty">${esc(e.message)}</div>`;
-
-  }
-
-}
-
-
-async function loadShared(){
-
-  $("sharedStatus").textContent =
-    "Loading top 1,000 traders…";
-
-  $("shared").innerHTML =
-    "";
-
-
-  const period =
-    $("period").value;
-
-
-  const j =
-    await api(
-      "/leaderboard",
       {
-        period,
-        limit:1000
+        traders: [...],
+        markets: [...]
       }
+    */
+
+    const url =
+      WORKER +
+      "/scan" +
+      "?period=" +
+      encodeURIComponent(period) +
+      "&threshold=" +
+      encodeURIComponent(threshold);
+
+    setStatus(
+      "Scanning " +
+      (period === "week"
+        ? "weekly"
+        : period === "month"
+          ? "monthly"
+          : "3-month") +
+      " trader performance..."
     );
 
+    const data = await getJSON(url);
 
-  const leaders =
-    j.data ||
-    j.leaderboard ||
-    [];
+    renderTraders(data);
+    renderMarkets(data);
 
-
-  const wallets =
-    leaders
-      .map(
-        t => ({
-          wallet:
-            t.user_id ||
-            t.proxy_wallet ||
-            t.proxyWallet,
-
-          name:
-            t.user_name ||
-            t.userName ||
-            "Unnamed"
-        })
-      )
-      .filter(
-        x =>
-          x.wallet
-      );
-
-
-  const map =
-    new Map();
-
-
-  let done = 0;
-
-  const queue =
-    [...wallets];
-
-
-  async function worker(){
-
-    while(
-      queue.length
-    ){
-
-      const t =
-        queue.shift();
-
-
-      try{
-
-        const j =
-          await api(
-            "/positions",
-            {
-              user:t.wallet,
-              status:"OPEN",
-              sort_by:"CURRENT_VALUE",
-              sort_direction:"DESC"
-            }
-          );
-
-
-        for(
-          const p of
-          (j.data || [])
-        ){
-
-          const size =
-            Number(
-              p.current_size ??
-              p.size ??
-              0
-            );
-
-
-          if(
-            size <= 0
-          )
-            continue;
-
-
-          const id =
-            p.condition_id;
-
-
-          if(!id)
-            continue;
-
-
-          if(
-            !map.has(id)
-          ){
-
-            map.set(
-              id,
-              {
-                title:
-                  p.title ||
-                  p.name ||
-                  "Market",
-
-                side:
-                  p.outcome ||
-                  "Unknown",
-
-                holders:[]
-              }
-            );
-
-          }
-
-
-          const market =
-            map.get(id);
-
-
-          if(
-            !market.holders.some(
-              h =>
-                h.wallet ===
-                t.wallet
-            )
-          ){
-
-            market.holders.push({
-              wallet:t.wallet,
-              name:t.name,
-              size,
-              volume:
-                Number(
-                  p.entry_cost_usdc ??
-                  p.total_cost_usdc ??
-                  0
-                ),
-              condition:id
-            });
-
-          }
-
-        }
-
-
-        done++;
-
-
-        if(
-          done % 20 === 0
-        ){
-
-          $("sharedStatus").textContent =
-            `Loading shared markets… ${done}/${wallets.length}`;
-
-        }
-
-      }catch(e){
-
-        done++;
-
-      }
-
-    }
-
-  }
-
-
-  await Promise.all(
-    Array.from(
-      {length:18},
-      worker
-    )
-  );
-
-
-  const threshold =
-    Number(
-      $("threshold").value
+    setStatus(
+      "Scan complete."
     );
 
+  } catch (error) {
 
-  const arr =
-    [...map.values()]
-      .filter(
-        m =>
-          m.holders.length >=
-          threshold
-      );
+    console.error(error);
 
+    traderBody.innerHTML = `
+      <tr>
+        <td colspan="6" class="error">
+          ${escapeHtml(error.message)}
+        </td>
+      </tr>
+    `;
 
-  /*
-   * CRITICAL:
-   *
-   * If one trader is YES and
-   * another trader is NO,
-   * throw the market away.
-   *
-   * Only all-YES or all-NO
-   * markets survive.
-   */
+    marketsEl.innerHTML = `
+      <div class="empty error">
+        ${escapeHtml(error.message)}
+      </div>
+    `;
 
-  const same =
-    arr
-      .filter(
-        m => {
+    traderCount.textContent = "Error";
+    marketCount.textContent = "Error";
 
-          const sides =
-            new Set(
-              m.holders.map(
-                h =>
-                  String(
-                    h.side
-                  ).toLowerCase()
-              )
-            );
+    setStatus(
+      error.message,
+      true
+    );
 
-          return sides.size === 1;
+  } finally {
 
-        }
-      )
-      .sort(
-        (a,b) =>
-          b.holders.length -
-          a.holders.length
-          ||
-          a.title.localeCompare(
-            b.title
-          )
-      );
-
-
-  if(
-    !same.length
-  ){
-
-    $("shared").innerHTML =
-      '<div class="empty">No all-one-side shared markets found.</div>';
-
-    $("sharedStatus").textContent =
-      "Done.";
-
-    return;
+    scanBtn.disabled = false;
 
   }
-
-
-  $("shared").innerHTML =
-    same
-      .slice(0,250)
-      .map(
-        m => `
-
-<div class="shared-card">
-
-<div class="market-title">
-  ${esc(m.title)}
-</div>
-
-<div>
-
-<span
-  class="side ${
-    String(m.side).toLowerCase() ===
-    "yes"
-      ? "yes"
-      : "no"
-  }"
->
-  ${esc(m.side)}
-</span>
-
-<span class="sub">
-  ${m.holders.length} traders
-</span>
-
-</div>
-
-
-<div class="holders">
-
-${
-  m.holders
-    .map(
-      h => `
-
-<span class="holder">
-
-  ${esc(h.name)}
-  ·
-  ${money(h.volume)}
-
-</span>
-
-`
-    )
-    .join("")
 }
 
-</div>
-
-</div>
-
-`
-      )
-      .join("");
-
-
-  $("sharedStatus").textContent =
-    `${same.length} markets found.`;
-
-}
-
-
-$("load").addEventListener(
+scanBtn.addEventListener(
   "click",
-  () =>
-    loadLeaders()
-      .catch(
-        e =>
-          $("status").textContent =
-            "Error: " +
-            e.message
-      )
+  scan
 );
 
-
-$("sharedLoad").addEventListener(
-  "click",
-  () =>
-    loadShared()
-      .catch(
-        e =>
-          $("sharedStatus").textContent =
-            "Error: " +
-            e.message
-      )
+$("period").addEventListener(
+  "change",
+  () => {
+    if (!$("period").value) return;
+  }
 );
 
-
-loadLeaders()
-  .catch(
-    e =>
-      $("status").textContent =
-        "Error: " +
-        e.message
-  );
+$("threshold").addEventListener(
+  "change",
+  () => {
+    if (!$("threshold").value) return;
+  }
+);
 
 </script>
 
