@@ -1,40 +1,756 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Polymarket Consensus Scanner</title>
+
 <style>
-*{box-sizing:border-box}body{margin:0;background:#000;color:#f5f5f5;font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}a{color:inherit}.wrap{max-width:1250px;margin:auto;padding:28px 18px 60px}.top{display:flex;justify-content:space-between;gap:20px;align-items:flex-end;margin-bottom:24px}.title{font-size:30px;font-weight:800;letter-spacing:-.04em}.sub{color:#8e8e8e;margin-top:6px;font-size:14px}.controls{display:flex;gap:8px;flex-wrap:wrap}.btn,select{background:#111;border:1px solid #292929;color:#fff;border-radius:9px;padding:9px 12px;font-size:14px}.btn{cursor:pointer}.btn.active{background:#fff;color:#000}.panel{border:1px solid #222;background:#080808;border-radius:14px;overflow:hidden;margin-top:18px}.panelhead{padding:17px 18px;border-bottom:1px solid #222;display:flex;justify-content:space-between;gap:15px;align-items:center}.paneltitle{font-size:18px;font-weight:750}.muted{color:#777;font-size:12px}.tablewrap{overflow:auto}table{width:100%;border-collapse:collapse;min-width:760px}th,td{text-align:left;padding:12px 14px;border-bottom:1px solid #171717;font-size:13px}th{font-size:11px;color:#777;text-transform:uppercase;letter-spacing:.08em;background:#050505;position:sticky;top:0}tr:hover td{background:#0d0d0d}.rank{color:#777;width:50px}.name{font-weight:700}.pnl.pos{color:#8ee6a8}.pnl.neg{color:#ff8f8f}.pill{display:inline-block;border:1px solid #303030;border-radius:999px;padding:4px 8px;font-size:11px;color:#bbb}.consensus{padding:16px 18px;border-bottom:1px solid #171717}.marketrow{display:flex;justify-content:space-between;gap:20px;align-items:flex-start}.marketname{font-size:16px;font-weight:700;line-height:1.35}.yes{color:#8ee6a8;font-weight:800}.meta{display:flex;gap:8px;flex-wrap:wrap;margin-top:9px}.stats{display:flex;gap:22px;text-align:right;white-space:nowrap}.stat b{display:block;font-size:15px}.stat span{font-size:11px;color:#777}.empty{padding:35px 18px;color:#777;text-align:center}.status{font-size:12px;color:#777}.error{color:#ff8f8f;padding:18px}.note{font-size:12px;color:#666;line-height:1.5;margin-top:14px}.loading{opacity:.65}.hide{display:none}@media(max-width:700px){.top{display:block}.controls{margin-top:15px}.stats{display:none}}
+*{box-sizing:border-box}
+
+body{
+  margin:0;
+  background:#000;
+  color:#f5f5f5;
+  font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif
+}
+
+a{color:inherit}
+
+.wrap{
+  max-width:1250px;
+  margin:auto;
+  padding:28px 18px 60px
+}
+
+.top{
+  display:flex;
+  justify-content:space-between;
+  gap:20px;
+  align-items:flex-end;
+  margin-bottom:24px
+}
+
+.title{
+  font-size:30px;
+  font-weight:800;
+  letter-spacing:-.04em
+}
+
+.sub{
+  color:#8e8e8e;
+  margin-top:6px;
+  font-size:14px
+}
+
+.controls{
+  display:flex;
+  gap:8px;
+  flex-wrap:wrap
+}
+
+.btn,select{
+  background:#111;
+  border:1px solid #292929;
+  color:#fff;
+  border-radius:9px;
+  padding:9px 12px;
+  font-size:14px
+}
+
+.btn{cursor:pointer}
+
+.btn.active{
+  background:#fff;
+  color:#000
+}
+
+.panel{
+  border:1px solid #222;
+  background:#080808;
+  border-radius:14px;
+  overflow:hidden;
+  margin-top:18px
+}
+
+.panelhead{
+  padding:17px 18px;
+  border-bottom:1px solid #222;
+  display:flex;
+  justify-content:space-between;
+  gap:15px;
+  align-items:center
+}
+
+.paneltitle{
+  font-size:18px;
+  font-weight:750
+}
+
+.muted{
+  color:#777;
+  font-size:12px
+}
+
+.tablewrap{
+  overflow:auto
+}
+
+table{
+  width:100%;
+  border-collapse:collapse;
+  min-width:760px
+}
+
+th,td{
+  text-align:left;
+  padding:12px 14px;
+  border-bottom:1px solid #171717;
+  font-size:13px
+}
+
+th{
+  font-size:11px;
+  color:#777;
+  text-transform:uppercase;
+  letter-spacing:.08em;
+  background:#050505;
+  position:sticky;
+  top:0
+}
+
+tr:hover td{
+  background:#0d0d0d
+}
+
+.rank{
+  color:#777;
+  width:50px
+}
+
+.name{
+  font-weight:700
+}
+
+.pnl.pos{
+  color:#8ee6a8
+}
+
+.pnl.neg{
+  color:#ff8f8f
+}
+
+.pill{
+  display:inline-block;
+  border:1px solid #303030;
+  border-radius:999px;
+  padding:4px 8px;
+  font-size:11px;
+  color:#bbb
+}
+
+.pill.yes{
+  color:#8ee6a8
+}
+
+.pill.no{
+  color:#ff8f8f
+}
+
+.consensus{
+  padding:16px 18px;
+  border-bottom:1px solid #171717
+}
+
+.marketrow{
+  display:flex;
+  justify-content:space-between;
+  gap:20px;
+  align-items:flex-start
+}
+
+.marketname{
+  font-size:16px;
+  font-weight:700;
+  line-height:1.35
+}
+
+.meta{
+  display:flex;
+  gap:8px;
+  flex-wrap:wrap;
+  margin-top:9px
+}
+
+.stats{
+  display:flex;
+  gap:22px;
+  text-align:right;
+  white-space:nowrap
+}
+
+.stat b{
+  display:block;
+  font-size:15px
+}
+
+.stat span{
+  font-size:11px;
+  color:#777
+}
+
+.empty{
+  padding:35px 18px;
+  color:#777;
+  text-align:center
+}
+
+.status{
+  font-size:12px;
+  color:#777
+}
+
+.error{
+  color:#ff8f8f;
+  padding:18px
+}
+
+.note{
+  font-size:12px;
+  color:#666;
+  line-height:1.5;
+  margin:14px 18px
+}
+
+.loading{
+  opacity:.65
+}
+
+@media(max-width:700px){
+  .top{
+    display:block
+  }
+
+  .controls{
+    margin-top:15px
+  }
+
+  .stats{
+    display:none
+  }
+}
 </style>
 </head>
+
 <body>
+
 <div class="wrap">
+
   <div class="top">
-    <div><div class="title">Polymarket Consensus Scanner</div><div class="sub">Official Polymarket data · cached by GitHub Actions · no wallet IDs shown</div></div>
-    <div class="controls"><button class="btn active" data-period="week">1 Week</button><button class="btn" data-period="month">1 Month</button><button class="btn" data-period="threeMonth">3 Months</button></div>
+
+    <div>
+      <div class="title">
+        Polymarket Consensus Scanner
+      </div>
+
+      <div class="sub">
+        Official Polymarket data · cached by GitHub Actions · no wallet IDs shown
+      </div>
+    </div>
+
+    <div class="controls">
+      <button class="btn active" data-period="week">
+        1 Week
+      </button>
+
+      <button class="btn" data-period="month">
+        1 Month
+      </button>
+
+      <button class="btn" data-period="threeMonth">
+        3 Months
+      </button>
+    </div>
+
   </div>
 
-  <section class="panel">
-    <div class="panelhead"><div><div class="paneltitle">Top 100 Traders</div><div class="muted" id="leaderMeta">Loading…</div></div><div class="status" id="updated">—</div></div>
-    <div class="tablewrap"><table><thead><tr><th>#</th><th>Trader</th><th>P&L</th><th>Volume</th><th>Win / Loss</th><th>Win %</th></tr></thead><tbody id="leaderRows"></tbody></table></div>
-  </section>
 
   <section class="panel">
-    <div class="panelhead"><div><div class="paneltitle">Top 1,000 Trader Consensus</div><div class="muted">Weekly trader universe · active binary YES positions only · opposite side must be zero</div></div><select id="minSame"><option value="3">3+ same-side traders</option><option value="5" selected>5+ same-side traders</option><option value="10">10+ same-side traders</option><option value="20">20+ same-side traders</option></select></div>
-    <div id="consensusList"></div>
-    <div class="note">Holding time is based on the first observed BUY for the position in the weekly activity cache. Markets held for more than 7 days are excluded by default. This scanner favors short-duration positions but does not claim a trader's exact private order-entry timestamp.</div>
+
+    <div class="panelhead">
+
+      <div>
+        <div class="paneltitle">
+          Top 100 Traders
+        </div>
+
+        <div class="muted" id="leaderMeta">
+          Loading…
+        </div>
+      </div>
+
+      <div class="status" id="updated">
+        —
+      </div>
+
+    </div>
+
+    <div class="tablewrap">
+
+      <table>
+
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Trader</th>
+            <th>P&L</th>
+            <th>Volume</th>
+            <th>Win / Loss</th>
+            <th>Win %</th>
+          </tr>
+        </thead>
+
+        <tbody id="leaderRows"></tbody>
+
+      </table>
+
+    </div>
+
   </section>
+
+
+  <section class="panel">
+
+    <div class="panelhead">
+
+      <div>
+
+        <div class="paneltitle">
+          Active Trader Consensus
+        </div>
+
+        <div class="muted">
+          Weekly top-1,000 trader universe · same-side consensus only · recent active positions
+        </div>
+
+      </div>
+
+      <select id="minSame">
+
+        <option value="2" selected>
+          2+ same-side traders
+        </option>
+
+        <option value="3">
+          3+ same-side traders
+        </option>
+
+        <option value="5">
+          5+ same-side traders
+        </option>
+
+        <option value="10">
+          10+ same-side traders
+        </option>
+
+        <option value="20">
+          20+ same-side traders
+        </option>
+
+      </select>
+
+    </div>
+
+    <div id="consensusList"></div>
+
+    <div class="note">
+      Only active positions with multiple traders on the same side are shown.
+      YES and NO are never combined. Positions older than 48 hours and markets
+      ending more than 90 days away are excluded.
+    </div>
+
+  </section>
+
 </div>
+
+
 <script>
-const state={period:'week',data:null};
-const $=s=>document.querySelector(s);
-const money=n=>{n=Number(n||0);return (n<0?'-$':'$')+Math.abs(n).toLocaleString(undefined,{maximumFractionDigits:0})};
-const pct=n=>Number.isFinite(Number(n))?Number(n).toFixed(1)+'%':'—';
-const age=s=>{if(!s)return '—';const h=Math.max(0,(Date.now()-new Date(s).getTime())/36e5);if(h<1)return Math.round(h*60)+'m ago';if(h<24)return Math.round(h)+'h ago';return Math.round(h/24)+'d ago'};
-function renderLeaders(){const rows=state.data.leaders||[];$('#leaderMeta').textContent=`${state.data.periodLabel} · ${rows.length} traders · ranked by P&L`;$('#updated').textContent=state.data.generatedAt?`Updated ${age(state.data.generatedAt)}`:'—';$('#leaderRows').innerHTML=rows.map((x,i)=>`<tr><td class="rank">${x.rank??i+1}</td><td class="name">${escapeHtml(x.name||'Unknown')}</td><td class="pnl ${x.pnl>=0?'pos':'neg'}">${money(x.pnl)}</td><td>${money(x.volume)}</td><td>${x.wins ?? '—'} / ${x.losses ?? '—'}</td><td>${x.winRate==null?'—':pct(x.winRate)}</td></tr>`).join('')||'<tr><td colspan="6" class="empty">No data yet. Run the GitHub Action once.</td></tr>'}
-function renderConsensus(){const min=Number($('#minSame').value);const rows=(state.data.consensus||[]).filter(x=>x.sameSide>=min);$('#consensusList').innerHTML=rows.slice(0,1000).map(x=>`<div class="consensus"><div class="marketrow"><div><div class="marketname">${escapeHtml(x.title)}</div><div class="meta"><span class="pill yes">${x.sameSide} YES</span><span class="pill">${x.oppositeSide||0} NO</span><span class="pill">${escapeHtml(x.holdLabel||'Recent')}</span></div></div><div class="stats"><div class="stat"><b>${money(x.totalEntry)}</b><span>combined entry</span></div><div class="stat"><b>${x.firstBuy?age(x.firstBuy):'—'}</b><span>first buy</span></div></div></div></div>`).join('')||'<div class="empty">No qualifying consensus markets in the current cache.</div>'}
-function escapeHtml(s){return String(s).replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]))}
-async function load(period){document.body.classList.add('loading');try{const r=await fetch(`data/${period}.json?${Date.now()}`,{cache:'no-store'});if(!r.ok)throw new Error(`HTTP ${r.status}`);state.data=await r.json();renderLeaders();renderConsensus()}catch(e){$('#leaderRows').innerHTML=`<tr><td colspan="6" class="error">Data file unavailable: ${escapeHtml(e.message)}</td></tr>`;$('#consensusList').innerHTML=`<div class="error">Run the GitHub Action named “Update Polymarket data” once, then refresh.</div>`}finally{document.body.classList.remove('loading')}}
-document.querySelectorAll('[data-period]').forEach(b=>b.onclick=()=>{document.querySelectorAll('[data-period]').forEach(x=>x.classList.remove('active'));b.classList.add('active');state.period=b.dataset.period;load(state.period)});$('#minSame').onchange=renderConsensus;load('week');
+
+const state = {
+  period:'week',
+  data:null
+};
+
+const $ = selector =>
+  document.querySelector(selector);
+
+
+const money = value => {
+
+  const n = Number(value || 0);
+
+  return (
+    n < 0 ? '-$' : '$'
+  ) +
+  Math.abs(n).toLocaleString(
+    undefined,
+    {
+      maximumFractionDigits:0
+    }
+  );
+};
+
+
+const pct = value => {
+
+  const n = Number(value);
+
+  return Number.isFinite(n)
+    ? n.toFixed(1) + '%'
+    : '—';
+};
+
+
+const age = timestamp => {
+
+  if (!timestamp) return '—';
+
+  const hours = Math.max(
+    0,
+    (
+      Date.now() -
+      new Date(timestamp).getTime()
+    ) / 3600000
+  );
+
+  if (hours < 1) {
+    return Math.max(
+      1,
+      Math.round(hours * 60)
+    ) + 'm ago';
+  }
+
+  if (hours < 24) {
+    return Math.round(hours) + 'h ago';
+  }
+
+  return Math.round(hours / 24) + 'd ago';
+};
+
+
+function escapeHtml(value){
+
+  return String(value ?? '').replace(
+    /[&<>'"]/g,
+    character => ({
+      '&':'&amp;',
+      '<':'&lt;',
+      '>':'&gt;',
+      "'":'&#39;',
+      '"':'&quot;'
+    }[character])
+  );
+}
+
+
+function renderLeaders(){
+
+  const rows =
+    state.data?.leaders || [];
+
+  $('#leaderMeta').textContent =
+    `${state.data.periodLabel} · ${rows.length} traders · ranked by P&L`;
+
+  $('#updated').textContent =
+    state.data.generatedAt
+      ? `Updated ${age(state.data.generatedAt)}`
+      : '—';
+
+  $('#leaderRows').innerHTML =
+    rows.map((x,i) => {
+
+      const wins =
+        Number(x.wins || 0);
+
+      const losses =
+        Number(x.losses || 0);
+
+      const calculatedRate =
+        wins + losses
+          ? 100 * wins / (wins + losses)
+          : null;
+
+      const rate =
+        x.winRate != null
+          ? Number(x.winRate)
+          : calculatedRate;
+
+      return `
+        <tr>
+
+          <td class="rank">
+            ${x.rank ?? i + 1}
+          </td>
+
+          <td class="name">
+            ${escapeHtml(
+              x.name || 'Unknown'
+            )}
+          </td>
+
+          <td class="pnl ${
+            Number(x.pnl) >= 0
+              ? 'pos'
+              : 'neg'
+          }">
+            ${money(x.pnl)}
+          </td>
+
+          <td>
+            ${money(x.volume)}
+          </td>
+
+          <td>
+            ${wins} / ${losses}
+          </td>
+
+          <td>
+            ${rate == null
+              ? '—'
+              : pct(rate)}
+          </td>
+
+        </tr>
+      `;
+
+    }).join('') ||
+
+    `
+      <tr>
+        <td colspan="6" class="empty">
+          No trader data yet.
+        </td>
+      </tr>
+    `;
+}
+
+
+function renderConsensus(){
+
+  const minimum =
+    Number($('#minSame').value);
+
+  const rows =
+    (state.data?.consensus || [])
+      .filter(
+        x =>
+          Number(x.sameSide || 0) >=
+          minimum
+      );
+
+  $('#consensusList').innerHTML =
+
+    rows.slice(0,1000).map(x => {
+
+      const side =
+        String(
+          x.side || 'YES'
+        ).toUpperCase();
+
+      const sideClass =
+        side === 'NO'
+          ? 'no'
+          : 'yes';
+
+      return `
+        <div class="consensus">
+
+          <div class="marketrow">
+
+            <div>
+
+              <div class="marketname">
+                ${escapeHtml(
+                  x.title
+                )}
+              </div>
+
+              <div class="meta">
+
+                <span class="pill ${sideClass}">
+                  ${x.sameSide} ${side}
+                </span>
+
+                <span class="pill">
+                  ${x.oppositeSide || 0}
+                  ${side === 'YES'
+                    ? 'NO'
+                    : 'YES'}
+                </span>
+
+                <span class="pill">
+                  ${escapeHtml(
+                    x.holdLabel || 'Recent'
+                  )}
+                </span>
+
+              </div>
+
+            </div>
+
+            <div class="stats">
+
+              <div class="stat">
+
+                <b>
+                  ${money(
+                    x.totalEntry
+                  )}
+                </b>
+
+                <span>
+                  combined entry
+                </span>
+
+              </div>
+
+              <div class="stat">
+
+                <b>
+                  ${
+                    x.firstBuy
+                      ? age(x.firstBuy)
+                      : '—'
+                  }
+                </b>
+
+                <span>
+                  first buy
+                </span>
+
+              </div>
+
+            </div>
+
+          </div>
+
+        </div>
+      `;
+
+    }).join('') ||
+
+    `
+      <div class="empty">
+        No qualifying consensus markets in the current cache.
+      </div>
+    `;
+}
+
+
+async function load(period){
+
+  document.body.classList.add(
+    'loading'
+  );
+
+  try {
+
+    const response =
+      await fetch(
+        `data/${period}.json?${Date.now()}`,
+        {
+          cache:'no-store'
+        }
+      );
+
+    if (!response.ok) {
+      throw new Error(
+        `HTTP ${response.status}`
+      );
+    }
+
+    state.data =
+      await response.json();
+
+    renderLeaders();
+    renderConsensus();
+
+  } catch(error) {
+
+    $('#leaderRows').innerHTML =
+      `
+        <tr>
+          <td
+            colspan="6"
+            class="error"
+          >
+            Data file unavailable:
+            ${escapeHtml(
+              error.message
+            )}
+          </td>
+        </tr>
+      `;
+
+    $('#consensusList').innerHTML =
+      `
+        <div class="error">
+          Data unavailable.
+          Run the GitHub Action
+          “Update Polymarket data”
+          and refresh the page.
+        </div>
+      `;
+
+  } finally {
+
+    document.body.classList.remove(
+      'loading'
+    );
+  }
+}
+
+
+document
+  .querySelectorAll(
+    '[data-period]'
+  )
+  .forEach(button => {
+
+    button.onclick = () => {
+
+      document
+        .querySelectorAll(
+          '[data-period]'
+        )
+        .forEach(x =>
+          x.classList.remove(
+            'active'
+          )
+        );
+
+      button.classList.add(
+        'active'
+      );
+
+      state.period =
+        button.dataset.period;
+
+      load(
+        state.period
+      );
+    };
+
+  });
+
+
+$('#minSame').onchange =
+  renderConsensus;
+
+
+load('week');
+
 </script>
-</body></html>
+
+</body>
+</html>
