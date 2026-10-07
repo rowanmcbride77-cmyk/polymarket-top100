@@ -132,6 +132,32 @@ tr:hover td{
   font-weight:700
 }
 
+.traderButton{
+  background:none;
+  border:0;
+  padding:0;
+  color:#fff;
+  font:inherit;
+  font-weight:700;
+  cursor:pointer;
+  text-align:left
+}
+
+.traderButton:hover{
+  text-decoration:underline
+}
+
+.traderButton .smallArrow{
+  display:inline-block;
+  color:#777;
+  margin-right:5px;
+  transition:transform .15s
+}
+
+.traderButton.open .smallArrow{
+  transform:rotate(90deg)
+}
+
 .pnl.pos{
   color:#8ee6a8
 }
@@ -252,6 +278,62 @@ tr:hover td{
   color:#999
 }
 
+/* Top trader active-position panel */
+
+.leaderDetail{
+  display:none;
+  background:#050505
+}
+
+.leaderDetail.open{
+  display:block
+}
+
+.leaderDetailHeader{
+  padding:13px 18px 11px 58px;
+  border-bottom:1px solid #222;
+  color:#999;
+  font-size:12px
+}
+
+.leaderPosition{
+  display:grid;
+  grid-template-columns:minmax(260px,1fr) 80px 120px 150px;
+  gap:14px;
+  align-items:center;
+  padding:13px 18px 13px 58px;
+  border-bottom:1px solid #151515;
+  font-size:13px
+}
+
+.leaderPosition:last-child{
+  border-bottom:0
+}
+
+.positionMarket{
+  font-weight:650;
+  line-height:1.35
+}
+
+.positionSide{
+  font-weight:800
+}
+
+.positionAmount{
+  text-align:right
+}
+
+.positionTime{
+  text-align:right;
+  color:#999
+}
+
+.noPositions{
+  padding:20px 18px 20px 58px;
+  color:#777;
+  font-size:13px
+}
+
 .arrow{
   display:inline-block;
   margin-right:8px;
@@ -311,6 +393,19 @@ tr:hover td{
     grid-column:2;
     text-align:right
   }
+
+  .leaderPosition{
+    grid-template-columns:1fr 70px;
+  }
+
+  .positionAmount{
+    text-align:left
+  }
+
+  .positionTime{
+    grid-column:2;
+    text-align:right
+  }
 }
 </style>
 </head>
@@ -323,6 +418,7 @@ tr:hover td{
 
     <div>
       <div class="title">Polymarket Consensus Scanner</div>
+
       <div class="sub">
         Win-rate ranked traders · active consensus · no wallet IDs shown
       </div>
@@ -335,6 +431,9 @@ tr:hover td{
     </div>
 
   </div>
+
+
+  <!-- TOP 100 -->
 
   <section class="panel">
 
@@ -373,12 +472,16 @@ tr:hover td{
 
   </section>
 
+
+  <!-- ACTIVE CONSENSUS -->
+
   <section class="panel">
 
     <div class="panelhead">
 
       <div>
         <div class="paneltitle">Active Trader Consensus</div>
+
         <div class="muted">
           Click a market to see the traders currently holding the same side
         </div>
@@ -397,13 +500,14 @@ tr:hover td{
     <div id="consensusList"></div>
 
     <div class="note">
-      Consensus uses the weekly trader universe. Only active positions with a
-      recent observed BUY are shown. Opposing YES/NO positions are never mixed.
+      Consensus uses the weekly win-rate Top 1,000 trader universe.
+      Opposing YES/NO positions are never mixed.
     </div>
 
   </section>
 
 </div>
+
 
 <script>
 
@@ -413,6 +517,7 @@ const state={
 };
 
 const $=s=>document.querySelector(s);
+
 
 function money(n){
 
@@ -424,22 +529,34 @@ function money(n){
     });
 }
 
+
 function pct(n){
 
-  if(n===null || n===undefined || !Number.isFinite(Number(n))){
+  if(
+    n===null ||
+    n===undefined ||
+    !Number.isFinite(Number(n))
+  ){
     return "—";
   }
 
   return Number(n).toFixed(1)+"%";
 }
 
+
 function age(s){
 
   if(!s) return "—";
 
+  const time=new Date(s).getTime();
+
+  if(!Number.isFinite(time)){
+    return "—";
+  }
+
   const h=Math.max(
     0,
-    (Date.now()-new Date(s).getTime())/36e5
+    (Date.now()-time)/36e5
   );
 
   if(h<1){
@@ -452,6 +569,21 @@ function age(s){
 
   return Math.round(h/24)+"d ago";
 }
+
+
+function fullTime(s){
+
+  if(!s) return "—";
+
+  const d=new Date(s);
+
+  if(!Number.isFinite(d.getTime())){
+    return "—";
+  }
+
+  return d.toLocaleString();
+}
+
 
 function escapeHtml(s){
 
@@ -467,6 +599,11 @@ function escapeHtml(s){
   );
 }
 
+
+/* =========================
+   TOP 100 TRADERS
+   ========================= */
+
 function renderLeaders(){
 
   const rows=state.data.leaders||[];
@@ -479,14 +616,17 @@ function renderLeaders(){
       ? `Updated ${age(state.data.generatedAt)}`
       : "—";
 
+
   $("#leaderRows").innerHTML=
 
     rows.map((x,i)=>{
 
       const decided=
-        Number(x.wins||0)+Number(x.losses||0);
+        Number(x.wins||0)+
+        Number(x.losses||0);
 
       return `
+
         <tr>
 
           <td class="rank">
@@ -494,7 +634,20 @@ function renderLeaders(){
           </td>
 
           <td class="name">
-            ${escapeHtml(x.name||"Unknown")}
+
+            <button
+              class="traderButton"
+              type="button"
+              data-wallet="${escapeHtml(x.wallet||"")}"
+              data-trader-index="${i}"
+            >
+
+              <span class="smallArrow">▶</span>
+
+              ${escapeHtml(x.name||"Unknown")}
+
+            </button>
+
           </td>
 
           <td class="winrate">
@@ -518,6 +671,29 @@ function renderLeaders(){
           </td>
 
         </tr>
+
+        <tr
+          class="leaderDetail"
+          id="leaderDetail-${i}"
+        >
+
+          <td colspan="7" style="padding:0">
+
+            <div
+              class="leaderDetailHeader"
+              id="leaderDetailHeader-${i}"
+            >
+              Loading active positions...
+            </div>
+
+            <div
+              id="leaderPositions-${i}"
+            ></div>
+
+          </td>
+
+        </tr>
+
       `;
 
     }).join("")
@@ -529,14 +705,172 @@ function renderLeaders(){
         No qualifying traders yet.
       </td>
     </tr>`;
+
+
+  document
+    .querySelectorAll(".traderButton")
+    .forEach(button=>{
+
+      button.addEventListener(
+        "click",
+        ()=>{
+          toggleLeader(
+            Number(
+              button.dataset.traderIndex
+            ),
+            button
+          );
+        }
+      );
+
+    });
 }
+
+
+/* =========================
+   TOP TRADER DETAILS
+   ========================= */
+
+function toggleLeader(index,button){
+
+  const detail=
+    document.querySelector(
+      `#leaderDetail-${index}`
+    );
+
+  if(!detail){
+    return;
+  }
+
+  const isOpen=
+    detail.classList.contains("open");
+
+
+  document
+    .querySelectorAll(".leaderDetail.open")
+    .forEach(x=>{
+      x.classList.remove("open");
+    });
+
+  document
+    .querySelectorAll(".traderButton.open")
+    .forEach(x=>{
+      x.classList.remove("open");
+    });
+
+
+  if(isOpen){
+    return;
+  }
+
+
+  detail.classList.add("open");
+  button.classList.add("open");
+
+
+  const trader=
+    state.data.leaders[index];
+
+  const wallet=
+    trader?.wallet||"";
+
+  const trades=
+    state.data.traderActiveTrades?.[wallet]||[];
+
+
+  const header=
+    document.querySelector(
+      `#leaderDetailHeader-${index}`
+    );
+
+  const container=
+    document.querySelector(
+      `#leaderPositions-${index}`
+    );
+
+
+  header.textContent=
+    `${trades.length} active position${trades.length===1?"":"s"}`;
+
+
+  if(!trades.length){
+
+    container.innerHTML=
+      `<div class="noPositions">
+        No active positions found for this trader in the current scan.
+      </div>`;
+
+    return;
+  }
+
+
+  container.innerHTML=
+
+    trades.map(t=>{
+
+      const side=
+        String(t.side||"").toUpperCase();
+
+      return `
+
+        <div class="leaderPosition">
+
+          <div class="positionMarket">
+            ${escapeHtml(
+              t.title||"Unknown market"
+            )}
+          </div>
+
+          <div
+            class="positionSide ${
+              side==="YES"
+                ?"yes"
+                :"no"
+            }"
+          >
+            ${escapeHtml(side||"—")}
+          </div>
+
+          <div class="positionAmount">
+            ${money(t.amount)}
+          </div>
+
+          <div
+            class="positionTime"
+            title="${escapeHtml(
+              fullTime(t.buyTime)
+            )}"
+          >
+            ${age(t.buyTime)}
+          </div>
+
+        </div>
+
+      `;
+
+    }).join("");
+}
+
+
+/* =========================
+   CONSENSUS
+   ========================= */
 
 function renderConsensus(){
 
-  const min=Number($("#minSame").value);
+  const min=
+    Number(
+      $("#minSame").value
+    );
 
-  const rows=(state.data.consensus||[])
-    .filter(x=>Number(x.sameSide||0)>=min);
+
+  const rows=
+    (state.data.consensus||[])
+      .filter(
+        x=>
+          Number(x.sameSide||0)>=min
+      );
+
 
   if(!rows.length){
 
@@ -548,57 +882,121 @@ function renderConsensus(){
     return;
   }
 
+
   $("#consensusList").innerHTML=
 
     rows.map((x,index)=>{
 
-      const traders=Array.isArray(x.traders)
-        ? x.traders
-        : [];
+      const traders=
+        Array.isArray(x.traders)
+          ? x.traders
+          : [];
+
+
+      const active24=
+        Number(
+          x.active24h||0
+        );
+
+      const active72=
+        Number(
+          x.active72h||0
+        );
+
 
       return `
 
-        <div class="consensus" data-index="${index}">
+        <div
+          class="consensus"
+          data-index="${index}"
+        >
 
-          <button class="marketButton" type="button">
+          <button
+            class="marketButton"
+            type="button"
+          >
 
             <div class="marketrow">
 
               <div>
 
                 <div class="marketname">
-                  <span class="arrow">▶</span>
-                  ${escapeHtml(x.title||"Unknown market")}
+
+                  <span class="arrow">
+                    ▶
+                  </span>
+
+                  ${escapeHtml(
+                    x.title||
+                    "Unknown market"
+                  )}
+
                 </div>
+
 
                 <div class="meta">
 
-                  <span class="pill ${x.side==="YES"?"yes":"no"}">
-                    ${escapeHtml(x.side||"")} ${x.sameSide||0}
+                  <span
+                    class="pill ${
+                      x.side==="YES"
+                        ?"yes"
+                        :"no"
+                    }"
+                  >
+                    ${escapeHtml(
+                      x.side||""
+                    )}
+                    ${x.sameSide||0}
                   </span>
 
-                  <span class="pill">
-                    ${money(x.totalEntry)} invested
-                  </span>
 
                   <span class="pill">
-                    ${escapeHtml(x.holdLabel||"Recent")}
+                    ${money(
+                      x.totalEntry
+                    )}
+                    invested
+                  </span>
+
+
+                  <span class="pill">
+                    ${active24}
+                    active 24h
+                  </span>
+
+
+                  <span class="pill">
+                    ${active72}
+                    active 72h
                   </span>
 
                 </div>
 
               </div>
 
+
               <div class="stats">
 
                 <div class="stat">
-                  <b>${x.sameSide||0}</b>
-                  <span>traders</span>
+                  <b>
+                    ${x.sameSide||0}
+                  </b>
+                  <span>
+                    traders
+                  </span>
                 </div>
 
+
                 <div class="stat">
-                  <b>${x.firstBuy?age(x.firstBuy):"—"}</b>
-                  <span>first buy</span>
+                  <b>
+                    ${
+                      x.newestBuy
+                        ? age(x.newestBuy)
+                        : "—"
+                    }
+                  </b>
+                  <span>
+                    newest buy
+                  </span>
                 </div>
 
               </div>
@@ -606,6 +1004,7 @@ function renderConsensus(){
             </div>
 
           </button>
+
 
           <div class="traderList">
 
@@ -619,19 +1018,41 @@ function renderConsensus(){
                 <div class="trader">
 
                   <div class="traderName">
-                    ${escapeHtml(t.name||"Unknown")}
+                    ${escapeHtml(
+                      t.name||"Unknown"
+                    )}
                   </div>
 
-                  <div class="${t.side==="YES"?"yes":"no"}">
-                    ${escapeHtml(t.side||"")}
+                  <div
+                    class="${
+                      String(t.side)
+                        .toUpperCase()==="YES"
+                        ?"yes"
+                        :"no"
+                    }"
+                  >
+                    ${escapeHtml(
+                      t.side||""
+                    )}
                   </div>
 
                   <div class="traderAmount">
                     ${money(t.amount)}
                   </div>
 
-                  <div class="traderTime">
-                    ${t.firstBuy?age(t.firstBuy):"—"}
+                  <div
+                    class="traderTime"
+                    title="${escapeHtml(
+                      fullTime(
+                        t.firstBuy
+                      )
+                    )}"
+                  >
+                    ${
+                      t.firstBuy
+                        ? age(t.firstBuy)
+                        : "—"
+                    }
                   </div>
 
                 </div>
@@ -653,85 +1074,137 @@ function renderConsensus(){
 
     }).join("");
 
+
   document
     .querySelectorAll(".marketButton")
     .forEach(button=>{
 
-      button.addEventListener("click",()=>{
+      button.addEventListener(
+        "click",
+        ()=>{
 
-        button
-          .closest(".consensus")
-          .classList.toggle("open");
+          button
+            .closest(".consensus")
+            .classList.toggle("open");
 
-      });
+        }
+      );
 
     });
 }
 
+
+/* =========================
+   LOAD DATA
+   ========================= */
+
 async function load(period){
 
-  document.body.classList.add("loading");
+  document.body.classList.add(
+    "loading"
+  );
+
 
   try{
 
-    const r=await fetch(
-      `data/${period}.json?${Date.now()}`,
-      {
-        cache:"no-store"
-      }
-    );
+    const r=
+      await fetch(
+        `data/${period}.json?${Date.now()}`,
+        {
+          cache:"no-store"
+        }
+      );
+
 
     if(!r.ok){
-      throw new Error(`HTTP ${r.status}`);
+      throw new Error(
+        `HTTP ${r.status}`
+      );
     }
 
-    state.data=await r.json();
+
+    state.data=
+      await r.json();
+
 
     renderLeaders();
     renderConsensus();
+
 
   }catch(e){
 
     $("#leaderRows").innerHTML=
       `<tr>
-        <td colspan="7" class="error">
-          Data file unavailable: ${escapeHtml(e.message)}
+        <td
+          colspan="7"
+          class="error"
+        >
+          Data file unavailable:
+          ${escapeHtml(e.message)}
         </td>
       </tr>`;
+
 
     $("#consensusList").innerHTML=
       `<div class="error">
         ${escapeHtml(e.message)}
       </div>`;
 
+
   }finally{
 
-    document.body.classList.remove("loading");
+    document.body.classList.remove(
+      "loading"
+    );
 
   }
 }
 
+
+/* =========================
+   PERIOD BUTTONS
+   ========================= */
+
 document
-  .querySelectorAll("[data-period]")
+  .querySelectorAll(
+    "[data-period]"
+  )
   .forEach(button=>{
 
     button.onclick=()=>{
 
       document
-        .querySelectorAll("[data-period]")
-        .forEach(x=>x.classList.remove("active"));
+        .querySelectorAll(
+          "[data-period]"
+        )
+        .forEach(x=>
+          x.classList.remove(
+            "active"
+          )
+        );
 
-      button.classList.add("active");
 
-      state.period=button.dataset.period;
+      button.classList.add(
+        "active"
+      );
 
-      load(state.period);
+
+      state.period=
+        button.dataset.period;
+
+
+      load(
+        state.period
+      );
 
     };
 
   });
 
-$("#minSame").onchange=renderConsensus;
+
+$("#minSame").onchange=
+  renderConsensus;
+
 
 load("week");
 
