@@ -4,14 +4,14 @@ const API = 'https://data-api.polymarket.com';
 const now = Math.floor(Date.now() / 1000);
 const DAY = 86400;
 
-const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 async function get(path, params = {}, tries = 3) {
   const url = new URL(API + path);
 
-  for (const [key, value] of Object.entries(params)) {
-    if (value !== undefined && value !== null && value !== '') {
-      url.searchParams.set(key, String(value));
+  for (const [k, v] of Object.entries(params)) {
+    if (v !== undefined && v !== null && v !== '') {
+      url.searchParams.set(k, String(v));
     }
   }
 
@@ -20,209 +20,336 @@ async function get(path, params = {}, tries = 3) {
     const timeout = setTimeout(() => controller.abort(), 15000);
 
     try {
-      const response = await fetch(url, {
+      const r = await fetch(url, {
         signal: controller.signal,
         headers: {
-          'user-agent': 'polymarket-consensus-scanner/2.0'
+          'user-agent': 'polymarket-consensus-scanner/3.0'
         }
       });
 
       clearTimeout(timeout);
 
-      if (response.ok) {
-        return await response.json();
-      }
+      if (r.ok) return await r.json();
 
-      if ((response.status === 429 || response.status >= 500) && attempt < tries - 1) {
-        const retryAfter = Number(response.headers.get('retry-after'));
-        const wait = Number.isFinite(retryAfter)
-          ? retryAfter * 1000
-          : Math.min(2000 * (attempt + 1), 8000);
-
-        await sleep(wait);
+      if ((r.status === 429 || r.status >= 500) && attempt < tries - 1) {
+        await sleep(Math.min(2000 * (attempt + 1), 8000));
         continue;
       }
 
-      throw new Error(`${response.status} ${await response.text()}`);
-    } catch (error) {
+      throw new Error(`${r.status} ${await r.text()}`);
+    } catch (e) {
       clearTimeout(timeout);
 
-      if (attempt === tries - 1) {
-        throw error;
-      }
+      if (attempt === tries - 1) throw e;
 
       await sleep(1500 * (attempt + 1));
     }
   }
 }
 
-function rowName(x) {
-  return x.userName || x.username || x.pseudonym || x.name || 'Unknown';
-}
-
-function userAddress(x) {
+function address(x) {
   return x.proxyWallet || x.address || x.user;
 }
 
-/* -----------------------------
-   LEADERBOARDS
------------------------------ */
-
-async function leaderboard(period, limit = 100) {
-  const page = await get('/v1/leaderboard', {
-    category: 'OVERALL',
-    timePeriod: period,
-    orderBy: 'PNL',
-    limit,
-    offset: 0
-  });
-
-  return Array.isArray(page) ? page.slice(0, limit) : [];
+function name(x) {
+  return x.userName || x.username || x.pseudonym || x.name || 'Unknown';
 }
 
 /*
-  We use the official leaderboard's P&L and volume directly.
+  Polymarket returns leaderboard pages of up to 50.
+  We request two pages so the site actually receives 100 traders.
+*/
+async function leaderboard(period, count = 100) {
+  const results = [];
 
-  This avoids requesting every trader's entire closed-position
-  history just to calculate win/loss statistics.
+  for (let offset = 0; offset < count; offset += 50) {
+    const page = await get('/v1/leaderboard', {
+      category: 'OVERALL',
+      timePeriod: period,
+      orderBy: 'PNL',
+      limit: 50,
+      offset
+    });
+
+    if (!Array.isArray(page) || page.length === 0) break;
+
+    results.push(...page);
+
+    if (page.length < 50) break;
+
+    await sleep(100);
+  }
+
+  return results.slice(0, count);
+}
+
+/*
+  Calculate wins/losses from closed positions.
+
+  A resolved position with positive realized PNL = win.
+  A resolved position with negative realized PNL = loss.
+
+  Pushes are ignored.
+*/
+async function closedStats(user, start) {
+  let wins = 0;
+  let losses = 0;
+  let cursor = null;
+
+  for (let pageNumber = 0; pageNumber < 10; pageNumber++) {
+    const params = {
+      user,
+      status: 'CLOSED',
+      limit: 500,
+      start,
+      sortBy: 'TIMESTAMP',
+      sortDirection: 'DESC'
+    };
+
+    if (cursor) params.cursor = cursor;
+
+    let page;
+
+    try {
+      page = await get('/v2/positions', params);
+    } catch {
+      break;
+    }
+
+    const rows = Array.isArray(page?.data) ? page.data : [];
+
+    if (!rows.length) break;
+
+    for (const p of rows) {
+      const pnl = Number(
+        p.realized_pnl ??
+        p.realizedPnl ??
+        0
+      );
+
+      if (pnl > 0) wins++;
+      else if (pnl < 0) losses++;
+    }
+
+    if (
+      !page.pagination?.has_more ||
+      !page.pagination?.next_cursor
+    ) {
+      break;
+    }
+
+    cursor = page.pagination.next_cursor;
+
+    await sleep(50);
+  }
+
+  return {
+    wins,
+    losses,
+    winRate:
+      wins + losses
+        ? (wins / (wins + losses)) * 100
+        : null
+  };
+}
+
+/*
+  Build the actual 100-trader leaderboard.
 */
 async function buildLeaders(period, label) {
-  console.log(`Loading ${label} leaderboard...`);
+  console.log(`Loading ${label}...`);
 
   const source = await leaderboard(period, 100);
 
-  const leaders = source.map((x, i) => ({
-    rank: i + 1,
-    name: rowName(x),
-    pnl: Number(x.pnl || 0),
-    volume: Number(x.vol || x.volume || 0),
+  const start =
+    period === 'WEEK'
+      ? now - 7 * DAY
+      : now - 30 * DAY;
 
-    // The leaderboard API may expose these fields under different names.
-    wins: Number(x.wins || 0),
-    losses: Number(x.losses || 0),
+  const results = [];
 
-    winRate:
-      Number(x.wins || 0) + Number(x.losses || 0)
-        ? 100 *
-          Number(x.wins || 0) /
-          (Number(x.wins || 0) + Number(x.losses || 0))
-        : null
-  }));
+  /*
+    Ten concurrent traders at a time keeps the Action reasonably fast
+    without hammering the API.
+  */
+  for (let i = 0; i < source.length; i += 10) {
+    const batch = source.slice(i, i + 10);
 
-  console.log(`${label}: ${leaders.length} traders`);
+    const stats = await Promise.all(
+      batch.map(async trader => {
+        const user = address(trader);
+
+        const s = user
+          ? await closedStats(user, start)
+          : { wins: 0, losses: 0, winRate: null };
+
+        return {
+          rank: 0,
+          name: name(trader),
+          pnl: Number(trader.pnl || 0),
+          volume: Number(
+            trader.vol ??
+            trader.volume ??
+            0
+          ),
+          wins: s.wins,
+          losses: s.losses,
+          winRate: s.winRate
+        };
+      })
+    );
+
+    results.push(...stats);
+
+    console.log(
+      `${label}: ${Math.min(i + 10, source.length)}/${source.length}`
+    );
+  }
 
   return {
     periodLabel: label,
     generatedAt: new Date().toISOString(),
-    leaders
+    leaders: results.map((x, i) => ({
+      ...x,
+      rank: i + 1
+    }))
   };
 }
 
-/* -----------------------------
-   RECENT CONSENSUS
------------------------------ */
+/*
+  Get the top 1,000 weekly traders for the consensus universe.
+*/
+async function weeklyTraderUniverse() {
+  console.log('Loading top 1,000 weekly traders...');
+
+  const results = [];
+
+  for (let offset = 0; offset < 1000; offset += 50) {
+    const page = await get('/v1/leaderboard', {
+      category: 'OVERALL',
+      timePeriod: 'WEEK',
+      orderBy: 'PNL',
+      limit: 50,
+      offset
+    });
+
+    if (!Array.isArray(page) || !page.length) break;
+
+    results.push(...page);
+
+    console.log(
+      `Weekly traders: ${Math.min(results.length, 1000)}/1000`
+    );
+
+    if (page.length < 50) break;
+
+    await sleep(100);
+  }
+
+  return results.slice(0, 1000);
+}
 
 /*
-  Only scan the top 250 weekly traders instead of 1,000.
-
-  This dramatically reduces API traffic while still giving us
-  a large pool of high-performing traders.
+  Fetch open positions for the 1,000 weekly traders.
 */
 async function fetchOpenPositions(users) {
   const results = [];
   let index = 0;
 
-  const worker = async () => {
+  async function worker() {
     while (true) {
-      const current = index++;
+      const i = index++;
 
-      if (current >= users.length) {
-        return;
-      }
+      if (i >= users.length) return;
 
-      const trader = users[current];
-      const address = userAddress(trader);
+      const trader = users[i];
+      const user = address(trader);
 
-      if (!address) continue;
+      if (!user) continue;
 
       try {
-        const data = await get('/v2/positions', {
-          user: address,
+        const j = await get('/v2/positions', {
+          user,
           status: 'OPEN',
-          limit: 200,
+          limit: 500,
           sortBy: 'TIMESTAMP',
           sortDirection: 'DESC'
         });
 
         results.push({
-          user: trader,
-          positions: Array.isArray(data?.data) ? data.data : []
+          trader,
+          user,
+          positions: Array.isArray(j?.data)
+            ? j.data
+            : []
         });
-      } catch (error) {
-        console.log(`Position lookup failed: ${address}`);
+      } catch {
+        console.log(`Position failed: ${i + 1}/1000`);
       }
 
-      await sleep(75);
+      await sleep(40);
     }
-  };
+  }
 
-  const workerCount = Math.min(8, users.length);
+  const workers = Math.min(15, users.length);
 
   await Promise.all(
-    Array.from({ length: workerCount }, () => worker())
+    Array.from(
+      { length: workers },
+      () => worker()
+    )
   );
 
   return results;
 }
 
 /*
-  We only need recent trades for markets that actually appear
-  in the open positions.
-
-  Instead of requesting trades for all 1,000 traders, we first
-  discover the active markets and then request recent trades
-  only where necessary.
+  First discover active markets from positions.
+  Then only request recent trades for traders who are
+  actually holding one of those markets.
 */
-async function recentTradesForUsers(users) {
+async function recentTrades(users) {
   const results = [];
   let index = 0;
 
-  const worker = async () => {
+  async function worker() {
     while (true) {
-      const current = index++;
+      const i = index++;
 
-      if (current >= users.length) return;
+      if (i >= users.length) return;
 
-      const trader = users[current];
-      const address = userAddress(trader);
-
-      if (!address) continue;
+      const user = users[i];
 
       try {
-        const data = await get('/v2/trades', {
-          user: address,
+        const j = await get('/v2/trades', {
+          user,
           start: now - 48 * 60 * 60,
           end: now,
-          limit: 200,
+          limit: 500,
           sortDirection: 'DESC'
         });
 
         results.push({
-          user: trader,
-          trades: Array.isArray(data?.data) ? data.data : []
+          user,
+          trades: Array.isArray(j?.data)
+            ? j.data
+            : []
         });
       } catch {
-        console.log(`Trade lookup failed: ${address}`);
+        console.log(`Trade failed: ${i + 1}/${users.length}`);
       }
 
-      await sleep(75);
+      await sleep(40);
     }
-  };
+  }
 
-  const workerCount = Math.min(8, users.length);
+  const workers = Math.min(15, users.length);
 
   await Promise.all(
-    Array.from({ length: workerCount }, () => worker())
+    Array.from(
+      { length: workers },
+      () => worker()
+    )
   );
 
   return results;
@@ -231,10 +358,9 @@ async function recentTradesForUsers(users) {
 function ageLabel(timestamp) {
   if (!timestamp) return 'Recent';
 
-  const hours = Math.max(
-    0,
-    (Date.now() - Number(timestamp) * 1000) / 3600000
-  );
+  const hours =
+    (Date.now() - Number(timestamp) * 1000) /
+    3600000;
 
   if (hours < 1) {
     return `${Math.max(1, Math.round(hours * 60))}m ago`;
@@ -248,51 +374,37 @@ function ageLabel(timestamp) {
 }
 
 async function consensus() {
-  console.log('Building recent consensus...');
+  const traders = await weeklyTraderUniverse();
 
-  /*
-    Top 250 weekly traders.
+  console.log(
+    `Scanning open positions for ${traders.length} traders...`
+  );
 
-    This is intentionally smaller than the previous 1,000-trader
-    scan because the previous version could require thousands
-    of API calls and never finish.
-  */
-  const traders = await leaderboard('WEEK', 250);
+  const bundles = await fetchOpenPositions(traders);
 
-  console.log(`Scanning ${traders.length} weekly traders`);
-
-  const positionBundles = await fetchOpenPositions(traders);
-
-  /*
-    Build market -> YES/NO traders.
-  */
   const markets = new Map();
 
-  for (const bundle of positionBundles) {
-    const address = userAddress(bundle.user);
-
-    for (const position of bundle.positions) {
-      if (position.archived) continue;
+  for (const bundle of bundles) {
+    for (const p of bundle.positions) {
+      if (p.archived) continue;
 
       const size = Number(
-        position.current_size ??
-        position.size ??
+        p.current_size ??
+        p.size ??
         0
       );
 
       if (size <= 0) continue;
 
-      const outcome = String(
-        position.outcome || ''
+      const side = String(
+        p.outcome || ''
       ).toLowerCase();
 
-      if (outcome !== 'yes' && outcome !== 'no') {
-        continue;
-      }
+      if (side !== 'yes' && side !== 'no') continue;
 
       const conditionId =
-        position.condition_id ||
-        position.conditionId;
+        p.condition_id ||
+        p.conditionId;
 
       if (!conditionId) continue;
 
@@ -300,12 +412,13 @@ async function consensus() {
         markets.set(conditionId, {
           conditionId,
           title:
-            position.title ||
-            position.name ||
+            p.title ||
+            pquestion?.title ||
+            p.name ||
             'Untitled',
           endDate:
-            position.end_date ||
-            position.endDate ||
+            p.end_date ||
+            p.endDate ||
             null,
           yes: new Map(),
           no: new Map()
@@ -314,101 +427,96 @@ async function consensus() {
 
       const market = markets.get(conditionId);
 
-      const entryCost = Number(
-        position.entry_cost_usdc ??
-        position.total_cost_usdc ??
-        position.cash_value ??
+      const user = bundle.user;
+
+      const entry = Number(
+        p.entry_cost_usdc ??
+        p.total_cost_usdc ??
+        p.cash_value ??
         0
       );
 
-      market[outcome].set(address, {
-        user: address,
-        entry: entryCost,
-        position
+      market[side].set(user, {
+        user,
+        entry,
+        position: p
       });
     }
   }
 
-  console.log(`Found ${markets.size} active markets`);
+  console.log(
+    `Active markets discovered: ${markets.size}`
+  );
 
   /*
-    We now only look for recent trades from the traders that
-    actually hold the discovered markets.
+    Only traders actually holding an active market.
   */
-  const activeUsers = new Map();
+  const activeUsers = new Set();
 
   for (const market of markets.values()) {
-    for (const trader of [
-      ...market.yes.values(),
-      ...market.no.values()
-    ]) {
-      activeUsers.set(trader.user, trader.user);
+    for (const x of market.yes.values()) {
+      activeUsers.add(x.user);
+    }
+
+    for (const x of market.no.values()) {
+      activeUsers.add(x.user);
     }
   }
 
-  const userObjects = [...activeUsers.values()].map(address => ({
-    proxyWallet: address
-  }));
-
-  console.log(`Checking recent activity for ${userObjects.length} traders`);
-
-  const tradeBundles = await recentTradesForUsers(userObjects);
+  const trades = await recentTrades(
+    [...activeUsers]
+  );
 
   /*
-    Map:
-      wallet + condition + side
-        -> earliest recent buy
+    wallet|condition|side -> earliest recent buy
   */
   const buys = new Map();
 
-  for (const bundle of tradeBundles) {
-    const address = userAddress(bundle.user);
-
-    for (const trade of bundle.trades) {
-      const side = String(trade.side || '').toUpperCase();
-
-      if (side !== 'BUY') continue;
-
-      const outcome = String(
-        trade.outcome || ''
-      ).toLowerCase();
-
-      if (outcome !== 'yes' && outcome !== 'no') {
+  for (const bundle of trades) {
+    for (const t of bundle.trades) {
+      if (
+        String(t.side || '').toUpperCase() !==
+        'BUY'
+      ) {
         continue;
       }
 
+      const side = String(
+        t.outcome || ''
+      ).toLowerCase();
+
+      if (side !== 'yes' && side !== 'no') continue;
+
       const conditionId =
-        trade.condition_id ||
-        trade.conditionId;
+        t.condition_id ||
+        t.conditionId;
 
       if (!conditionId) continue;
 
       const timestamp = Number(
-        trade.timestamp ||
-        trade.block_timestamp ||
+        t.timestamp ||
+        t.block_timestamp ||
         0
       );
 
       if (!timestamp) continue;
 
-      const cash = Number(
-        trade.usdc_size ??
-        trade.usdcSize ??
-        (
-          Number(trade.size || 0) *
-          Number(trade.price || 0)
-        )
-      );
-
       const key =
-        `${address}|${conditionId}|${outcome}`;
+        `${bundle.user}|${conditionId}|${side}`;
 
-      const existing = buys.get(key);
+      const old = buys.get(key);
 
-      if (!existing || timestamp < existing.timestamp) {
+      if (!old || timestamp < old.timestamp) {
         buys.set(key, {
           timestamp,
-          cash
+          amount: Number(
+            t.usdc_size ??
+            t.usdcSize ??
+            (
+              Number(t.size || 0) *
+              Number(t.price || 0)
+            )
+          )
         });
       }
     }
@@ -417,174 +525,169 @@ async function consensus() {
   const rows = [];
 
   for (const market of markets.values()) {
-    const yesCount = market.yes.size;
-    const noCount = market.no.size;
+    const yes = market.yes;
+    const no = market.no;
 
     /*
-      Only show true same-side consensus.
-
-      Example:
-        YES 12
-        NO  0
-
-      is valid.
-
-      YES 12
-      NO  3
-
-      is rejected.
+      TRUE consensus:
+        YES >= 2 and NO = 0
+      OR
+        NO >= 2 and YES = 0
     */
     let side;
     let group;
 
-    if (yesCount >= 2 && noCount === 0) {
+    if (yes.size >= 2 && no.size === 0) {
       side = 'YES';
-      group = market.yes;
-    } else if (noCount >= 2 && yesCount === 0) {
+      group = yes;
+    } else if (no.size >= 2 && yes.size === 0) {
       side = 'NO';
-      group = market.no;
+      group = no;
     } else {
       continue;
     }
 
-    let totalEntry = 0;
     let firstBuy = Infinity;
+    let totalEntry = 0;
 
-    const traders = [];
+    const holders = [];
 
     for (const holder of group.values()) {
-      totalEntry += holder.entry || 0;
+      totalEntry += holder.entry;
 
       const key =
         `${holder.user}|${market.conditionId}|${side.toLowerCase()}`;
 
-      const trade = buys.get(key);
+      const buy = buys.get(key);
 
-      if (trade?.timestamp) {
-        firstBuy = Math.min(firstBuy, trade.timestamp);
+      if (buy?.timestamp) {
+        firstBuy = Math.min(
+          firstBuy,
+          buy.timestamp
+        );
       }
 
-      traders.push({
-        user: holder.user,
-        amount: holder.entry || 0,
-        buyTime: trade?.timestamp
-          ? new Date(trade.timestamp * 1000).toISOString()
+      holders.push({
+        amount: holder.entry,
+        buyTime: buy?.timestamp
+          ? new Date(
+              buy.timestamp * 1000
+            ).toISOString()
           : null
       });
     }
 
-    if (!Number.isFinite(firstBuy)) {
-      continue;
-    }
+    /*
+      If we don't have a recent trade timestamp,
+      don't pretend we know when the position was bought.
+    */
+    if (!Number.isFinite(firstBuy)) continue;
 
     const ageHours =
       (now - firstBuy) / 3600;
 
-    /*
-      Only recent consensus.
-    */
-    if (ageHours > 48) {
-      continue;
-    }
+    if (ageHours > 48) continue;
 
     /*
-      Ignore extremely distant markets.
+      Ignore markets ending more than 90 days away.
     */
     if (market.endDate) {
-      const endTime =
-        new Date(market.endDate).getTime();
+      const end = new Date(
+        market.endDate
+      ).getTime();
 
-      if (Number.isFinite(endTime)) {
-        const daysToEnd =
-          (endTime - Date.now()) / 86400000;
+      if (Number.isFinite(end)) {
+        const days =
+          (end - Date.now()) / 86400000;
 
-        if (daysToEnd > 90) {
-          continue;
-        }
+        if (days > 90) continue;
       }
     }
 
     rows.push({
       title: market.title,
       side,
-      traderCount: group.size,
       sameSide: group.size,
-      oppositeSide: 0,
+      oppositeSide: side === 'YES'
+        ? no.size
+        : yes.size,
       totalEntry,
       firstBuy:
-        new Date(firstBuy * 1000).toISOString(),
+        new Date(
+          firstBuy * 1000
+        ).toISOString(),
       holdLabel: ageLabel(firstBuy),
-      traders
+      traders: holders
     });
   }
 
   rows.sort(
     (a, b) =>
-      b.traderCount - a.traderCount ||
-      new Date(b.firstBuy) - new Date(a.firstBuy) ||
-      b.totalEntry - a.totalEntry
+      b.sameSide - a.sameSide ||
+      new Date(b.firstBuy) -
+        new Date(a.firstBuy) ||
+      b.totalEntry -
+        a.totalEntry
   );
 
-  console.log(`Consensus results: ${rows.length}`);
+  console.log(
+    `Qualifying consensus markets: ${rows.length}`
+  );
 
   return rows.slice(0, 1000);
 }
 
-/* -----------------------------
-   3 MONTHS
------------------------------ */
-
 /*
-  Do NOT individually request 1,000 traders' historical P&L.
+  3-month leaderboard.
 
-  Use the official ALL leaderboard as the 3-month approximation.
-  This is vastly faster and much more reliable for GitHub Actions.
+  We use the official ALL leaderboard directly.
+  This keeps the scheduled Action fast and reliable.
 */
 async function build3m() {
-  console.log('Loading 3-month leaderboard...');
-
   const source = await leaderboard('ALL', 100);
-
-  const leaders = source.map((x, i) => ({
-    rank: i + 1,
-    name: rowName(x),
-    pnl: Number(x.pnl || 0),
-    volume: Number(x.vol || x.volume || 0),
-    wins: Number(x.wins || 0),
-    losses: Number(x.losses || 0),
-    winRate:
-      Number(x.wins || 0) + Number(x.losses || 0)
-        ? 100 *
-          Number(x.wins || 0) /
-          (Number(x.wins || 0) + Number(x.losses || 0))
-        : null
-  }));
 
   return {
     periodLabel: '3 Months',
     generatedAt: new Date().toISOString(),
-    leaders
+    leaders: source.map((x, i) => ({
+      rank: i + 1,
+      name: name(x),
+      pnl: Number(x.pnl || 0),
+      volume: Number(
+        x.vol ??
+        x.volume ??
+        0
+      ),
+      wins: Number(x.wins || 0),
+      losses: Number(x.losses || 0),
+      winRate:
+        Number(x.wins || 0) +
+        Number(x.losses || 0)
+          ? 100 *
+            Number(x.wins || 0) /
+            (
+              Number(x.wins || 0) +
+              Number(x.losses || 0)
+            )
+          : null
+    }))
   };
 }
 
-/* -----------------------------
-   MAIN
------------------------------ */
-
 async function main() {
-  await fs.mkdir('data', { recursive: true });
+  await fs.mkdir('data', {
+    recursive: true
+  });
 
-  console.log('Starting Polymarket scanner...');
+  console.log('Starting scanner...');
 
-  /*
-    Run the weekly leaderboard once.
-  */
-  const week = await buildLeaders('WEEK', '1 Week');
+  const week = await buildLeaders(
+    'WEEK',
+    '1 Week'
+  );
 
-  /*
-    Consensus is the expensive portion, so run it once.
-  */
-  const consensusResults = await consensus();
+  const consensusResults =
+    await consensus();
 
   await fs.writeFile(
     'data/week.json',
@@ -598,7 +701,10 @@ async function main() {
     )
   );
 
-  const month = await buildLeaders('MONTH', '1 Month');
+  const month = await buildLeaders(
+    'MONTH',
+    '1 Month'
+  );
 
   await fs.writeFile(
     'data/month.json',
@@ -631,22 +737,34 @@ async function main() {
     JSON.stringify(
       {
         ok: true,
-        generatedAt: new Date().toISOString(),
-        consensusMarkets: consensusResults.length
+        generatedAt:
+          new Date().toISOString(),
+        consensusMarkets:
+          consensusResults.length,
+        weeklyTraders:
+          week.leaders.length
       },
       null,
       2
     )
   );
 
-  console.log('================================');
-  console.log('Polymarket scanner completed.');
-  console.log(`Consensus markets: ${consensusResults.length}`);
-  console.log('================================');
+  console.log('==============================');
+  console.log('SCAN COMPLETE');
+  console.log(
+    `Weekly traders: ${week.leaders.length}`
+  );
+  console.log(
+    `Consensus markets: ${consensusResults.length}`
+  );
+  console.log('==============================');
 }
 
 main().catch(async error => {
-  console.error('SCANNER FAILED:', error);
+  console.error(
+    'SCANNER FAILED:',
+    error
+  );
 
   await fs.writeFile(
     'data/status.json',
@@ -654,7 +772,8 @@ main().catch(async error => {
       {
         ok: false,
         error: error.message,
-        generatedAt: new Date().toISOString()
+        generatedAt:
+          new Date().toISOString()
       },
       null,
       2
