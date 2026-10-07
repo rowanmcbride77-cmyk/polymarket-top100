@@ -19,7 +19,7 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 1
+          fetch-depth: 0
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -46,4 +46,15 @@ jobs:
 
           git commit -m "Update Polymarket data"
 
-          git push origin HEAD:main --force-with-lease
+          git fetch origin main
+          git reset --soft origin/main
+
+          git add data/
+
+          if git diff --cached --quiet; then
+            echo "No data changes after syncing with main."
+            exit 0
+          fi
+
+          git commit -m "Update Polymarket data"
+          git push origin HEAD:main
