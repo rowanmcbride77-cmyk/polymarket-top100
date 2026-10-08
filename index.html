@@ -3,410 +3,413 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Polymarket Consensus Scanner</title>
+
+<title>Polymarket Top 100</title>
 
 <style>
-*{box-sizing:border-box}
+
+*{
+  box-sizing:border-box;
+}
 
 body{
   margin:0;
   background:#000;
-  color:#f5f5f5;
-  font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif
+  color:#fff;
+  font-family:Inter,Arial,sans-serif;
 }
 
 .wrap{
   max-width:1250px;
   margin:auto;
-  padding:28px 18px 60px
+  padding:28px 18px 60px;
 }
 
-.top{
+.header{
   display:flex;
   justify-content:space-between;
-  gap:20px;
   align-items:flex-end;
-  margin-bottom:24px
+  gap:20px;
+  margin-bottom:22px;
 }
 
 .title{
   font-size:30px;
   font-weight:800;
-  letter-spacing:-.04em
 }
 
-.sub{
-  color:#8e8e8e;
-  margin-top:6px;
-  font-size:14px
+.subtitle{
+  color:#777;
+  font-size:13px;
+  margin-top:5px;
 }
 
 .controls{
   display:flex;
   gap:8px;
-  flex-wrap:wrap
 }
 
-.btn,select{
-  background:#111;
+button,
+select{
+  font:inherit;
+}
+
+.period{
   border:1px solid #292929;
+  background:#101010;
   color:#fff;
-  border-radius:9px;
-  padding:9px 12px;
-  font-size:14px
+  padding:9px 13px;
+  border-radius:8px;
+  cursor:pointer;
 }
 
-.btn{
-  cursor:pointer
-}
-
-.btn.active{
+.period.active{
   background:#fff;
-  color:#000
+  color:#000;
 }
 
 .panel{
-  border:1px solid #222;
   background:#080808;
-  border-radius:14px;
+  border:1px solid #222;
+  border-radius:13px;
   overflow:hidden;
-  margin-top:18px
+  margin-top:18px;
 }
 
-.panelhead{
-  padding:17px 18px;
-  border-bottom:1px solid #222;
+.panelHeader{
   display:flex;
   justify-content:space-between;
+  align-items:center;
   gap:15px;
-  align-items:center
+  padding:17px 18px;
+  border-bottom:1px solid #222;
 }
 
-.paneltitle{
+.panelTitle{
   font-size:18px;
-  font-weight:750
+  font-weight:750;
 }
 
-.muted{
+.panelSub{
   color:#777;
-  font-size:12px
+  font-size:12px;
+  margin-top:4px;
 }
 
-.tablewrap{
-  overflow:auto
+.updated{
+  color:#666;
+  font-size:12px;
+}
+
+.tableWrap{
+  overflow:auto;
 }
 
 table{
   width:100%;
   border-collapse:collapse;
-  min-width:850px
-}
-
-th,td{
-  text-align:left;
-  padding:12px 14px;
-  border-bottom:1px solid #171717;
-  font-size:13px
+  min-width:850px;
 }
 
 th{
-  font-size:11px;
-  color:#777;
+  background:#050505;
+  color:#666;
+  text-align:left;
+  font-size:10px;
   text-transform:uppercase;
   letter-spacing:.08em;
-  background:#050505;
-  position:sticky;
-  top:0
+  padding:12px 14px;
+  border-bottom:1px solid #202020;
+}
+
+td{
+  padding:12px 14px;
+  border-bottom:1px solid #171717;
+  font-size:13px;
 }
 
 tr:hover td{
-  background:#0d0d0d
+  background:#0d0d0d;
 }
 
 .rank{
-  color:#777;
-  width:50px
+  color:#666;
+  width:55px;
 }
 
-.name{
-  font-weight:700
-}
-
-.traderButton{
-  background:none;
+.traderBtn{
   border:0;
+  background:none;
+  color:#fff;
+  cursor:pointer;
   padding:0;
-  color:#fff;
-  font:inherit;
   font-weight:700;
-  cursor:pointer;
-  text-align:left
+  text-align:left;
 }
 
-.traderButton:hover{
-  text-decoration:underline
-}
-
-.traderButton .smallArrow{
-  display:inline-block;
-  color:#777;
-  margin-right:5px;
-  transition:transform .15s
-}
-
-.traderButton.open .smallArrow{
-  transform:rotate(90deg)
-}
-
-.pnl.pos{
-  color:#8ee6a8
-}
-
-.pnl.neg{
-  color:#ff8f8f
-}
-
-.winrate{
-  font-weight:800
-}
-
-.pill{
-  display:inline-block;
-  border:1px solid #303030;
-  border-radius:999px;
-  padding:4px 8px;
-  font-size:11px;
-  color:#bbb
-}
-
-.yes{
-  color:#8ee6a8
-}
-
-.no{
-  color:#ff8f8f
-}
-
-.consensus{
-  border-bottom:1px solid #171717
-}
-
-.marketButton{
-  width:100%;
-  background:none;
-  border:0;
-  color:#fff;
-  padding:16px 18px;
-  cursor:pointer;
-  text-align:left
-}
-
-.marketButton:hover{
-  background:#0d0d0d
-}
-
-.marketrow{
-  display:flex;
-  justify-content:space-between;
-  gap:20px;
-  align-items:flex-start
-}
-
-.marketname{
-  font-size:16px;
-  font-weight:700;
-  line-height:1.35
-}
-
-.meta{
-  display:flex;
-  gap:8px;
-  flex-wrap:wrap;
-  margin-top:9px
-}
-
-.stats{
-  display:flex;
-  gap:22px;
-  text-align:right;
-  white-space:nowrap
-}
-
-.stat b{
-  display:block;
-  font-size:15px
-}
-
-.stat span{
-  font-size:11px;
-  color:#777
-}
-
-.traderList{
-  display:none;
-  border-top:1px solid #222;
-  background:#050505
-}
-
-.consensus.open .traderList{
-  display:block
-}
-
-.trader{
-  display:grid;
-  grid-template-columns:minmax(160px,1fr) 90px 120px 150px;
-  gap:12px;
-  padding:12px 18px 12px 40px;
-  border-bottom:1px solid #151515;
-  align-items:center
-}
-
-.trader:last-child{
-  border-bottom:0
-}
-
-.traderName{
-  font-weight:650
-}
-
-.traderAmount{
-  text-align:right
-}
-
-.traderTime{
-  text-align:right;
-  color:#999
-}
-
-/* Top trader active-position panel */
-
-.leaderDetail{
-  display:none;
-  background:#050505
-}
-
-.leaderDetail.open{
-  display:block
-}
-
-.leaderDetailHeader{
-  padding:13px 18px 11px 58px;
-  border-bottom:1px solid #222;
-  color:#999;
-  font-size:12px
-}
-
-.leaderPosition{
-  display:grid;
-  grid-template-columns:minmax(260px,1fr) 80px 120px 150px;
-  gap:14px;
-  align-items:center;
-  padding:13px 18px 13px 58px;
-  border-bottom:1px solid #151515;
-  font-size:13px
-}
-
-.leaderPosition:last-child{
-  border-bottom:0
-}
-
-.positionMarket{
-  font-weight:650;
-  line-height:1.35
-}
-
-.positionSide{
-  font-weight:800
-}
-
-.positionAmount{
-  text-align:right
-}
-
-.positionTime{
-  text-align:right;
-  color:#999
-}
-
-.noPositions{
-  padding:20px 18px 20px 58px;
-  color:#777;
-  font-size:13px
+.traderBtn:hover{
+  text-decoration:underline;
 }
 
 .arrow{
   display:inline-block;
-  margin-right:8px;
-  transition:transform .15s
+  color:#666;
+  margin-right:6px;
+  transition:.15s;
 }
 
-.consensus.open .arrow{
-  transform:rotate(90deg)
+.traderBtn.open .arrow{
+  transform:rotate(90deg);
+}
+
+.win{
+  font-weight:800;
+}
+
+.positive{
+  color:#8ee6a8;
+}
+
+.negative{
+  color:#ff8f8f;
+}
+
+.detail{
+  display:none;
+  background:#050505;
+}
+
+.detail.open{
+  display:table-row;
+}
+
+.detailHead{
+  padding:12px 18px 12px 55px;
+  color:#777;
+  font-size:12px;
+  border-bottom:1px solid #202020;
+}
+
+.position{
+  display:grid;
+  grid-template-columns:minmax(300px,1fr) 80px 150px 140px;
+  gap:15px;
+  padding:14px 18px 14px 55px;
+  border-bottom:1px solid #151515;
+  align-items:center;
+}
+
+.positionTitle{
+  font-weight:650;
+}
+
+.positionSide{
+  font-weight:800;
+}
+
+.yes{
+  color:#8ee6a8;
+}
+
+.no{
+  color:#ff8f8f;
+}
+
+.amount{
+  text-align:right;
+}
+
+.time{
+  text-align:right;
+  color:#888;
 }
 
 .empty{
-  padding:35px 18px;
-  color:#777;
-  text-align:center
+  padding:35px;
+  text-align:center;
+  color:#666;
 }
 
-.status{
+.consensusHeader{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:15px;
+  padding:17px 18px;
+  border-bottom:1px solid #222;
+}
+
+select{
+  background:#111;
+  color:#fff;
+  border:1px solid #292929;
+  padding:8px 10px;
+  border-radius:8px;
+}
+
+.market{
+  border-bottom:1px solid #171717;
+}
+
+.marketBtn{
+  width:100%;
+  border:0;
+  background:none;
+  color:#fff;
+  cursor:pointer;
+  padding:16px 18px;
+  text-align:left;
+}
+
+.marketBtn:hover{
+  background:#0d0d0d;
+}
+
+.marketTop{
+  display:flex;
+  justify-content:space-between;
+  align-items:flex-start;
+  gap:20px;
+}
+
+.marketTitle{
+  font-weight:750;
+  font-size:15px;
+  line-height:1.4;
+}
+
+.marketMeta{
+  display:flex;
+  flex-wrap:wrap;
+  gap:7px;
+  margin-top:9px;
+}
+
+.pill{
+  border:1px solid #303030;
+  border-radius:999px;
+  padding:4px 8px;
+  color:#aaa;
+  font-size:11px;
+}
+
+.marketStats{
+  text-align:right;
+  white-space:nowrap;
+}
+
+.marketStats strong{
+  display:block;
+  font-size:16px;
+}
+
+.marketStats span{
+  color:#666;
+  font-size:10px;
+}
+
+.marketArrow{
+  color:#666;
+  margin-right:6px;
+}
+
+.market.open .marketArrow{
+  display:inline-block;
+  transform:rotate(90deg);
+}
+
+.marketTraders{
+  display:none;
+  background:#050505;
+  border-top:1px solid #222;
+}
+
+.market.open .marketTraders{
+  display:block;
+}
+
+.consensusTrader{
+  display:grid;
+  grid-template-columns:minmax(190px,1fr) 130px 80px 100px 120px 130px;
+  gap:12px;
+  padding:13px 18px 13px 40px;
+  border-bottom:1px solid #151515;
+  align-items:center;
   font-size:12px;
-  color:#777
 }
 
-.error{
-  color:#ff8f8f;
-  padding:18px
+.consensusTrader:last-child{
+  border-bottom:0;
+}
+
+.traderRank{
+  color:#aaa;
+}
+
+.traderWL{
+  font-weight:700;
+}
+
+.traderAmount{
+  text-align:right;
+}
+
+.traderAge{
+  text-align:right;
+  color:#888;
 }
 
 .note{
-  font-size:12px;
   color:#666;
+  font-size:11px;
   line-height:1.5;
-  padding:14px 18px
+  padding:14px 18px;
 }
 
-.loading{
-  opacity:.65
+.error{
+  padding:20px;
+  color:#ff8f8f;
 }
 
-@media(max-width:800px){
+@media(max-width:850px){
 
-  .top{
-    display:block
+  .header{
+    display:block;
   }
 
   .controls{
-    margin-top:15px
+    margin-top:14px;
   }
 
-  .stats{
-    display:none
-  }
-
-  .trader{
-    grid-template-columns:1fr 80px;
-  }
-
-  .traderTime{
-    grid-column:2;
-    text-align:right
-  }
-
-  .leaderPosition{
+  .position{
     grid-template-columns:1fr 70px;
   }
 
-  .positionAmount{
-    text-align:left
+  .amount{
+    text-align:left;
   }
 
-  .positionTime{
-    grid-column:2;
-    text-align:right
+  .time{
+    text-align:left;
+  }
+
+  .marketStats{
+    display:none;
+  }
+
+  .consensusTrader{
+    grid-template-columns:1fr 100px 70px;
+  }
+
+  .traderAmount{
+    text-align:left;
+  }
+
+  .traderAge{
+    text-align:left;
   }
 }
+
 </style>
 </head>
 
@@ -414,97 +417,168 @@ tr:hover td{
 
 <div class="wrap">
 
-  <div class="top">
+<div class="header">
 
-    <div>
-      <div class="title">Polymarket Consensus Scanner</div>
+<div>
+<div class="title">
+Polymarket Top 100
+</div>
 
-      <div class="sub">
-        Win-rate ranked traders · active consensus · no wallet IDs shown
-      </div>
-    </div>
+<div class="subtitle">
+Weekly win-rate ranking · 12-hour active consensus
+</div>
+</div>
 
-    <div class="controls">
-      <button class="btn active" data-period="week">1 Week</button>
-      <button class="btn" data-period="month">1 Month</button>
-      <button class="btn" data-period="threeMonth">3 Months</button>
-    </div>
+<div class="controls">
 
-  </div>
+<button
+class="period active"
+data-period="week"
+>
+1 Week
+</button>
 
+<button
+class="period"
+data-period="month"
+>
+1 Month
+</button>
 
-  <!-- TOP 100 -->
+<button
+class="period"
+data-period="threeMonth"
+>
+3 Months
+</button>
 
-  <section class="panel">
+</div>
 
-    <div class="panelhead">
-
-      <div>
-        <div class="paneltitle">Top 100 Traders</div>
-        <div class="muted" id="leaderMeta">Loading...</div>
-      </div>
-
-      <div class="status" id="updated">—</div>
-
-    </div>
-
-    <div class="tablewrap">
-
-      <table>
-
-        <thead>
-          <tr>
-            <th>#</th>
-            <th>Trader</th>
-            <th>Win %</th>
-            <th>Win / Loss</th>
-            <th>Markets</th>
-            <th>P&L</th>
-            <th>Volume</th>
-          </tr>
-        </thead>
-
-        <tbody id="leaderRows"></tbody>
-
-      </table>
-
-    </div>
-
-  </section>
+</div>
 
 
-  <!-- ACTIVE CONSENSUS -->
+<!-- TOP 100 -->
 
-  <section class="panel">
+<div class="panel">
 
-    <div class="panelhead">
+<div class="panelHeader">
 
-      <div>
-        <div class="paneltitle">Active Trader Consensus</div>
+<div>
 
-        <div class="muted">
-          Click a market to see the traders currently holding the same side
-        </div>
-      </div>
+<div class="panelTitle">
+Top 100 Traders
+</div>
 
-      <select id="minSame">
-        <option value="2" selected>2+ same-side traders</option>
-        <option value="3">3+ same-side traders</option>
-        <option value="5">5+ same-side traders</option>
-        <option value="10">10+ same-side traders</option>
-        <option value="20">20+ same-side traders</option>
-      </select>
+<div
+class="panelSub"
+id="leaderSub"
+>
+Loading...
+</div>
 
-    </div>
+</div>
 
-    <div id="consensusList"></div>
+<div
+class="updated"
+id="updated"
+>
+—
+</div>
 
-    <div class="note">
-      Consensus uses the weekly win-rate Top 1,000 trader universe.
-      Opposing YES/NO positions are never mixed.
-    </div>
+</div>
 
-  </section>
+
+<div class="tableWrap">
+
+<table>
+
+<thead>
+
+<tr>
+<th>#</th>
+<th>Trader</th>
+<th>Win %</th>
+<th>W / L</th>
+<th>Markets</th>
+<th>P&L</th>
+<th>Volume</th>
+</tr>
+
+</thead>
+
+<tbody
+id="leaders"
+>
+</tbody>
+
+</table>
+
+</div>
+
+</div>
+
+
+<!-- CONSENSUS -->
+
+<div class="panel">
+
+<div class="consensusHeader">
+
+<div>
+
+<div class="panelTitle">
+12-Hour Active Trader Consensus
+</div>
+
+<div class="panelSub">
+Only actual BUYs from the last 12 hours · same market · same side
+</div>
+
+</div>
+
+
+<select id="minimum">
+
+<option value="2">
+2+ traders
+</option>
+
+<option value="3">
+3+ traders
+</option>
+
+<option value="5">
+5+ traders
+</option>
+
+<option value="10">
+10+ traders
+</option>
+
+<option value="20">
+20+ traders
+</option>
+
+</select>
+
+</div>
+
+
+<div
+id="consensus"
+>
+</div>
+
+
+<div class="note">
+
+The active universe targets the top 10,000 weekly traders by win rate.
+Every trader below shows their weekly rank, W/L, win rate, actual amount bought,
+side, and how recently they bought.
+
+</div>
+
+</div>
 
 </div>
 
@@ -516,68 +590,103 @@ const state={
   data:null
 };
 
-const $=s=>document.querySelector(s);
+
+const $=selector =>
+  document.querySelector(selector);
 
 
-function money(n){
+function money(value){
 
-  n=Number(n||0);
+  const n=Number(value||0);
 
-  return (n<0?"-$":"$")+
-    Math.abs(n).toLocaleString(undefined,{
+  return(
+    n<0?"-$":"$"
+  )+
+  Math.abs(n).toLocaleString(
+    undefined,
+    {
       maximumFractionDigits:0
-    });
+    }
+  );
 }
 
 
-function pct(n){
+function percent(value){
 
   if(
-    n===null ||
-    n===undefined ||
-    !Number.isFinite(Number(n))
+    value===null ||
+    value===undefined ||
+    !Number.isFinite(Number(value))
   ){
     return "—";
   }
 
-  return Number(n).toFixed(1)+"%";
+  return(
+    Number(value).toFixed(1)
+    +"%"
+  );
 }
 
 
-function age(s){
+function age(iso){
 
-  if(!s) return "—";
-
-  const time=new Date(s).getTime();
-
-  if(!Number.isFinite(time)){
+  if(!iso){
     return "—";
   }
 
-  const h=Math.max(
-    0,
-    (Date.now()-time)/36e5
+  const time=
+    new Date(iso).getTime();
+
+  if(
+    !Number.isFinite(time)
+  ){
+    return "—";
+  }
+
+  const hours=
+    Math.max(
+      0,
+      (Date.now()-time)/3600000
+    );
+
+  if(hours<1){
+    return(
+      Math.max(
+        1,
+        Math.round(hours*60)
+      )
+      +"m ago"
+    );
+  }
+
+  if(hours<24){
+    return(
+      Math.round(hours)
+      +"h ago"
+    );
+  }
+
+  return(
+    Math.round(hours/24)
+    +"d ago"
   );
-
-  if(h<1){
-    return Math.round(h*60)+"m ago";
-  }
-
-  if(h<24){
-    return Math.round(h)+"h ago";
-  }
-
-  return Math.round(h/24)+"d ago";
 }
 
 
-function fullTime(s){
+function fullDate(iso){
 
-  if(!s) return "—";
+  if(!iso){
+    return "—";
+  }
 
-  const d=new Date(s);
+  const d=
+    new Date(iso);
 
-  if(!Number.isFinite(d.getTime())){
+  if(
+    !Number.isFinite(
+      d.getTime()
+    )
+  ){
     return "—";
   }
 
@@ -585,624 +694,710 @@ function fullTime(s){
 }
 
 
-function escapeHtml(s){
+function escapeHtml(value){
 
-  return String(s).replace(
+  return String(
+    value ?? ""
+  ).replace(
     /[&<>'"]/g,
-    c=>({
+    char=>({
+
       "&":"&amp;",
       "<":"&lt;",
       ">":"&gt;",
       "'":"&#39;",
       '"':"&quot;"
-    }[c])
+
+    })[char]
   );
 }
 
 
-/* =========================
-   TOP 100 TRADERS
-   ========================= */
+/* =========================================================
+   LEADERS
+   ========================================================= */
 
 function renderLeaders(){
 
-  const rows=state.data.leaders||[];
+  const rows=
+    state.data?.leaders || [];
 
-  $("#leaderMeta").textContent=
-    `${state.data.periodLabel||""} · ${rows.length} traders · ranked by win rate`;
+
+  $("#leaderSub").textContent=
+    `${state.data?.periodLabel||""} · ${rows.length} traders`;
+
 
   $("#updated").textContent=
-    state.data.generatedAt
+    state.data?.generatedAt
       ? `Updated ${age(state.data.generatedAt)}`
       : "—";
 
 
-  $("#leaderRows").innerHTML=
+  $("#leaders").innerHTML=
+    rows.map(
+      (trader,index)=>{
 
-    rows.map((x,i)=>{
+        const decided=
+          Number(trader.wins||0)+
+          Number(trader.losses||0);
 
-      const decided=
-        Number(x.wins||0)+
-        Number(x.losses||0);
 
-      return `
+        return`
 
-        <tr>
+<tr>
 
-          <td class="rank">
-            ${x.rank??i+1}
-          </td>
+<td class="rank">
+${trader.rank ?? index+1}
+</td>
 
-          <td class="name">
+<td>
 
-            <button
-              class="traderButton"
-              type="button"
-              data-wallet="${escapeHtml(x.wallet||"")}"
-              data-trader-index="${i}"
-            >
+<button
+class="traderBtn"
+data-index="${index}"
+>
 
-              <span class="smallArrow">▶</span>
+<span class="arrow">
+▶
+</span>
 
-              ${escapeHtml(x.name||"Unknown")}
+${escapeHtml(
+  trader.name ||
+  "Unknown"
+)}
 
-            </button>
+</button>
 
-          </td>
+</td>
 
-          <td class="winrate">
-            ${pct(x.winRate)}
-          </td>
+<td class="win">
+${percent(trader.winRate)}
+</td>
 
-          <td>
-            ${x.wins??0} / ${x.losses??0}
-          </td>
+<td>
+${trader.wins??0}
+/
+${trader.losses??0}
+</td>
 
-          <td>
-            ${decided}
-          </td>
+<td>
+${trader.markets??decided}
+</td>
 
-          <td class="pnl ${Number(x.pnl)>=0?"pos":"neg"}">
-            ${money(x.pnl)}
-          </td>
+<td
+class="${
+  Number(trader.pnl||0)>=0
+    ? "positive"
+    : "negative"
+}"
+>
+${money(trader.pnl)}
+</td>
 
-          <td>
-            ${money(x.volume)}
-          </td>
+<td>
+${money(trader.volume)}
+</td>
 
-        </tr>
+</tr>
 
-        <tr
-          class="leaderDetail"
-          id="leaderDetail-${i}"
-        >
 
-          <td colspan="7" style="padding:0">
+<tr
+class="detail"
+id="detail-${index}"
+>
 
-            <div
-              class="leaderDetailHeader"
-              id="leaderDetailHeader-${i}"
-            >
-              Loading active positions...
-            </div>
+<td colspan="7">
 
-            <div
-              id="leaderPositions-${i}"
-            ></div>
+<div
+class="detailHead"
+id="detailHead-${index}"
+>
+Loading...
+</div>
 
-          </td>
+<div
+id="detailBody-${index}"
+></div>
 
-        </tr>
+</td>
 
-      `;
+</tr>
 
-    }).join("")
+`;
+
+      }
+    ).join("")
 
     ||
 
-    `<tr>
-      <td colspan="7" class="empty">
-        No qualifying traders yet.
-      </td>
-    </tr>`;
+`
+
+<tr>
+<td
+colspan="7"
+class="empty"
+>
+No traders found.
+</td>
+</tr>
+
+`;
 
 
   document
-    .querySelectorAll(".traderButton")
-    .forEach(button=>{
+    .querySelectorAll(".traderBtn")
+    .forEach(
+      button=>{
 
-      button.addEventListener(
-        "click",
-        ()=>{
-          toggleLeader(
-            Number(
-              button.dataset.traderIndex
-            ),
-            button
-          );
-        }
-      );
+        button.onclick=
+          ()=>{
 
-    });
+            openTrader(
+              Number(
+                button.dataset.index
+              ),
+              button
+            );
+
+          };
+
+      }
+    );
+
 }
 
 
-/* =========================
-   TOP TRADER DETAILS
-   ========================= */
-
-function toggleLeader(index,button){
+function openTrader(
+  index,
+  button
+){
 
   const detail=
     document.querySelector(
-      `#leaderDetail-${index}`
+      `#detail-${index}`
     );
 
-  if(!detail){
-    return;
-  }
 
-  const isOpen=
-    detail.classList.contains("open");
+  const alreadyOpen=
+    detail.classList.contains(
+      "open"
+    );
 
 
   document
-    .querySelectorAll(".leaderDetail.open")
-    .forEach(x=>{
-      x.classList.remove("open");
-    });
+    .querySelectorAll(
+      ".detail.open"
+    )
+    .forEach(
+      x=>
+        x.classList.remove(
+          "open"
+        )
+    );
+
 
   document
-    .querySelectorAll(".traderButton.open")
-    .forEach(x=>{
-      x.classList.remove("open");
-    });
+    .querySelectorAll(
+      ".traderBtn.open"
+    )
+    .forEach(
+      x=>
+        x.classList.remove(
+          "open"
+        )
+    );
 
 
-  if(isOpen){
+  if(alreadyOpen){
     return;
   }
 
 
-  detail.classList.add("open");
-  button.classList.add("open");
+  detail.classList.add(
+    "open"
+  );
+
+  button.classList.add(
+    "open"
+  );
 
 
   const trader=
     state.data.leaders[index];
 
+
   const wallet=
-    trader?.wallet||"";
-
-  const trades=
-    state.data.traderActiveTrades?.[wallet]||[];
+    trader?.wallet;
 
 
-  const header=
+  const positions=
+    state.data
+      ?.traderActiveTrades
+      ?.[
+        wallet
+      ] || [];
+
+
+  document.querySelector(
+    `#detailHead-${index}`
+  ).textContent=
+    `${positions.length} active position${
+      positions.length===1
+        ? ""
+        : "s"
+    } · actual BUYs within 12 hours`;
+
+
+  const body=
     document.querySelector(
-      `#leaderDetailHeader-${index}`
+      `#detailBody-${index}`
     );
 
-  const container=
-    document.querySelector(
-      `#leaderPositions-${index}`
-    );
 
+  if(!positions.length){
 
-  header.textContent=
-    `${trades.length} active position${trades.length===1?"":"s"}`;
-
-
-  if(!trades.length){
-
-    container.innerHTML=
-      `<div class="noPositions">
-        No active positions found for this trader in the current scan.
+    body.innerHTML=
+      `<div class="empty">
+      No active BUYs from the last 12 hours.
       </div>`;
 
     return;
   }
 
 
-  container.innerHTML=
+  body.innerHTML=
+    positions.map(
+      position=>{
 
-    trades.map(t=>{
+        const side=
+          String(
+            position.side||""
+          ).toUpperCase();
 
-      const side=
-        String(t.side||"").toUpperCase();
 
-      return `
+        return`
 
-        <div class="leaderPosition">
+<div class="position">
 
-          <div class="positionMarket">
-            ${escapeHtml(
-              t.title||"Unknown market"
-            )}
-          </div>
+<div class="positionTitle">
+${escapeHtml(
+  position.title ||
+  "Unknown market"
+)}
+</div>
 
-          <div
-            class="positionSide ${
-              side==="YES"
-                ?"yes"
-                :"no"
-            }"
-          >
-            ${escapeHtml(side||"—")}
-          </div>
+<div
+class="positionSide ${
+  side==="YES"
+    ? "yes"
+    : "no"
+}"
+>
+${escapeHtml(side)}
+</div>
 
-          <div class="positionAmount">
-            ${money(t.amount)}
-          </div>
+<div class="amount">
+${money(position.amount)}
+bought
+</div>
 
-          <div
-            class="positionTime"
-            title="${escapeHtml(
-              fullTime(t.buyTime)
-            )}"
-          >
-            ${age(t.buyTime)}
-          </div>
+<div
+class="time"
+title="${escapeHtml(
+  fullDate(position.buyTime)
+)}"
+>
+${age(position.buyTime)}
+</div>
 
-        </div>
+</div>
 
-      `;
+`;
 
-    }).join("");
+      }
+    ).join("");
+
 }
 
 
-/* =========================
+/* =========================================================
    CONSENSUS
-   ========================= */
+   ========================================================= */
 
 function renderConsensus(){
 
-  const min=
+  const minimum=
     Number(
-      $("#minSame").value
+      $("#minimum").value
     );
 
 
   const rows=
-    (state.data.consensus||[])
-      .filter(
-        x=>
-          Number(x.sameSide||0)>=min
-      );
+    (
+      state.data?.consensus ||
+      []
+    ).filter(
+      row=>
+        Number(
+          row.sameSide||0
+        )>=minimum
+    );
 
 
   if(!rows.length){
 
-    $("#consensusList").innerHTML=
+    $("#consensus").innerHTML=
       `<div class="empty">
-        No qualifying active consensus markets in the current cache.
+      No same-side consensus found in the last 12 hours.
       </div>`;
 
     return;
   }
 
 
-  $("#consensusList").innerHTML=
+  $("#consensus").innerHTML=
+    rows.map(
+      (market,index)=>{
 
-    rows.map((x,index)=>{
-
-      const traders=
-        Array.isArray(x.traders)
-          ? x.traders
-          : [];
-
-
-      const active24=
-        Number(
-          x.active24h||0
-        );
-
-      const active72=
-        Number(
-          x.active72h||0
-        );
+        const traders=
+          Array.isArray(
+            market.traders
+          )
+            ? market.traders
+            : [];
 
 
-      return `
+        return`
 
-        <div
-          class="consensus"
-          data-index="${index}"
-        >
+<div class="market">
 
-          <button
-            class="marketButton"
-            type="button"
-          >
+<button
+class="marketBtn"
+type="button"
+>
 
-            <div class="marketrow">
+<div class="marketTop">
 
-              <div>
+<div>
 
-                <div class="marketname">
+<div class="marketTitle">
 
-                  <span class="arrow">
-                    ▶
-                  </span>
+<span class="marketArrow">
+▶
+</span>
 
-                  ${escapeHtml(
-                    x.title||
-                    "Unknown market"
-                  )}
+${escapeHtml(
+  market.title ||
+  "Unknown market"
+)}
 
-                </div>
+</div>
 
 
-                <div class="meta">
+<div class="marketMeta">
 
-                  <span
-                    class="pill ${
-                      x.side==="YES"
-                        ?"yes"
-                        :"no"
-                    }"
-                  >
-                    ${escapeHtml(
-                      x.side||""
-                    )}
-                    ${x.sameSide||0}
-                  </span>
-
-
-                  <span class="pill">
-                    ${money(
-                      x.totalEntry
-                    )}
-                    invested
-                  </span>
+<span
+class="pill ${
+  market.side==="YES"
+    ? "yes"
+    : "no"
+}"
+>
+${escapeHtml(
+  market.side
+)}
+</span>
 
 
-                  <span class="pill">
-                    ${active24}
-                    active 24h
-                  </span>
+<span class="pill">
+${market.sameSide}
+traders
+</span>
 
 
-                  <span class="pill">
-                    ${active72}
-                    active 72h
-                  </span>
-
-                </div>
-
-              </div>
+<span class="pill">
+${money(
+  market.totalEntry
+)}
+bought
+</span>
 
 
-              <div class="stats">
-
-                <div class="stat">
-                  <b>
-                    ${x.sameSide||0}
-                  </b>
-                  <span>
-                    traders
-                  </span>
-                </div>
+<span class="pill">
+#1–#${market.sameSide}
+of 10,000
+</span>
 
 
-                <div class="stat">
-                  <b>
-                    ${
-                      x.newestBuy
-                        ? age(x.newestBuy)
-                        : "—"
-                    }
-                  </b>
-                  <span>
-                    newest buy
-                  </span>
-                </div>
+<span class="pill">
+latest ${age(
+  market.newestBuy
+)}
+</span>
 
-              </div>
+</div>
 
-            </div>
-
-          </button>
+</div>
 
 
-          <div class="traderList">
+<div class="marketStats">
 
-            ${
-              traders.length
+<strong>
+${market.sameSide}
+</strong>
 
-              ?
+<span>
+same-side traders
+</span>
 
-              traders.map(t=>`
+<strong>
+${money(
+  market.totalEntry
+)}
+</strong>
 
-                <div class="trader">
+<span>
+total bought
+</span>
 
-                  <div class="traderName">
-                    ${escapeHtml(
-                      t.name||"Unknown"
-                    )}
-                  </div>
+</div>
 
-                  <div
-                    class="${
-                      String(t.side)
-                        .toUpperCase()==="YES"
-                        ?"yes"
-                        :"no"
-                    }"
-                  >
-                    ${escapeHtml(
-                      t.side||""
-                    )}
-                  </div>
+</div>
 
-                  <div class="traderAmount">
-                    ${money(t.amount)}
-                  </div>
+</button>
 
-                  <div
-                    class="traderTime"
-                    title="${escapeHtml(
-                      fullTime(
-                        t.firstBuy
-                      )
-                    )}"
-                  >
-                    ${
-                      t.firstBuy
-                        ? age(t.firstBuy)
-                        : "—"
-                    }
-                  </div>
 
-                </div>
+<div class="marketTraders">
 
-              `).join("")
+${
+  traders.map(
+    trader=>`
 
-              :
+<div class="consensusTrader">
 
-              `<div class="empty">
-                Trader details unavailable.
-              </div>`
-            }
+<div>
+<strong>
+${escapeHtml(
+  trader.name ||
+  "Unknown"
+)}
+</strong>
+</div>
 
-          </div>
 
-        </div>
+<div class="traderRank">
 
-      `;
+#${trader.rank}
+/
+10,000
 
-    }).join("");
+</div>
+
+
+<div
+class="${
+  trader.side==="YES"
+    ? "yes"
+    : "no"
+}"
+>
+${escapeHtml(
+  trader.side
+)}
+</div>
+
+
+<div class="traderWL">
+
+${trader.wins}
+-
+${trader.losses}
+
+</div>
+
+
+<div class="traderAmount">
+
+${money(
+  trader.amount
+)}
+
+</div>
+
+
+<div
+class="traderAge"
+title="${escapeHtml(
+  fullDate(
+    trader.buyTime
+  )
+)}"
+>
+
+${percent(
+  trader.winRate
+)}
+
+ ·
+
+${age(
+  trader.buyTime
+)}
+
+</div>
+
+</div>
+
+`
+  ).join("")
+}
+
+</div>
+
+</div>
+
+`;
+
+      }
+    ).join("");
 
 
   document
-    .querySelectorAll(".marketButton")
-    .forEach(button=>{
+    .querySelectorAll(
+      ".marketBtn"
+    )
+    .forEach(
+      button=>{
 
-      button.addEventListener(
-        "click",
-        ()=>{
+        button.onclick=
+          ()=>{
 
-          button
-            .closest(".consensus")
-            .classList.toggle("open");
+            button
+              .closest(
+                ".market"
+              )
+              .classList.toggle(
+                "open"
+              );
 
-        }
-      );
+          };
 
-    });
+      }
+    );
+
 }
 
 
-/* =========================
-   LOAD DATA
-   ========================= */
+/* =========================================================
+   LOAD
+   ========================================================= */
 
-async function load(period){
-
-  document.body.classList.add(
-    "loading"
-  );
-
+async function load(
+  period
+){
 
   try{
 
-    const r=
+    const response=
       await fetch(
         `data/${period}.json?${Date.now()}`,
         {
-          cache:"no-store"
+          cache:
+            "no-store"
         }
       );
 
 
-    if(!r.ok){
+    if(!response.ok){
+
       throw new Error(
-        `HTTP ${r.status}`
+        `HTTP ${response.status}`
       );
+
     }
 
 
     state.data=
-      await r.json();
+      await response.json();
 
 
     renderLeaders();
     renderConsensus();
 
 
-  }catch(e){
+  }catch(error){
 
-    $("#leaderRows").innerHTML=
+    $("#leaders").innerHTML=
       `<tr>
-        <td
-          colspan="7"
-          class="error"
-        >
-          Data file unavailable:
-          ${escapeHtml(e.message)}
-        </td>
+      <td
+      colspan="7"
+      class="error"
+      >
+      ${escapeHtml(
+        error.message
+      )}
+      </td>
       </tr>`;
 
 
-    $("#consensusList").innerHTML=
+    $("#consensus").innerHTML=
       `<div class="error">
-        ${escapeHtml(e.message)}
+      ${escapeHtml(
+        error.message
+      )}
       </div>`;
 
-
-  }finally{
-
-    document.body.classList.remove(
-      "loading"
-    );
-
   }
+
 }
 
 
-/* =========================
+/* =========================================================
    PERIOD BUTTONS
-   ========================= */
+   ========================================================= */
 
 document
   .querySelectorAll(
     "[data-period]"
   )
-  .forEach(button=>{
+  .forEach(
+    button=>{
 
-    button.onclick=()=>{
+      button.onclick=
+        ()=>{
 
-      document
-        .querySelectorAll(
-          "[data-period]"
-        )
-        .forEach(x=>
-          x.classList.remove(
+          document
+            .querySelectorAll(
+              "[data-period]"
+            )
+            .forEach(
+              x=>
+                x.classList.remove(
+                  "active"
+                )
+            );
+
+
+          button.classList.add(
             "active"
-          )
-        );
+          );
 
 
-      button.classList.add(
-        "active"
-      );
+          state.period=
+            button.dataset.period;
 
 
-      state.period=
-        button.dataset.period;
+          load(
+            state.period
+          );
+
+        };
+
+    }
+  );
 
 
-      load(
-        state.period
-      );
-
-    };
-
-  });
-
-
-$("#minSame").onchange=
+$("#minimum").onchange=
   renderConsensus;
 
 
