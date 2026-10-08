@@ -12,6 +12,17 @@ const TARGET = 10000;
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const now = () => Math.floor(Date.now() / 1000);
 
+function errorText(error) {
+  if (error == null) return "Unknown error";
+  if (typeof error === "string") return error;
+  if (typeof error.message === "string") return error.message;
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return String(error);
+  }
+}
+
 function number(...values) {
   for (const value of values) {
     if (value === undefined || value === null || value === "") continue;
@@ -23,36 +34,36 @@ function number(...values) {
 
 function address(row) {
   return String(
-    row.proxyWallet || row.proxy_wallet ||
-    row.address || row.wallet || row.user || ""
+    row?.proxyWallet || row?.proxy_wallet ||
+    row?.address || row?.wallet || row?.user || ""
   ).toLowerCase();
 }
 
 function displayName(row) {
-  return row.userName || row.user_name ||
-    row.name || row.username || "Unknown";
+  return row?.userName || row?.user_name ||
+    row?.name || row?.username || "Unknown";
 }
 
 function condition(row) {
   return String(
-    row.conditionId || row.condition_id ||
-    row.market || row.condition || ""
+    row?.conditionId || row?.condition_id ||
+    row?.market || row?.condition || ""
   );
 }
 
 function token(row) {
-  return String(row.asset || row.token_id || row.tokenId || "");
+  return String(row?.asset || row?.token_id || row?.tokenId || "");
 }
 
 function outcome(row) {
   return String(
-    row.outcome || row.outcome_name || row.outcomeName || ""
+    row?.outcome || row?.outcome_name || row?.outcomeName || ""
   ).trim().toUpperCase();
 }
 
 function epoch(row) {
-  const value = row.timestamp ?? row.createdAt ??
-    row.created_at ?? row.last_event_at;
+  const value = row?.timestamp ?? row?.createdAt ??
+    row?.created_at ?? row?.last_event_at;
 
   if (value === undefined || value === null) return 0;
 
@@ -66,21 +77,21 @@ function epoch(row) {
 }
 
 function tradeAmount(row) {
-  const direct = row.usdc_size ?? row.usdcSize;
+  const direct = row?.usdc_size ?? row?.usdcSize;
   if (direct !== undefined && direct !== null) {
     const value = Number(direct);
     if (Number.isFinite(value)) return value;
   }
-  return number(row.size, row.amount) * number(row.price);
+  return number(row?.size, row?.amount) * number(row?.price);
 }
 
 function title(row) {
-  return row.title || row.question || row.market_title ||
-    row.marketTitle || "Unknown market";
+  return row?.title || row?.question || row?.market_title ||
+    row?.marketTitle || "Unknown market";
 }
 
 async function request(url, retries = 5) {
-  let lastError;
+  let lastError = "Unknown request error";
 
   for (let i = 0; i < retries; i++) {
     try {
@@ -95,17 +106,19 @@ async function request(url, retries = 5) {
       }
 
       if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${(await response.text()).slice(0, 250)}`);
+        throw new Error(
+          `HTTP ${response.status}: ${(await response.text()).slice(0, 250)}`
+        );
       }
 
       return await response.json();
     } catch (error) {
-      lastError = error;
+      lastError = errorText(error);
       if (i < retries - 1) await sleep(800 * (i + 1));
     }
   }
 
-  throw lastError;
+  throw new Error(lastError);
 }
 
 function extractRows(data) {
@@ -118,23 +131,35 @@ function extractRows(data) {
 async function limited(items, concurrency, fn) {
   const results = new Array(items.length);
   let cursor = 0;
+  let failures = 0;
 
   async function worker() {
     while (true) {
       const i = cursor++;
       if (i >= items.length) return;
+
       try {
         results[i] = await fn(items[i], i);
       } catch (error) {
-        console.error(error.message || error);
+        failures++;
+        console.error(
+          `Worker failed for item ${i + 1}/${items.length}: ${errorText(error)}`
+        );
         results[i] = null;
       }
     }
   }
 
   await Promise.all(
-    Array.from({ length: Math.min(concurrency, items.length) }, worker)
+    Array.from(
+      { length: Math.min(concurrency, items.length) },
+      () => worker()
+    )
   );
+
+  if (failures) {
+    console.log(`Worker failures handled: ${failures}`);
+  }
 
   return results;
 }
@@ -144,7 +169,6 @@ async function limited(items, concurrency, fn) {
 async function getLeaderboard(orderBy) {
   const all = [];
 
-  // The v1 leaderboard uses limit/offset, not cursor pagination.
   for (let offset = 0; offset <= 950; offset += 50) {
     const params = new URLSearchParams({
       category: "OVERALL",
@@ -275,6 +299,7 @@ async function enrichRecords(candidates) {
     const record = calculateRecord(positions);
 
     finished++;
+
     if (finished % 50 === 0) {
       console.log(`Record checks: ${finished}/${candidates.length}`);
     }
@@ -307,7 +332,6 @@ async function getRecentBuys() {
   const cutoff = now() - ACTIVE_HOURS * 3600;
   const trades = [];
 
-  // Public trades are paginated with offset.
   for (let offset = 0; offset < 10000; offset += 500) {
     const params = new URLSearchParams({
       limit: "500",
@@ -351,7 +375,7 @@ async function getMarketPositions(market) {
 
   if (Array.isArray(result)) {
     return result.flatMap(group =>
-      Array.isArray(group.positions) ? group.positions : []
+      Array.isArray(group?.positions) ? group.positions : []
     );
   }
 
@@ -362,7 +386,7 @@ function positionSide(row) {
   const label = outcome(row);
   if (label === "YES" || label === "NO") return label;
 
-  const index = row.outcomeIndex ?? row.outcome_index;
+  const index = row?.outcomeIndex ?? row?.outcome_index;
   if (Number(index) === 0) return "YES";
   if (Number(index) === 1) return "NO";
 
@@ -431,7 +455,11 @@ async function buildActivePositions(trades, ranked) {
 
       const tokenId = token(position);
       const side = positionSide(position);
-      const size = number(position.size, position.currentSize, position.current_size);
+      const size = number(
+        position.size,
+        position.currentSize,
+        position.current_size
+      );
 
       if (size <= 0) continue;
       if (tokenId) holders.set(`${wallet}|TOKEN:${tokenId}`, position);
@@ -570,16 +598,13 @@ async function main() {
   console.log(`Leaderboard candidates: ${candidates.length}`);
 
   const records = await enrichRecords(candidates);
-
-  // Only rank traders with at least 10 decided markets.
   const ranked = rankQualified(records);
+
   console.log(`Qualified traders: ${ranked.length}`);
 
-  // If the record endpoint returns no qualified records, do not silently
-  // publish an empty leaderboard as though the scan succeeded.
   if (ranked.length === 0) {
     throw new Error(
-      "No traders met the minimum 10 decided markets. Existing data was preserved. Check the closed-positions API response."
+      "No traders met the minimum 10 decided markets. Existing data was preserved."
     );
   }
 
@@ -658,7 +683,9 @@ async function main() {
     weeklyTarget: TARGET,
     recentBuyTrades: recentBuys.length,
     activePositions: active.length,
-    activeTradersWithPositions: new Set(active.map(row => row.trader.address)).size,
+    activeTradersWithPositions: new Set(
+      active.map(row => row.trader.address)
+    ).size,
     consensusMarkets: consensus.length
   });
 
@@ -671,6 +698,6 @@ async function main() {
 }
 
 main().catch(error => {
-  console.error("FATAL ERROR:", error);
+  console.error("FATAL ERROR:", errorText(error));
   process.exit(1);
 });
