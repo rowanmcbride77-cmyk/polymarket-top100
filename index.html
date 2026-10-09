@@ -1,224 +1,1409 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
 
-const API = "https://data-api.polymarket.com";
+<title>Polymarket Top 100</title>
 
-const cors = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type",
-  "Content-Type": "application/json; charset=utf-8",
-  "Cache-Control": "no-store"
+<style>
+
+*{
+  box-sizing:border-box;
+}
+
+body{
+  margin:0;
+  background:#000;
+  color:#fff;
+  font-family:Inter,Arial,sans-serif;
+}
+
+.wrap{
+  max-width:1250px;
+  margin:auto;
+  padding:28px 18px 60px;
+}
+
+.header{
+  display:flex;
+  justify-content:space-between;
+  align-items:flex-end;
+  gap:20px;
+  margin-bottom:22px;
+}
+
+.title{
+  font-size:30px;
+  font-weight:800;
+}
+
+.subtitle{
+  color:#777;
+  font-size:13px;
+  margin-top:5px;
+}
+
+.controls{
+  display:flex;
+  gap:8px;
+}
+
+button,
+select{
+  font:inherit;
+}
+
+.period{
+  border:1px solid #292929;
+  background:#101010;
+  color:#fff;
+  padding:9px 13px;
+  border-radius:8px;
+  cursor:pointer;
+}
+
+.period.active{
+  background:#fff;
+  color:#000;
+}
+
+.panel{
+  background:#080808;
+  border:1px solid #222;
+  border-radius:13px;
+  overflow:hidden;
+  margin-top:18px;
+}
+
+.panelHeader{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:15px;
+  padding:17px 18px;
+  border-bottom:1px solid #222;
+}
+
+.panelTitle{
+  font-size:18px;
+  font-weight:750;
+}
+
+.panelSub{
+  color:#777;
+  font-size:12px;
+  margin-top:4px;
+}
+
+.updated{
+  color:#666;
+  font-size:12px;
+}
+
+.tableWrap{
+  overflow:auto;
+}
+
+table{
+  width:100%;
+  border-collapse:collapse;
+  min-width:850px;
+}
+
+th{
+  background:#050505;
+  color:#666;
+  text-align:left;
+  font-size:10px;
+  text-transform:uppercase;
+  letter-spacing:.08em;
+  padding:12px 14px;
+  border-bottom:1px solid #202020;
+}
+
+td{
+  padding:12px 14px;
+  border-bottom:1px solid #171717;
+  font-size:13px;
+}
+
+tr:hover td{
+  background:#0d0d0d;
+}
+
+.rank{
+  color:#666;
+  width:55px;
+}
+
+.traderBtn{
+  border:0;
+  background:none;
+  color:#fff;
+  cursor:pointer;
+  padding:0;
+  font-weight:700;
+  text-align:left;
+}
+
+.traderBtn:hover{
+  text-decoration:underline;
+}
+
+.arrow{
+  display:inline-block;
+  color:#666;
+  margin-right:6px;
+  transition:.15s;
+}
+
+.traderBtn.open .arrow{
+  transform:rotate(90deg);
+}
+
+.win{
+  font-weight:800;
+}
+
+.positive{
+  color:#8ee6a8;
+}
+
+.negative{
+  color:#ff8f8f;
+}
+
+.detail{
+  display:none;
+  background:#050505;
+}
+
+.detail.open{
+  display:table-row;
+}
+
+.detailHead{
+  padding:12px 18px 12px 55px;
+  color:#777;
+  font-size:12px;
+  border-bottom:1px solid #202020;
+}
+
+.position{
+  display:grid;
+  grid-template-columns:minmax(300px,1fr) 80px 150px 140px;
+  gap:15px;
+  padding:14px 18px 14px 55px;
+  border-bottom:1px solid #151515;
+  align-items:center;
+}
+
+.positionTitle{
+  font-weight:650;
+}
+
+.positionSide{
+  font-weight:800;
+}
+
+.yes{
+  color:#8ee6a8;
+}
+
+.no{
+  color:#ff8f8f;
+}
+
+.amount{
+  text-align:right;
+}
+
+.time{
+  text-align:right;
+  color:#888;
+}
+
+.empty{
+  padding:35px;
+  text-align:center;
+  color:#666;
+}
+
+.consensusHeader{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:15px;
+  padding:17px 18px;
+  border-bottom:1px solid #222;
+}
+
+select{
+  background:#111;
+  color:#fff;
+  border:1px solid #292929;
+  padding:8px 10px;
+  border-radius:8px;
+}
+
+.market{
+  border-bottom:1px solid #171717;
+}
+
+.marketBtn{
+  width:100%;
+  border:0;
+  background:none;
+  color:#fff;
+  cursor:pointer;
+  padding:16px 18px;
+  text-align:left;
+}
+
+.marketBtn:hover{
+  background:#0d0d0d;
+}
+
+.marketTop{
+  display:flex;
+  justify-content:space-between;
+  align-items:flex-start;
+  gap:20px;
+}
+
+.marketTitle{
+  font-weight:750;
+  font-size:15px;
+  line-height:1.4;
+}
+
+.marketMeta{
+  display:flex;
+  flex-wrap:wrap;
+  gap:7px;
+  margin-top:9px;
+}
+
+.pill{
+  border:1px solid #303030;
+  border-radius:999px;
+  padding:4px 8px;
+  color:#aaa;
+  font-size:11px;
+}
+
+.marketStats{
+  text-align:right;
+  white-space:nowrap;
+}
+
+.marketStats strong{
+  display:block;
+  font-size:16px;
+}
+
+.marketStats span{
+  color:#666;
+  font-size:10px;
+}
+
+.marketArrow{
+  color:#666;
+  margin-right:6px;
+}
+
+.market.open .marketArrow{
+  display:inline-block;
+  transform:rotate(90deg);
+}
+
+.marketTraders{
+  display:none;
+  background:#050505;
+  border-top:1px solid #222;
+}
+
+.market.open .marketTraders{
+  display:block;
+}
+
+.consensusTrader{
+  display:grid;
+  grid-template-columns:minmax(190px,1fr) 130px 80px 100px 120px 130px;
+  gap:12px;
+  padding:13px 18px 13px 40px;
+  border-bottom:1px solid #151515;
+  align-items:center;
+  font-size:12px;
+}
+
+.consensusTrader:last-child{
+  border-bottom:0;
+}
+
+.traderRank{
+  color:#aaa;
+}
+
+.traderWL{
+  font-weight:700;
+}
+
+.traderAmount{
+  text-align:right;
+}
+
+.traderAge{
+  text-align:right;
+  color:#888;
+}
+
+.note{
+  color:#666;
+  font-size:11px;
+  line-height:1.5;
+  padding:14px 18px;
+}
+
+.error{
+  padding:20px;
+  color:#ff8f8f;
+}
+
+@media(max-width:850px){
+
+  .header{
+    display:block;
+  }
+
+  .controls{
+    margin-top:14px;
+  }
+
+  .position{
+    grid-template-columns:1fr 70px;
+  }
+
+  .amount{
+    text-align:left;
+  }
+
+  .time{
+    text-align:left;
+  }
+
+  .marketStats{
+    display:none;
+  }
+
+  .consensusTrader{
+    grid-template-columns:1fr 100px 70px;
+  }
+
+  .traderAmount{
+    text-align:left;
+  }
+
+  .traderAge{
+    text-align:left;
+  }
+}
+
+</style>
+</head>
+
+<body>
+
+<div class="wrap">
+
+<div class="header">
+
+<div>
+<div class="title">
+Polymarket Top 100
+</div>
+
+<div class="subtitle">
+Weekly win-rate ranking · 12-hour active consensus
+</div>
+</div>
+
+<div class="controls">
+
+<button
+class="period active"
+data-period="week"
+>
+1 Week
+</button>
+
+<button
+class="period"
+data-period="month"
+>
+1 Month
+</button>
+
+<button
+class="period"
+data-period="threeMonth"
+>
+3 Months
+</button>
+
+</div>
+
+</div>
+
+
+<!-- TOP 100 -->
+
+<div class="panel">
+
+<div class="panelHeader">
+
+<div>
+
+<div class="panelTitle">
+Top 100 Traders
+</div>
+
+<div
+class="panelSub"
+id="leaderSub"
+>
+Loading...
+</div>
+
+</div>
+
+<div
+class="updated"
+id="updated"
+>
+—
+</div>
+
+</div>
+
+
+<div class="tableWrap">
+
+<table>
+
+<thead>
+
+<tr>
+<th>#</th>
+<th>Trader</th>
+<th>Win %</th>
+<th>W / L</th>
+<th>Markets</th>
+<th>P&L</th>
+<th>Volume</th>
+</tr>
+
+</thead>
+
+<tbody
+id="leaders"
+>
+</tbody>
+
+</table>
+
+</div>
+
+</div>
+
+
+<!-- CONSENSUS -->
+
+<div class="panel">
+
+<div class="consensusHeader">
+
+<div>
+
+<div class="panelTitle">
+12-Hour Active Trader Consensus
+</div>
+
+<div class="panelSub">
+Only actual BUYs from the last 12 hours · same market · same side
+</div>
+
+</div>
+
+
+<select id="minimum">
+
+<option value="2">
+2+ traders
+</option>
+
+<option value="3">
+3+ traders
+</option>
+
+<option value="5">
+5+ traders
+</option>
+
+<option value="10">
+10+ traders
+</option>
+
+<option value="20">
+20+ traders
+</option>
+
+</select>
+
+</div>
+
+
+<div
+id="consensus"
+>
+</div>
+
+
+<div class="note">
+
+The active universe targets the top 10,000 weekly traders by win rate.
+Every trader below shows their weekly rank, W/L, win rate, actual amount bought,
+side, and how recently they bought.
+
+</div>
+
+</div>
+
+</div>
+
+
+<script>
+
+const state={
+  period:"week",
+  data:null
 };
 
-function response(data, status = 200) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: cors
-  });
-}
 
-async function fetchJson(url) {
-  const res = await fetch(url, {
-    headers: { Accept: "application/json" }
-  });
+const $=selector =>
+  document.querySelector(selector);
 
-  const text = await res.text();
 
-  if (!res.ok) {
-    throw new Error(`Polymarket API ${res.status}: ${text.slice(0, 400)}`);
-  }
+function money(value){
 
-  return JSON.parse(text);
-}
+  const n=Number(value||0);
 
-function getArray(payload) {
-  if (Array.isArray(payload)) return payload;
-  if (Array.isArray(payload?.data)) return payload.data;
-  return [];
-}
-
-function getWallet(row) {
-  return (
-    row?.proxyWallet ||
-    row?.proxy_wallet ||
-    row?.user_id ||
-    row?.address ||
-    row?.user ||
-    ""
-  );
-}
-
-function getTimestamp(row) {
-  const value =
-    row?.timestamp ??
-    row?.createdAt ??
-    row?.created_at;
-
-  if (value == null) return null;
-
-  const n = Number(value);
-  if (Number.isFinite(n)) return n;
-
-  const parsed = Date.parse(value);
-  return Number.isFinite(parsed) ? Math.floor(parsed / 1000) : null;
-}
-
-async function leaderboard(url) {
-  const params = new URLSearchParams(url.searchParams);
-
-  params.set("category", "OVERALL");
-  params.set("timePeriod", "WEEK");
-  params.set("orderBy", "PNL");
-
-  // The v1 leaderboard allows a maximum of 50 rows per request.
-  params.set("limit", "50");
-
-  const firstOffset = Math.max(0, Number(params.get("offset") || 0));
-  params.set("offset", String(Math.min(firstOffset, 1000)));
-
-  const first = await fetchJson(
-    `${API}/v1/leaderboard?${params.toString()}`
-  );
-
-  if (!Array.isArray(first)) {
-    throw new Error("The official leaderboard did not return an array.");
-  }
-
-  // The existing page requests a leaderboard and displays up to 100.
-  if (first.length < 50 || firstOffset >= 1000) {
-    return first;
-  }
-
-  params.set("offset", String(firstOffset + 50));
-
-  const second = await fetchJson(
-    `${API}/v1/leaderboard?${params.toString()}`
-  );
-
-  return [
-    ...first,
-    ...(Array.isArray(second) ? second : [])
-  ];
-}
-
-async function traderDetails(url) {
-  const user = url.searchParams.get("user");
-
-  if (!user || !/^0x[a-fA-F0-9]{40}$/.test(user)) {
-    throw new Error("A valid Polymarket wallet address is required.");
-  }
-
-  const now = Math.floor(Date.now() / 1000);
-  const weekAgo = now - 7 * 24 * 60 * 60;
-
-  const tradeParams = new URLSearchParams({
-    user,
-    start: String(weekAgo),
-    end: String(now),
-    limit: "500",
-    sort_by: "TIMESTAMP",
-    sort_direction: "DESC"
-  });
-
-  const positionParams = new URLSearchParams({
-    user,
-    status: "OPEN",
-    limit: "500",
-    sort_by: "CURRENT_VALUE",
-    sort_direction: "DESC"
-  });
-
-  const [tradePayload, positionPayload] = await Promise.all([
-    fetchJson(`${API}/v2/trades?${tradeParams}`),
-    fetchJson(`${API}/v2/positions?${positionParams}`)
-  ]);
-
-  const activity = getArray(tradePayload)
-    .filter(row => {
-      const timestamp = getTimestamp(row);
-      return timestamp !== null &&
-        timestamp >= weekAgo &&
-        timestamp <= now;
-    })
-    .map(row => ({
-      ...row,
-      timestamp: getTimestamp(row),
-      title: row.title || row.market || row.question || "Unknown market",
-      outcome: row.outcome || "",
-      side: row.side || "",
-      size: row.size ?? null,
-      price: row.price ?? null,
-      amount:
-        row.size != null && row.price != null
-          ? Number(row.size) * Number(row.price)
-          : null
-    }));
-
-  const positions = getArray(positionPayload);
-
-  return {
-    user,
-    activity,
-    positions,
-
-    // These endpoints do not establish a complete, accurate weekly
-    // resolved-market win/loss record. Never fabricate one from trades
-    // or from positions that were merely closed.
-    wins: null,
-    losses: null,
-    winRate: null,
-    winLossAvailable: false
-  };
-}
-
-async function handle(request) {
-  if (request.method === "OPTIONS") {
-    return new Response(null, { status: 204, headers: cors });
-  }
-
-  if (request.method !== "GET") {
-    return response({ error: "Method not allowed" }, 405);
-  }
-
-  const url = new URL(request.url);
-
-  try {
-    if (url.pathname === "/v1/leaderboard") {
-      const data = await leaderboard(url);
-      return response(data);
+  return(
+    n<0?"-$":"$"
+  )+
+  Math.abs(n).toLocaleString(
+    undefined,
+    {
+      maximumFractionDigits:0
     }
+  );
+}
 
-    if (url.pathname === "/v2/trader") {
-      const data = await traderDetails(url);
-      return response(data);
-    }
 
-    if (url.pathname === "/positions") {
-      const user = url.searchParams.get("user");
+function percent(value){
 
-      if (!user || !/^0x[a-fA-F0-9]{40}$/.test(user)) {
-        return response({ error: "A valid user wallet is required." }, 400);
+  if(
+    value===null ||
+    value===undefined ||
+    !Number.isFinite(Number(value))
+  ){
+    return "—";
+  }
+
+  return(
+    Number(value).toFixed(1)
+    +"%"
+  );
+}
+
+
+function age(iso){
+
+  if(!iso){
+    return "—";
+  }
+
+  const time=
+    new Date(iso).getTime();
+
+  if(
+    !Number.isFinite(time)
+  ){
+    return "—";
+  }
+
+  const hours=
+    Math.max(
+      0,
+      (Date.now()-time)/3600000
+    );
+
+  if(hours<1){
+    return(
+      Math.max(
+        1,
+        Math.round(hours*60)
+      )
+      +"m ago"
+    );
+  }
+
+  if(hours<24){
+    return(
+      Math.round(hours)
+      +"h ago"
+    );
+  }
+
+  return(
+    Math.round(hours/24)
+    +"d ago"
+  );
+}
+
+
+function fullDate(iso){
+
+  if(!iso){
+    return "—";
+  }
+
+  const d=
+    new Date(iso);
+
+  if(
+    !Number.isFinite(
+      d.getTime()
+    )
+  ){
+    return "—";
+  }
+
+  return d.toLocaleString();
+}
+
+
+function escapeHtml(value){
+
+  return String(
+    value ?? ""
+  ).replace(
+    /[&<>'"]/g,
+    char=>({
+
+      "&":"&amp;",
+      "<":"&lt;",
+      ">":"&gt;",
+      "'":"&#39;",
+      '"':"&quot;"
+
+    })[char]
+  );
+}
+
+
+/* =========================================================
+   LEADERS
+   ========================================================= */
+
+function renderLeaders(){
+
+  const rows=
+    state.data?.leaders || [];
+
+
+  $("#leaderSub").textContent=
+    `${state.data?.periodLabel||""} · ${rows.length} traders`;
+
+
+  $("#updated").textContent=
+    state.data?.generatedAt
+      ? `Updated ${age(state.data.generatedAt)}`
+      : "—";
+
+
+  $("#leaders").innerHTML=
+    rows.map(
+      (trader,index)=>{
+
+        const decided=
+          Number(trader.wins||0)+
+          Number(trader.losses||0);
+
+
+        return`
+
+<tr>
+
+<td class="rank">
+${trader.rank ?? index+1}
+</td>
+
+<td>
+
+<button
+class="traderBtn"
+data-index="${index}"
+>
+
+<span class="arrow">
+▶
+</span>
+
+${escapeHtml(
+  trader.name ||
+  "Unknown"
+)}
+
+</button>
+
+</td>
+
+<td class="win">
+${percent(trader.winRate)}
+</td>
+
+<td>
+${trader.wins??0}
+/
+${trader.losses??0}
+</td>
+
+<td>
+${trader.markets??decided}
+</td>
+
+<td
+class="${
+  Number(trader.pnl||0)>=0
+    ? "positive"
+    : "negative"
+}"
+>
+${money(trader.pnl)}
+</td>
+
+<td>
+${money(trader.volume)}
+</td>
+
+</tr>
+
+
+<tr
+class="detail"
+id="detail-${index}"
+>
+
+<td colspan="7">
+
+<div
+class="detailHead"
+id="detailHead-${index}"
+>
+Loading...
+</div>
+
+<div
+id="detailBody-${index}"
+></div>
+
+</td>
+
+</tr>
+
+`;
+
       }
+    ).join("")
 
-      const params = new URLSearchParams({
-        user,
-        status: "OPEN",
-        limit: "500",
-        sort_by: "CURRENT_VALUE",
-        sort_direction: "DESC"
-      });
+    ||
 
-      const payload = await fetchJson(`${API}/v2/positions?${params}`);
-      return response(getArray(payload));
-    }
+`
 
-    return response({ error: "Unknown endpoint" }, 404);
-  } catch (error) {
-    return response({
-      error: error instanceof Error ? error.message : String(error)
-    }, 502);
-  }
+<tr>
+<td
+colspan="7"
+class="empty"
+>
+No traders found.
+</td>
+</tr>
+
+`;
+
+
+  document
+    .querySelectorAll(".traderBtn")
+    .forEach(
+      button=>{
+
+        button.onclick=
+          ()=>{
+
+            openTrader(
+              Number(
+                button.dataset.index
+              ),
+              button
+            );
+
+          };
+
+      }
+    );
+
 }
 
-export default {
-  fetch: handle
-};
+
+function openTrader(
+  index,
+  button
+){
+
+  const detail=
+    document.querySelector(
+      `#detail-${index}`
+    );
+
+
+  const alreadyOpen=
+    detail.classList.contains(
+      "open"
+    );
+
+
+  document
+    .querySelectorAll(
+      ".detail.open"
+    )
+    .forEach(
+      x=>
+        x.classList.remove(
+          "open"
+        )
+    );
+
+
+  document
+    .querySelectorAll(
+      ".traderBtn.open"
+    )
+    .forEach(
+      x=>
+        x.classList.remove(
+          "open"
+        )
+    );
+
+
+  if(alreadyOpen){
+    return;
+  }
+
+
+  detail.classList.add(
+    "open"
+  );
+
+  button.classList.add(
+    "open"
+  );
+
+
+  const trader=
+    state.data.leaders[index];
+
+
+  const wallet=
+    trader?.wallet;
+
+
+  const positions=
+    state.data
+      ?.traderActiveTrades
+      ?.[
+        wallet
+      ] || [];
+
+
+  document.querySelector(
+    `#detailHead-${index}`
+  ).textContent=
+    `${positions.length} active position${
+      positions.length===1
+        ? ""
+        : "s"
+    } · actual BUYs within 12 hours`;
+
+
+  const body=
+    document.querySelector(
+      `#detailBody-${index}`
+    );
+
+
+  if(!positions.length){
+
+    body.innerHTML=
+      `<div class="empty">
+      No active BUYs from the last 12 hours.
+      </div>`;
+
+    return;
+  }
+
+
+  body.innerHTML=
+    positions.map(
+      position=>{
+
+        const side=
+          String(
+            position.side||""
+          ).toUpperCase();
+
+
+        return`
+
+<div class="position">
+
+<div class="positionTitle">
+${escapeHtml(
+  position.title ||
+  "Unknown market"
+)}
+</div>
+
+<div
+class="positionSide ${
+  side==="YES"
+    ? "yes"
+    : "no"
+}"
+>
+${escapeHtml(side)}
+</div>
+
+<div class="amount">
+${money(position.amount)}
+bought
+</div>
+
+<div
+class="time"
+title="${escapeHtml(
+  fullDate(position.buyTime)
+)}"
+>
+${age(position.buyTime)}
+</div>
+
+</div>
+
+`;
+
+      }
+    ).join("");
+
+}
+
+
+/* =========================================================
+   CONSENSUS
+   ========================================================= */
+
+function renderConsensus(){
+
+  const minimum=
+    Number(
+      $("#minimum").value
+    );
+
+
+  const rows=
+    (
+      state.data?.consensus ||
+      []
+    ).filter(
+      row=>
+        Number(
+          row.sameSide||0
+        )>=minimum
+    );
+
+
+  if(!rows.length){
+
+    $("#consensus").innerHTML=
+      `<div class="empty">
+      No same-side consensus found in the last 12 hours.
+      </div>`;
+
+    return;
+  }
+
+
+  $("#consensus").innerHTML=
+    rows.map(
+      (market,index)=>{
+
+        const traders=
+          Array.isArray(
+            market.traders
+          )
+            ? market.traders
+            : [];
+
+
+        return`
+
+<div class="market">
+
+<button
+class="marketBtn"
+type="button"
+>
+
+<div class="marketTop">
+
+<div>
+
+<div class="marketTitle">
+
+<span class="marketArrow">
+▶
+</span>
+
+${escapeHtml(
+  market.title ||
+  "Unknown market"
+)}
+
+</div>
+
+
+<div class="marketMeta">
+
+<span
+class="pill ${
+  market.side==="YES"
+    ? "yes"
+    : "no"
+}"
+>
+${escapeHtml(
+  market.side
+)}
+</span>
+
+
+<span class="pill">
+${market.sameSide}
+traders
+</span>
+
+
+<span class="pill">
+${money(
+  market.totalEntry
+)}
+bought
+</span>
+
+
+<span class="pill">
+#1–#${market.sameSide}
+of 10,000
+</span>
+
+
+<span class="pill">
+latest ${age(
+  market.newestBuy
+)}
+</span>
+
+</div>
+
+</div>
+
+
+<div class="marketStats">
+
+<strong>
+${market.sameSide}
+</strong>
+
+<span>
+same-side traders
+</span>
+
+<strong>
+${money(
+  market.totalEntry
+)}
+</strong>
+
+<span>
+total bought
+</span>
+
+</div>
+
+</div>
+
+</button>
+
+
+<div class="marketTraders">
+
+${
+  traders.map(
+    trader=>`
+
+<div class="consensusTrader">
+
+<div>
+<strong>
+${escapeHtml(
+  trader.name ||
+  "Unknown"
+)}
+</strong>
+</div>
+
+
+<div class="traderRank">
+
+#${trader.rank}
+/
+10,000
+
+</div>
+
+
+<div
+class="${
+  trader.side==="YES"
+    ? "yes"
+    : "no"
+}"
+>
+${escapeHtml(
+  trader.side
+)}
+</div>
+
+
+<div class="traderWL">
+
+${trader.wins}
+-
+${trader.losses}
+
+</div>
+
+
+<div class="traderAmount">
+
+${money(
+  trader.amount
+)}
+
+</div>
+
+
+<div
+class="traderAge"
+title="${escapeHtml(
+  fullDate(
+    trader.buyTime
+  )
+)}"
+>
+
+${percent(
+  trader.winRate
+)}
+
+ ·
+
+${age(
+  trader.buyTime
+)}
+
+</div>
+
+</div>
+
+`
+  ).join("")
+}
+
+</div>
+
+</div>
+
+`;
+
+      }
+    ).join("");
+
+
+  document
+    .querySelectorAll(
+      ".marketBtn"
+    )
+    .forEach(
+      button=>{
+
+        button.onclick=
+          ()=>{
+
+            button
+              .closest(
+                ".market"
+              )
+              .classList.toggle(
+                "open"
+              );
+
+          };
+
+      }
+    );
+
+}
+
+
+/* =========================================================
+   LOAD
+   ========================================================= */
+
+async function load(
+  period
+){
+
+  try{
+
+    const response=
+      await fetch(
+        `data/${period}.json?${Date.now()}`,
+        {
+          cache:
+            "no-store"
+        }
+      );
+
+
+    if(!response.ok){
+
+      throw new Error(
+        `HTTP ${response.status}`
+      );
+
+    }
+
+
+    state.data=
+      await response.json();
+
+
+    renderLeaders();
+    renderConsensus();
+
+
+  }catch(error){
+
+    $("#leaders").innerHTML=
+      `<tr>
+      <td
+      colspan="7"
+      class="error"
+      >
+      ${escapeHtml(
+        error.message
+      )}
+      </td>
+      </tr>`;
+
+
+    $("#consensus").innerHTML=
+      `<div class="error">
+      ${escapeHtml(
+        error.message
+      )}
+      </div>`;
+
+  }
+
+}
+
+
+/* =========================================================
+   PERIOD BUTTONS
+   ========================================================= */
+
+document
+  .querySelectorAll(
+    "[data-period]"
+  )
+  .forEach(
+    button=>{
+
+      button.onclick=
+        ()=>{
+
+          document
+            .querySelectorAll(
+              "[data-period]"
+            )
+            .forEach(
+              x=>
+                x.classList.remove(
+                  "active"
+                )
+            );
+
+
+          button.classList.add(
+            "active"
+          );
+
+
+          state.period=
+            button.dataset.period;
+
+
+          load(
+            state.period
+          );
+
+        };
+
+    }
+  );
+
+
+$("#minimum").onchange=
+  renderConsensus;
+
+
+load("week");
+
+</script>
+
+</body>
+</html>
