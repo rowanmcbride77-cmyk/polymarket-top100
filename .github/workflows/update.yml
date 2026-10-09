@@ -1,9 +1,7 @@
-name: Update Polymarket data
+
+name: Update Polymarket Tracker
 
 on:
-  push:
-    branches:
-      - main
   workflow_dispatch:
   schedule:
     - cron: "*/15 * * * *"
@@ -11,50 +9,35 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: polymarket-tracker-update
+  cancel-in-progress: true
+
 jobs:
   update:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version: "22"
 
-      - name: Install dependencies
-        run: npm install
-
-      - name: Update Polymarket data
+      - name: Generate leaderboard data
         run: node update.mjs
 
-      - name: Save updated data
+      - name: Commit generated JSON files
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          git add data/
-
+          git add week.json month.json quarter.json
           if git diff --cached --quiet; then
             echo "No data changes to commit."
-            exit 0
+          else
+            git commit -m "Update Polymarket tracker data"
+            git push
           fi
-
-          git commit -m "Update Polymarket data"
-
-          git fetch origin main
-          git reset --soft origin/main
-
-          git add data/
-
-          if git diff --cached --quiet; then
-            echo "No data changes after syncing with main."
-            exit 0
-          fi
-
-          git commit -m "Update Polymarket data"
-          git push origin HEAD:main
