@@ -1,703 +1,310 @@
-import fs from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 
-const ROOT = path.dirname(fileURLToPath(import.meta.url));
-const DATA = path.join(ROOT, "data");
+import fs from "node:fs/promises";
+
 const API = "https://data-api.polymarket.com";
+const OUT = process.env.OUTPUT_DIR || ".";
+const TOP_N = 100;
+const TRADE_LIMIT = 50;
+const CONCURRENCY = 5;
 
-const ACTIVE_HOURS = 12;
-const MIN_DECIDED = 10;
-const TARGET = 10000;
-const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
-const now = () => Math.floor(Date.now() / 1000);
+const PERIODS = [
+  { key: "week", apiPeriod: "WEEK" },
+  { key: "month", apiPeriod: "MONTH" },
+  { key: "quarter", apiPeriod: "THREE_MONTH" },
+];
 
-function errorText(error) {
-  if (error == null) return "Unknown error";
-  if (typeof error === "string") return error;
-  if (typeof error.message === "string") return error.message;
-  try {
-    return JSON.stringify(error);
-  } catch {
-    return String(error);
-  }
-}
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-function number(...values) {
-  for (const value of values) {
-    if (value === undefined || value === null || value === "") continue;
-    const n = Number(value);
-    if (Number.isFinite(n)) return n;
-  }
-  return 0;
-}
+async function getJson(url, attempts = 5) {
+  let lastError;
 
-function address(row) {
-  return String(
-    row?.proxyWallet || row?.proxy_wallet ||
-    row?.address || row?.wallet || row?.user || ""
-  ).toLowerCase();
-}
-
-function displayName(row) {
-  return row?.userName || row?.user_name ||
-    row?.name || row?.username || "Unknown";
-}
-
-function condition(row) {
-  return String(
-    row?.conditionId || row?.condition_id ||
-    row?.market || row?.condition || ""
-  );
-}
-
-function token(row) {
-  return String(row?.asset || row?.token_id || row?.tokenId || "");
-}
-
-function outcome(row) {
-  return String(
-    row?.outcome || row?.outcome_name || row?.outcomeName || ""
-  ).trim().toUpperCase();
-}
-
-function epoch(row) {
-  const value = row?.timestamp ?? row?.createdAt ??
-    row?.created_at ?? row?.last_event_at;
-
-  if (value === undefined || value === null) return 0;
-
-  const n = Number(value);
-  if (Number.isFinite(n) && n > 0) {
-    return n > 1e12 ? Math.floor(n / 1000) : Math.floor(n);
-  }
-
-  const parsed = Date.parse(value);
-  return Number.isFinite(parsed) ? Math.floor(parsed / 1000) : 0;
-}
-
-function tradeAmount(row) {
-  const direct = row?.usdc_size ?? row?.usdcSize;
-  if (direct !== undefined && direct !== null) {
-    const value = Number(direct);
-    if (Number.isFinite(value)) return value;
-  }
-  return number(row?.size, row?.amount) * number(row?.price);
-}
-
-function title(row) {
-  return row?.title || row?.question || row?.market_title ||
-    row?.marketTitle || "Unknown market";
-}
-
-async function request(url, retries = 5) {
-  let lastError = "Unknown request error";
-
-  for (let i = 0; i < retries; i++) {
+  for (let attempt = 0; attempt < attempts; attempt++) {
     try {
       const response = await fetch(url, {
-        headers: { Accept: "application/json" },
-        signal: AbortSignal.timeout(30000)
+        headers: {
+          accept: "application/json",
+          "user-agent": "polymarket-top100-github-actions/1.0",
+        },
+        signal: AbortSignal.timeout(30000),
       });
 
-      if (response.status === 429 || response.status === 503) {
-        await sleep(1500 * (i + 1));
+      if (response.status === 429 || response.status >= 500) {
+        const retryAfter = Number(response.headers.get("retry-after") || 0);
+        await sleep(Math.max(retryAfter * 1000, 1000 * (attempt + 1)));
         continue;
       }
 
       if (!response.ok) {
-        throw new Error(
-          `HTTP ${response.status}: ${(await response.text()).slice(0, 250)}`
-        );
+        const body = await response.text();
+        throw new Error(`HTTP ${response.status}: ${body.slice(0, 250)}`);
       }
 
       return await response.json();
     } catch (error) {
-      lastError = errorText(error);
-      if (i < retries - 1) await sleep(800 * (i + 1));
-    }
-  }
-
-  throw new Error(lastError);
-}
-
-function extractRows(data) {
-  if (Array.isArray(data)) return data;
-  if (Array.isArray(data?.data)) return data.data;
-  if (Array.isArray(data?.leaderboard)) return data.leaderboard;
-  return [];
-}
-
-async function limited(items, concurrency, fn) {
-  const results = new Array(items.length);
-  let cursor = 0;
-  let failures = 0;
-
-  async function worker() {
-    while (true) {
-      const i = cursor++;
-      if (i >= items.length) return;
-
-      try {
-        results[i] = await fn(items[i], i);
-      } catch (error) {
-        failures++;
-        console.error(
-          `Worker failed for item ${i + 1}/${items.length}: ${errorText(error)}`
-        );
-        results[i] = null;
+      lastError = error;
+      if (attempt < attempts - 1) {
+        await sleep(1000 * (attempt + 1));
       }
     }
   }
 
-  await Promise.all(
-    Array.from(
-      { length: Math.min(concurrency, items.length) },
-      () => worker()
-    )
-  );
-
-  if (failures) {
-    console.log(`Worker failures handled: ${failures}`);
-  }
-
-  return results;
+  throw lastError || new Error(`Request failed: ${url}`);
 }
 
-/* -------------------- LEADERBOARD -------------------- */
-
-async function getLeaderboard(orderBy) {
-  const all = [];
-
-  for (let offset = 0; offset <= 950; offset += 50) {
-    const params = new URLSearchParams({
-      category: "OVERALL",
-      timePeriod: "WEEK",
-      orderBy,
-      limit: "50",
-      offset: String(offset)
-    });
-
-    const result = await request(`${API}/v1/leaderboard?${params}`);
-    const batch = extractRows(result);
-    all.push(...batch);
-
-    if (batch.length < 50) break;
-    await sleep(100);
-  }
-
-  return all;
+function numberOrNull(value) {
+  if (value === null || value === undefined || value === "") return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
 }
 
-async function discoverTraders() {
-  console.log("Loading weekly leaderboard candidates...");
-
-  const [pnlRows, volumeRows] = await Promise.all([
-    getLeaderboard("PNL"),
-    getLeaderboard("VOL")
-  ]);
-
-  const map = new Map();
-
-  for (const row of [...pnlRows, ...volumeRows]) {
-    const wallet = address(row);
-    if (!wallet) continue;
-
-    if (!map.has(wallet)) {
-      map.set(wallet, {
-        address: wallet,
-        name: displayName(row),
-        pnl: number(row.pnl),
-        volume: number(row.vol, row.volume),
-        sourceRank: number(row.rank)
-      });
-    } else {
-      const old = map.get(wallet);
-      old.pnl = Math.max(old.pnl, number(row.pnl));
-      old.volume = Math.max(old.volume, number(row.vol, row.volume));
-      if (old.name === "Unknown") old.name = displayName(row);
-    }
-  }
-
-  return [...map.values()];
+function firstDefined(...values) {
+  return values.find((value) => value !== null && value !== undefined);
 }
 
-/* -------------------- WIN/LOSS RECORDS -------------------- */
-
-async function getClosedPositions(wallet) {
-  const results = [];
-  const pageSize = 50;
-
-  for (let offset = 0; offset < 5000; offset += pageSize) {
-    const params = new URLSearchParams({
-      user: wallet,
-      limit: String(pageSize),
-      offset: String(offset),
-      sortBy: "TIMESTAMP",
-      sortDirection: "DESC"
-    });
-
-    const rows = extractRows(
-      await request(`${API}/closed-positions?${params}`)
-    );
-
-    if (!rows.length) break;
-    results.push(...rows);
-
-    if (rows.length < pageSize) break;
-    await sleep(50);
-  }
-
-  return results;
+function walletOf(row) {
+  return String(
+    firstDefined(row.proxyWallet, row.proxy_wallet, row.wallet, row.address, "")
+  ).toLowerCase();
 }
 
-function calculateRecord(positions) {
-  const pnlByMarket = new Map();
-
-  for (const row of positions) {
-    const market = condition(row);
-    if (!market) continue;
-
-    const pnl = number(
-      row.realizedPnl,
-      row.realized_pnl,
-      row.pnl
-    );
-
-    pnlByMarket.set(
-      market,
-      (pnlByMarket.get(market) || 0) + pnl
-    );
-  }
-
-  let wins = 0;
-  let losses = 0;
-
-  for (const pnl of pnlByMarket.values()) {
-    if (pnl > 0.000001) wins++;
-    else if (pnl < -0.000001) losses++;
-  }
-
-  const decided = wins + losses;
+function normalizeLeader(row, index) {
+  const wallet = walletOf(row);
+  const pnl = numberOrNull(firstDefined(row.pnl, row.profit, row.PnL));
 
   return {
-    wins,
-    losses,
-    decided,
-    winRate: decided ? wins / decided * 100 : null,
-    qualified: decided >= MIN_DECIDED
+    rank: Number(row.rank) || index + 1,
+    wallet,
+    name:
+      firstDefined(row.userName, row.username, row.name, row.pseudonym) ||
+      `${wallet.slice(0, 6)}…${wallet.slice(-4)}`,
+    profileImage: firstDefined(row.profileImage, row.profile_image, null),
+    pnl,
+    volume: numberOrNull(row.vol ?? row.volume),
+    // The leaderboard endpoint does not establish resolved win/loss counts.
+    wins: null,
+    losses: null,
+    decided: null,
+    winRate: null,
   };
 }
 
-async function enrichRecords(candidates) {
-  console.log(`Checking records for ${candidates.length} candidates...`);
-
-  let finished = 0;
-
-  const records = await limited(candidates, 10, async trader => {
-    const positions = await getClosedPositions(trader.address);
-    const record = calculateRecord(positions);
-
-    finished++;
-
-    if (finished % 50 === 0) {
-      console.log(`Record checks: ${finished}/${candidates.length}`);
-    }
-
-    return { ...trader, ...record };
-  });
-
-  return records.filter(Boolean);
-}
-
-function rankQualified(records) {
-  const qualified = records.filter(row => row.qualified);
-
-  qualified.sort((a, b) =>
-    (b.winRate ?? -1) - (a.winRate ?? -1) ||
-    b.wins - a.wins ||
-    b.decided - a.decided ||
-    b.pnl - a.pnl
-  );
-
-  return qualified.slice(0, TARGET).map((row, i) => ({
-    ...row,
-    rank: i + 1
-  }));
-}
-
-/* -------------------- RECENT TRADES -------------------- */
-
-async function getRecentBuys() {
-  const cutoff = now() - ACTIVE_HOURS * 3600;
-  const trades = [];
-
-  for (let offset = 0; offset < 10000; offset += 500) {
-    const params = new URLSearchParams({
-      limit: "500",
-      offset: String(offset),
-      side: "BUY",
-      start: String(cutoff),
-      end: String(now()),
-      takerOnly: "false"
-    });
-
-    const batch = extractRows(
-      await request(`${API}/trades?${params}`)
-    );
-
-    if (!batch.length) break;
-
-    trades.push(...batch.filter(row =>
-      String(row.side || "").toUpperCase() === "BUY" &&
-      epoch(row) >= cutoff
-    ));
-
-    if (batch.length < 500) break;
-    await sleep(75);
-  }
-
-  return trades;
-}
-
-/* -------------------- OPEN POSITIONS -------------------- */
-
-async function getMarketPositions(market) {
+async function getLeaderboard(period) {
   const params = new URLSearchParams({
-    market,
-    limit: "500",
+    category: "OVERALL",
+    timePeriod: period.apiPeriod,
+    orderBy: "PNL",
+    limit: String(TOP_N),
     offset: "0",
-    sortBy: "TOTAL_PNL",
-    sortDirection: "DESC"
   });
 
-  const result = await request(`${API}/v1/market-positions?${params}`);
+  const result = await getJson(`${API}/v1/leaderboard?${params}`);
+  const rows = Array.isArray(result) ? result : result?.data;
 
-  if (Array.isArray(result)) {
-    return result.flatMap(group =>
-      Array.isArray(group?.positions) ? group.positions : []
+  if (!Array.isArray(rows)) {
+    throw new Error(
+      `Unexpected leaderboard response for ${period.key}: ${JSON.stringify(result).slice(0, 300)}`
     );
   }
 
-  return extractRows(result);
+  return rows
+    .map(normalizeLeader)
+    .filter((leader) => leader.wallet.startsWith("0x") && leader.wallet.length === 42)
+    .slice(0, TOP_N)
+    .map((leader, index) => ({ ...leader, rank: index + 1 }));
 }
 
-function positionSide(row) {
-  const label = outcome(row);
-  if (label === "YES" || label === "NO") return label;
+async function getRecentTrades(wallet) {
+  const params = new URLSearchParams({
+    user: wallet,
+    limit: String(TRADE_LIMIT),
+  });
 
-  const index = row?.outcomeIndex ?? row?.outcome_index;
-  if (Number(index) === 0) return "YES";
-  if (Number(index) === 1) return "NO";
+  const result = await getJson(`${API}/trades?${params}`);
+  const rows = Array.isArray(result) ? result : result?.data;
 
-  return "";
+  if (!Array.isArray(rows)) return [];
+
+  return rows
+    .filter((trade) => {
+      const action = String(trade.side || trade.action || "").toUpperCase();
+      return action === "BUY";
+    })
+    .map((trade) => {
+      const price = numberOrNull(trade.price);
+      const size = numberOrNull(trade.size ?? trade.amount);
+      const timestamp = numberOrNull(trade.timestamp ?? trade.time);
+
+      return {
+        title: firstDefined(trade.title, trade.market, trade.question, "Unknown market"),
+        conditionId: firstDefined(
+          trade.conditionId,
+          trade.condition_id,
+          trade.marketId,
+          trade.market_id,
+          null
+        ),
+        slug: firstDefined(trade.slug, trade.eventSlug, trade.event_slug, null),
+        outcome: firstDefined(trade.outcome, trade.outcomeName, trade.outcome_name, null),
+        side: "BUY",
+        price,
+        size,
+        amount: price !== null && size !== null ? price * size : null,
+        buyTime: timestamp,
+        timestamp,
+        transactionHash: firstDefined(
+          trade.transactionHash,
+          trade.transaction_hash,
+          trade.id,
+          null
+        ),
+      };
+    })
+    .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
 }
 
-async function buildActivePositions(trades, ranked) {
-  const byWallet = new Map(
-    ranked.map(trader => [trader.address, trader])
-  );
+async function mapLimit(items, limit, callback) {
+  const output = new Array(items.length);
+  let next = 0;
 
-  const grouped = new Map();
-  const cutoff = now() - ACTIVE_HOURS * 3600;
-
-  for (const trade of trades) {
-    const wallet = address(trade);
-    const market = condition(trade);
-    const tokenId = token(trade);
-    const side = outcome(trade);
-    const time = epoch(trade);
-
-    if (!wallet || !market || !byWallet.has(wallet) || time < cutoff) continue;
-
-    const key = `${wallet}|${market}|${tokenId || side}`;
-
-    if (!grouped.has(key)) {
-      grouped.set(key, {
-        wallet,
-        market,
-        token: tokenId,
-        side,
-        title: title(trade),
-        amount: 0,
-        buyTime: 0
-      });
-    }
-
-    const item = grouped.get(key);
-    item.amount += tradeAmount(trade);
-
-    if (time > item.buyTime) {
-      item.buyTime = time;
-      item.title = title(trade);
+  async function worker() {
+    while (true) {
+      const index = next++;
+      if (index >= items.length) return;
+      output[index] = await callback(items[index], index);
     }
   }
 
-  const candidates = [...grouped.values()];
-  const marketIds = [...new Set(candidates.map(row => row.market))];
+  await Promise.all(
+    Array.from({ length: Math.min(limit, items.length) }, () => worker())
+  );
 
-  console.log(`Recent BUY groups: ${candidates.length}`);
-  console.log(`Checking ${marketIds.length} markets for open positions...`);
+  return output;
+}
 
-  const positionResults = await limited(marketIds, 8, async market => ({
-    market,
-    positions: await getMarketPositions(market)
-  }));
+function buildConsensus(leaders, tradesByWallet) {
+  const groups = new Map();
+  const rankByWallet = new Map(leaders.map((leader) => [leader.wallet, leader]));
 
-  const holderMaps = new Map();
+  for (const leader of leaders) {
+    const trades = tradesByWallet[leader.wallet] || [];
 
-  for (const result of positionResults.filter(Boolean)) {
-    const holders = new Map();
+    for (const trade of trades) {
+      const marketId = trade.conditionId || trade.slug || trade.title;
+      const outcome = String(trade.outcome || "").trim().toLowerCase();
 
-    for (const position of result.positions) {
-      const wallet = address(position);
-      if (!wallet) continue;
+      if (!marketId || !outcome) continue;
 
-      const tokenId = token(position);
-      const side = positionSide(position);
-      const size = number(
-        position.size,
-        position.currentSize,
-        position.current_size
+      const key = `${marketId}::${outcome}`;
+      if (!groups.has(key)) {
+        groups.set(key, {
+          key,
+          title: trade.title,
+          conditionId: trade.conditionId,
+          slug: trade.slug,
+          side: trade.outcome,
+          traders: new Map(),
+          totalEntry: 0,
+          newestBuy: 0,
+          oldestBuy: Infinity,
+        });
+      }
+
+      const group = groups.get(key);
+
+      // One contribution per trader per market/outcome.
+      if (group.traders.has(leader.wallet)) continue;
+
+      group.traders.set(leader.wallet, {
+        name: leader.name,
+        rank: leader.rank,
+        wins: null,
+        losses: null,
+        decided: null,
+        winRate: null,
+        pnl: leader.pnl,
+        side: trade.outcome,
+        amount: trade.amount,
+        buyTime: trade.buyTime,
+      });
+
+      if (trade.amount !== null) group.totalEntry += trade.amount;
+      group.newestBuy = Math.max(group.newestBuy, trade.timestamp || 0);
+      group.oldestBuy = Math.min(group.oldestBuy, trade.timestamp || Infinity);
+    }
+  }
+
+  return [...groups.values()]
+    .filter((group) => group.traders.size >= 2)
+    .map((group) => ({
+      title: group.title,
+      conditionId: group.conditionId,
+      slug: group.slug,
+      side: group.side,
+      sameSide: group.traders.size,
+      totalEntry: group.totalEntry,
+      newestBuy: group.newestBuy || null,
+      oldestBuy: Number.isFinite(group.oldestBuy) ? group.oldestBuy : null,
+      traders: [...group.traders.values()].sort((a, b) => a.rank - b.rank),
+    }))
+    .sort((a, b) => b.sameSide - a.sameSide || b.newestBuy - a.newestBuy);
+}
+
+async function buildPeriod(period) {
+  console.log(`Loading ${period.key} leaderboard...`);
+  const leaders = await getLeaderboard(period);
+
+  console.log(`${period.key}: received ${leaders.length} leaders`);
+
+  const tradesByWallet = {};
+  const results = await mapLimit(leaders, CONCURRENCY, async (leader, index) => {
+    try {
+      const trades = await getRecentTrades(leader.wallet);
+      console.log(
+        `${period.key}: trades ${index + 1}/${leaders.length} (${leader.name})`
       );
-
-      if (size <= 0) continue;
-      if (tokenId) holders.set(`${wallet}|TOKEN:${tokenId}`, position);
-      if (side) holders.set(`${wallet}|SIDE:${side}`, position);
+      return [leader.wallet, trades];
+    } catch (error) {
+      console.warn(`Trade lookup failed for ${leader.wallet}: ${error.message}`);
+      return [leader.wallet, []];
     }
+  });
 
-    holderMaps.set(result.market, holders);
+  for (const [wallet, trades] of results) {
+    tradesByWallet[wallet] = trades;
   }
 
-  const active = [];
-
-  for (const item of candidates) {
-    const holders = holderMaps.get(item.market);
-    if (!holders) continue;
-
-    let position = item.token
-      ? holders.get(`${item.wallet}|TOKEN:${item.token}`)
-      : null;
-
-    if (!position && item.side) {
-      position = holders.get(`${item.wallet}|SIDE:${item.side}`);
-    }
-
-    if (!position) continue;
-
-    const trader = byWallet.get(item.wallet);
-    const side = positionSide(position) || item.side;
-    if (!trader || !side) continue;
-
-    active.push({
-      trader,
-      market: item.market,
-      title: position.title || item.title,
-      side,
-      amount: Number(item.amount.toFixed(2)),
-      buyTime: new Date(item.buyTime * 1000).toISOString(),
-      timestamp: item.buyTime
-    });
+  const traderActiveTrades = {};
+  for (const leader of leaders) {
+    traderActiveTrades[leader.wallet] = tradesByWallet[leader.wallet] || [];
   }
 
-  return active;
-}
+  const output = {
+    generatedAt: new Date().toISOString(),
+    period: period.key,
+    leaders,
+    traderActiveTrades,
+    consensus: buildConsensus(leaders, tradesByWallet),
+  };
 
-/* -------------------- CONSENSUS -------------------- */
-
-function buildConsensus(active) {
-  const markets = new Map();
-
-  for (const row of active) {
-    if (row.side !== "YES" && row.side !== "NO") continue;
-
-    if (!markets.has(row.market)) {
-      markets.set(row.market, {
-        title: row.title,
-        YES: new Map(),
-        NO: new Map()
-      });
-    }
-
-    const group = markets.get(row.market);
-    const trader = row.trader;
-
-    group[row.side].set(trader.address, {
-      name: trader.name,
-      rank: trader.rank,
-      wins: trader.wins,
-      losses: trader.losses,
-      decided: trader.decided,
-      winRate: trader.winRate,
-      pnl: trader.pnl,
-      side: row.side,
-      amount: row.amount,
-      buyTime: row.buyTime,
-      timestamp: row.timestamp
-    });
-  }
-
-  const result = [];
-
-  for (const group of markets.values()) {
-    for (const side of ["YES", "NO"]) {
-      const traders = [...group[side].values()];
-      const opposite = side === "YES" ? "NO" : "YES";
-
-      if (traders.length < 2 || group[opposite].size > 0) continue;
-
-      traders.sort((a, b) => a.rank - b.rank);
-
-      const times = traders.map(row => row.timestamp);
-      const totalEntry = traders.reduce((sum, row) => sum + row.amount, 0);
-
-      result.push({
-        title: group.title,
-        side,
-        sameSide: traders.length,
-        totalEntry: Number(totalEntry.toFixed(2)),
-        newestBuy: new Date(Math.max(...times) * 1000).toISOString(),
-        oldestBuy: new Date(Math.min(...times) * 1000).toISOString(),
-        traders: traders.map(({ timestamp, ...row }) => row)
-      });
-    }
-  }
-
-  return result.sort((a, b) =>
-    b.sameSide - a.sameSide || b.totalEntry - a.totalEntry
+  await fs.mkdir(OUT, { recursive: true });
+  await fs.writeFile(
+    `${OUT}/${period.key}.json`,
+    JSON.stringify(output, null, 2) + "\n"
   );
-}
 
-/* -------------------- OUTPUT -------------------- */
-
-function writeJSON(filename, data) {
-  fs.writeFileSync(
-    path.join(DATA, filename),
-    JSON.stringify(data, null, 2)
+  console.log(
+    `Wrote ${period.key}.json (${leaders.length} leaders, ${output.consensus.length} consensus markets)`
   );
-}
-
-function readJSON(filename) {
-  try {
-    return JSON.parse(
-      fs.readFileSync(path.join(DATA, filename), "utf8")
-    );
-  } catch {
-    return null;
-  }
 }
 
 async function main() {
-  fs.mkdirSync(DATA, { recursive: true });
-
-  console.log("==========================================");
-  console.log("POLYMARKET 12-HOUR CONSENSUS SCANNER");
-  console.log("==========================================");
-
-  const candidates = await discoverTraders();
-  console.log(`Leaderboard candidates: ${candidates.length}`);
-
-  const records = await enrichRecords(candidates);
-  const ranked = rankQualified(records);
-
-  console.log(`Qualified traders: ${ranked.length}`);
-
-  if (ranked.length === 0) {
-    throw new Error(
-      "No traders met the minimum 10 decided markets. Existing data was preserved."
-    );
+  for (const period of PERIODS) {
+    await buildPeriod(period);
   }
-
-  const recentBuys = await getRecentBuys();
-  console.log(`Recent BUY trades: ${recentBuys.length}`);
-
-  const active = await buildActivePositions(recentBuys, ranked);
-  const consensus = buildConsensus(active);
-
-  const leaders = ranked.slice(0, 100).map(row => ({
-    rank: row.rank,
-    name: row.name,
-    wallet: row.address,
-    winRate: Number(row.winRate.toFixed(2)),
-    wins: row.wins,
-    losses: row.losses,
-    markets: row.decided,
-    pnl: Number(row.pnl.toFixed(2)),
-    volume: row.volume
-  }));
-
-  const traderActiveTrades = {};
-
-  for (const row of active) {
-    if (row.trader.rank > 100) continue;
-
-    const wallet = row.trader.address;
-    if (!traderActiveTrades[wallet]) traderActiveTrades[wallet] = [];
-
-    traderActiveTrades[wallet].push({
-      title: row.title,
-      market: row.market,
-      side: row.side,
-      amount: row.amount,
-      buyTime: row.buyTime,
-      timestamp: row.timestamp
-    });
-  }
-
-  const generatedAt = new Date().toISOString();
-
-  writeJSON("week.json", {
-    generatedAt,
-    period: "week",
-    periodLabel: "1 Week",
-    leaders,
-    traderActiveTrades,
-    consensus,
-    activeWindowHours: ACTIVE_HOURS,
-    activeTradeWindow: "12 hours",
-    activeTraderUniverseTarget: TARGET,
-    activeTraderUniverseSize: ranked.length,
-    minimumDecidedMarkets: MIN_DECIDED,
-    rankingMethod: "Win rate → wins → decided markets → P&L"
-  });
-
-  for (const filename of ["month.json", "threeMonth.json"]) {
-    const previous = readJSON(filename);
-    if (!previous) continue;
-
-    writeJSON(filename, {
-      ...previous,
-      generatedAt,
-      consensus,
-      activeWindowHours: ACTIVE_HOURS,
-      activeTradeWindow: "12 hours"
-    });
-  }
-
-  writeJSON("status.json", {
-    ok: true,
-    generatedAt,
-    leaderboardCandidates: candidates.length,
-    recordsRetrieved: records.length,
-    weeklyQualified: ranked.length,
-    weeklyTarget: TARGET,
-    recentBuyTrades: recentBuys.length,
-    activePositions: active.length,
-    activeTradersWithPositions: new Set(
-      active.map(row => row.trader.address)
-    ).size,
-    consensusMarkets: consensus.length
-  });
-
-  console.log("------------------------------------------");
-  console.log(`Leaderboard candidates: ${candidates.length}`);
-  console.log(`Qualified weekly traders: ${ranked.length}`);
-  console.log(`Verified active positions: ${active.length}`);
-  console.log(`Consensus markets: ${consensus.length}`);
-  console.log("UPDATE COMPLETE");
+  console.log("All period files generated.");
 }
 
-main().catch(error => {
-  console.error("FATAL ERROR:", errorText(error));
-  process.exit(1);
+main().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
 });
