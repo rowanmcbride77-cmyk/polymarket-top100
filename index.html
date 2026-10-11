@@ -1,190 +1,394 @@
 
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Polymarket Top 100</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Polymarket Combo Scanner</title>
 <style>
-:root{color-scheme:dark;--bg:#050b12;--panel:#09131e;--border:#1a2a3a;--text:#edf5ff;--muted:#8fa5bb;--blue:#2995ff;--green:#00dfa0;--red:#ff637b}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px -apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif}
-button{font:inherit;cursor:pointer}header{display:flex;justify-content:space-between;align-items:center;gap:18px;padding:20px 28px;background:#070e17;border-bottom:1px solid var(--border)}
-h1{margin:0;font-size:26px}h1 span{color:var(--blue)}h2{font-size:19px;margin:0}.subtitle,.muted,.metric-label{color:var(--muted)}
-.brand{display:flex;align-items:center;gap:14px}.logo{font-size:27px;color:var(--blue);font-weight:800}.subtitle{margin-top:5px}
-.header-right{display:flex;align-items:center;gap:22px}.tabs{display:flex;gap:4px;padding:4px;background:#111e2c;border-radius:25px}
-.tabs button{border:0;background:transparent;color:#c5d4e5;padding:10px 23px;border-radius:22px}.tabs .active{background:var(--blue);color:white}
-.updated{text-align:right;color:var(--muted);font-size:12px;line-height:1.7}
-main{max-width:1800px;margin:auto;padding:24px 18px}.layout{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.35fr) minmax(0,.9fr);gap:20px;align-items:start}
-.column{display:flex;flex-direction:column;gap:20px;min-width:0}.panel{background:linear-gradient(145deg,#09131e,#07101a);border:1px solid var(--border);border-radius:9px;padding:18px;min-width:0;overflow:hidden}
-.panel-heading{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:17px}.heading-left{display:flex;align-items:center;gap:10px}.heading-icon{font-size:22px}
-.pill{background:#142334;color:#c5d7eb;border-radius:20px;padding:6px 12px;font-size:12px;white-space:nowrap}
-.table-wrap{overflow-x:auto}table{width:100%;border-collapse:collapse;text-align:left}th{color:#9bb0c5;font-size:12px;font-weight:500;padding:9px 5px 12px;white-space:nowrap}
-td{padding:12px 5px;border-top:1px solid #142433;vertical-align:middle}th:last-child,td:last-child{text-align:right}
-.rank{color:#dce9f8}.trader-name{display:flex;align-items:center;gap:8px;min-width:0}
-.avatar{display:grid;place-items:center;flex-shrink:0;width:30px;height:30px;border-radius:50%;background:#142a40;color:#83c7ff;font-weight:800}
-.name-text{max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.trader-link{color:var(--text);background:none;border:0;padding:0;text-align:left}.trader-link:hover{color:var(--blue);text-decoration:underline}
-.positive{color:var(--green);font-weight:650;white-space:nowrap}.negative{color:var(--red);font-weight:650;white-space:nowrap}
-.money{white-space:nowrap;font-variant-numeric:tabular-nums}.record{white-space:nowrap;font-weight:650}.link-button{margin-top:14px;padding:4px 0;background:none;border:0;color:#36a7ff;font-weight:600}
-.overview-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.metric-label{font-size:12px;margin-bottom:9px}.metric-value{font-size:18px;font-weight:750;overflow-wrap:anywhere}.source-note{margin-top:20px;color:var(--muted);font-size:12px;line-height:1.6}
-.market-name{display:flex;align-items:center;gap:9px;min-width:160px}.market-symbol{flex-shrink:0;width:34px;height:34px;border-radius:50%;background:#142a40;display:grid;place-items:center;font-size:17px}.market-title{line-height:1.4}
-.side-tag{display:inline-block;padding:6px 9px;border-radius:8px;background:#07543f;color:#7df5c7;font-weight:700;font-size:12px}.side-tag.no{background:#55232f;color:#ffb4c1}
-.recent-list{display:flex;flex-direction:column}.trade{display:grid;grid-template-columns:34px minmax(0,1fr) auto;gap:9px;padding:12px 0;border-bottom:1px solid #142433}.trade:last-child{border-bottom:0}
-.trade-title{line-height:1.4;margin-bottom:7px}.trade-details{display:flex;flex-wrap:wrap;align-items:center;gap:7px}.trade-amount{font-size:16px;font-weight:700}.trade-user{color:var(--muted);font-size:12px;margin-top:5px}.trade-time{color:var(--muted);font-size:11px;white-space:nowrap}
-.empty,.loading{text-align:center;color:var(--muted);padding:22px 5px;line-height:1.6}.error{color:#ffb4c1;background:#321a24;border:1px solid #663344;padding:12px;border-radius:8px;margin-bottom:16px}
-.expand-row td{background:#0b1825;padding:14px}.expand-title{font-weight:700;margin-bottom:12px}.member-list{display:flex;flex-wrap:wrap;gap:8px}
-.member{background:#102235;border:1px solid #203a51;border-radius:8px;padding:9px 11px;min-width:135px}.member small{display:block;color:var(--muted);margin-top:5px}
-footer{text-align:center;color:#71869b;font-size:12px;padding:25px}
-dialog{width:min(560px,calc(100% - 28px));max-height:85vh;overflow:auto;background:#091521;color:var(--text);border:1px solid #284158;border-radius:13px;padding:22px}
-dialog::backdrop{background:#000b}.profile-top{display:flex;align-items:center;gap:13px;margin-bottom:18px}.profile-top .avatar{width:48px;height:48px;font-size:18px}
-.profile-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.profile-stat{padding:13px;background:#102031;border-radius:8px}.profile-stat small{display:block;color:var(--muted);margin-bottom:7px}
-.profile-trades{margin-top:18px}.profile-trade{padding:10px 0;border-top:1px solid var(--border);line-height:1.5}
-.close-button{float:right;border:0;background:#1b2c3c;color:white;padding:8px 12px;border-radius:7px}
-@media(max-width:1200px){.layout{grid-template-columns:1fr 1fr}.right-column{grid-column:1/-1}.right-column .recent-list{display:grid;grid-template-columns:1fr 1fr;column-gap:18px}}
-@media(max-width:760px){header{padding:15px;align-items:flex-start;flex-direction:column}.header-right{width:100%;justify-content:space-between;gap:8px}.updated{font-size:11px}main{padding:12px 9px}.layout{grid-template-columns:1fr;gap:14px}.right-column{grid-column:auto}.right-column .recent-list{display:flex}.panel{padding:13px}.panel-heading h2{font-size:17px}.overview-grid{gap:7px}.metric-value{font-size:15px}.name-text{max-width:100px}}
+:root {
+  color-scheme: dark;
+  --bg: #080a0d;
+  --card: #101318;
+  --line: #252a33;
+  --muted: #9299a5;
+  --text: #f4f6f8;
+  --green: #63e6a2;
+  --red: #ff777f;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 14px/1.5 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+main { max-width: 1450px; margin: auto; padding: 22px; }
+header {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 16px; flex-wrap: wrap; margin-bottom: 18px;
+}
+h1 { font-size: 26px; margin: 0; letter-spacing: -.5px; }
+h2 { font-size: 18px; margin: 0 0 8px; }
+.sub, .muted, .desc, .note { color: var(--muted); }
+.sub { margin-top: 4px; }
+.controls {
+  display: flex; gap: 8px; flex-wrap: wrap; align-items: center;
+  margin: 16px 0;
+}
+input, select, button {
+  border: 1px solid var(--line); border-radius: 9px; padding: 10px 12px;
+  background: #0c0f14; color: var(--text); font: inherit;
+}
+input { min-width: 220px; flex: 1; }
+button { cursor: pointer; background: #f4f6f8; color: #080a0d; font-weight: 750; }
+button:disabled { opacity: .5; cursor: wait; }
+.status {
+  padding: 11px 13px; background: #11151b; border: 1px solid var(--line);
+  border-radius: 10px; margin: 12px 0 16px;
+}
+.stats {
+  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px; margin-bottom: 16px;
+}
+.stat, .card {
+  background: var(--card); border: 1px solid var(--line);
+  border-radius: 13px; padding: 15px;
+}
+.stat span { display: block; color: var(--muted); font-size: 12px; }
+.stat strong { display: block; font-size: 23px; margin-top: 3px; }
+.card { margin: 14px 0; }
+.card-head {
+  display: flex; justify-content: space-between; align-items: flex-start;
+  gap: 12px; flex-wrap: wrap; margin-bottom: 12px;
+}
+.desc { font-size: 12px; margin-top: 3px; }
+.combo {
+  border: 1px solid var(--line); border-radius: 11px; margin: 10px 0;
+  overflow: hidden; background: #0c0f14;
+}
+.combo-head {
+  display: grid; grid-template-columns: minmax(240px, 2fr) repeat(3, minmax(90px, .7fr));
+  gap: 14px; padding: 14px; align-items: center;
+}
+.combo-title { font-weight: 800; overflow-wrap: anywhere; }
+.pills { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 7px; }
+.pill {
+  display: inline-block; border: 1px solid var(--line); border-radius: 999px;
+  padding: 2px 8px; font-size: 11px; color: #d4d8df;
+}
+.pill.open { color: var(--green); border-color: #285c43; }
+.value { font-weight: 750; }
+.legs { border-top: 1px solid var(--line); padding: 12px 14px; }
+.legs-title { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; }
+.leg {
+  display: grid; grid-template-columns: 1fr auto; gap: 10px;
+  padding: 9px 0; border-bottom: 1px solid #1b2028;
+}
+.leg:last-child { border-bottom: 0; }
+.leg-name { font-weight: 650; }
+.leg-meta { color: var(--muted); font-size: 12px; }
+.traders {
+  border-top: 1px solid var(--line); padding: 12px 14px;
+}
+.trader-list { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+.trader {
+  background: #141922; border: 1px solid var(--line); border-radius: 9px;
+  padding: 8px 10px; min-width: 160px;
+}
+.trader b { display: block; }
+.trader small { color: var(--muted); }
+.empty { padding: 24px 10px; text-align: center; color: var(--muted); }
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; min-width: 600px; }
+th, td { text-align: left; border-bottom: 1px solid var(--line); padding: 10px 8px; }
+th { color: var(--muted); font-weight: 600; font-size: 12px; }
+.good { color: var(--green); }
+.bad { color: var(--red); }
+.note { font-size: 12px; margin-top: 10px; }
+@media(max-width: 760px) {
+  main { padding: 12px; }
+  h1 { font-size: 22px; }
+  .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .combo-head { grid-template-columns: 1fr 1fr; gap: 10px; }
+  .combo-head > div:first-child { grid-column: 1 / -1; }
+  input { min-width: 100%; }
+}
 </style>
 </head>
 <body>
-<header>
-  <div class="brand"><div class="logo">◇</div><div><h1>Polymarket <span>Top 100</span></h1><div class="subtitle">Track the top traders. Follow the smart money.</div></div></div>
-  <div class="header-right"><div class="tabs"><button id="weekTab" class="active" onclick="selectPeriod('week')">Week</button><button id="monthTab" onclick="selectPeriod('month')">Month</button></div><div class="updated">● Last updated<div id="updatedAt">Loading…</div></div></div>
-</header>
 <main>
-<div id="errorBox"></div>
-<div class="layout">
-  <div class="column">
-    <section class="panel">
-      <div class="panel-heading"><div class="heading-left"><span class="heading-icon">🏆</span><h2>Top 100 Traders</h2></div><span class="pill" id="leaderPeriod">Week</span></div>
-      <div class="table-wrap"><table><thead><tr><th>#</th><th>Trader</th><th>Record</th><th>P&amp;L</th><th>Volume</th></tr></thead><tbody id="leadersBody"><tr><td colspan="5" class="loading">Loading traders…</td></tr></tbody></table></div>
-      <button class="link-button" id="leadersMore" onclick="toggleLeaders()">View all traders →</button>
-    </section>
-    <section class="panel"><div class="panel-heading"><div class="heading-left"><span class="heading-icon">▥</span><h2>Top 100 Overview</h2></div></div>
-      <div class="overview-grid"><div><div class="metric-label">Total P&amp;L</div><div class="metric-value positive" id="totalPnl">—</div></div><div><div class="metric-label">Total Volume</div><div class="metric-value" id="totalVolume">—</div></div><div><div class="metric-label">Avg. Win Rate</div><div class="metric-value" id="avgWinRate">N/A</div></div></div>
-      <div class="source-note">Win-loss records are displayed only when supplied by verified resolved-market data. Traders need at least 10 resolved markets to qualify for record-based ranking.</div>
-    </section>
+  <header>
+    <div>
+      <h1>Polymarket Combo Scanner</h1>
+      <div class="sub">Actual multi-leg combo positions • shared trader picks • public Polymarket data</div>
+    </div>
+    <button id="refresh">Refresh data</button>
+  </header>
+
+  <div class="controls">
+    <input id="search" placeholder="Search combo legs, events, or traders">
+    <select id="mode">
+      <option value="all">All combos</option>
+      <option value="open">Open combos first / open only</option>
+    </select>
+    <select id="minimum">
+      <option value="2">2+ traders</option>
+      <option value="3">3+ traders</option>
+      <option value="5">5+ traders</option>
+      <option value="10">10+ traders</option>
+    </select>
+    <select id="sort">
+      <option value="traders">Most shared traders</option>
+      <option value="recent">Recently updated</option>
+      <option value="cost">Combined entry cost</option>
+    </select>
   </div>
-  <div class="column">
-    <section class="panel"><div class="panel-heading"><div class="heading-left"><span class="heading-icon">👥</span><h2>Top Consensus Markets</h2></div><span class="pill" id="consensusPeriod">Week</span></div>
-      <div class="table-wrap"><table><thead><tr><th>#</th><th>Market</th><th>Side</th><th>Traders</th><th>Total Entry</th><th>Latest Buy</th></tr></thead><tbody id="consensusBody"><tr><td colspan="6" class="loading">Loading consensus…</td></tr></tbody></table></div>
-      <button class="link-button" id="consensusMore" onclick="toggleConsensus()">View all consensus markets →</button>
-    </section>
-  </div>
-  <div class="column right-column">
-    <section class="panel"><div class="panel-heading"><div class="heading-left"><span class="heading-icon">ϟ</span><h2>Recent Buys</h2></div><span class="pill">Top Traders</span></div>
-      <div id="recentList" class="recent-list"><div class="loading">Loading recent buys…</div></div><button class="link-button" id="recentMore" onclick="toggleRecent()">View all recent buys →</button>
-    </section>
-  </div>
-</div>
-<footer>Polymarket Top 100 · Built with data from Polymarket</footer>
+
+  <div class="status" id="status">Loading combo data…</div>
+
+  <section class="stats">
+    <div class="stat"><span>Combos found</span><strong id="comboCount">—</strong></div>
+    <div class="stat"><span>Actual combo positions</span><strong id="positionCount">—</strong></div>
+    <div class="stat"><span>Wallets scanned</span><strong id="walletCount">—</strong></div>
+    <div class="stat"><span>Last update</span><strong id="updated" style="font-size:15px">—</strong></div>
+  </section>
+
+  <section class="card">
+    <div class="card-head">
+      <div>
+        <h2>🔥 Combo Markets</h2>
+        <div class="desc">Grouped by Polymarket’s actual combo condition ID. Legs are displayed from the API, not guessed from separate bets.</div>
+      </div>
+    </div>
+    <div id="combos"><div class="empty">Waiting for combo data…</div></div>
+    <div class="note">The current scan checks the weekly P&amp;L leaderboard candidate pool. A missing combo means the API returned no matching combo positions for the scanned wallets, not that individual bets were combined into a combo.</div>
+  </section>
+
+  <section class="card">
+    <div class="card-head">
+      <div>
+        <h2>Weekly Top Traders</h2>
+        <div class="desc">Official weekly P&amp;L leaderboard. Win-loss records are marked N/A until a reliable resolution record is available.</div>
+      </div>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Rank</th><th>Trader</th><th>Weekly P&amp;L</th><th>Weekly volume</th><th>Win-loss</th></tr></thead>
+        <tbody id="leaders"><tr><td colspan="5" class="empty">Waiting for leaderboard data…</td></tr></tbody>
+      </table>
+    </div>
+  </section>
 </main>
 
-<dialog id="profileDialog"><button class="close-button" onclick="closeProfile()">Close ✕</button><div id="profileContent"></div></dialog>
-
 <script>
-"use strict";
-const FILES={week:"week.json",month:"month.json"};
-let period="week",data=null,allLeaders=false,allMarkets=false,allRecent=false;
-const expandedMarkets=new Set();
-const $=id=>document.getElementById(id);
-const num=v=>v===null||v===undefined||v===""?null:Number.isFinite(Number(v))?Number(v):null;
-const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-const cash=v=>num(v)===null?"N/A":new Intl.NumberFormat("en-US",{style:"currency",currency:"USD",notation:Math.abs(Number(v))>=1e6?"compact":"standard",maximumFractionDigits:Math.abs(Number(v))<100?2:0}).format(Number(v));
-const nameOf=t=>t?.name||t?.username||t?.userName||(t?.wallet?String(t.wallet).slice(0,10)+"…":"Unknown trader");
-const walletOf=t=>String(t?.wallet||t?.proxyWallet||"").toLowerCase();
-const recordOf=t=>{
-  const wins=num(t?.wins),losses=num(t?.losses);
-  if(wins===null||losses===null||wins<0||losses<0)return null;
-  return {wins,losses,total:wins+losses,rate:wins+losses?100*wins/(wins+losses):null};
-};
-const recordText=t=>{const r=recordOf(t);return r?`${r.wins}–${r.losses}`:"N/A"};
-const avatar=t=>`<span class="avatar">${esc(nameOf(t).replace(/^@/,"").slice(0,2).toUpperCase())}</span>`;
-const profileButton=(t,label=nameOf(t))=>`<button class="trader-link" onclick="openProfile('${esc(walletOf(t))}')" title="View trader profile">${esc(label)}</button>`;
-function stamp(v){let n=num(v);if(n===null||n<=0)return null;if(n>1e12)n/=1000;return n;}
-function relative(v){const n=stamp(v);if(!n)return "Time unavailable";const s=Math.max(0,Math.floor(Date.now()/1000-n));return s<60?s+"s ago":s<3600?Math.floor(s/60)+"m ago":s<86400?Math.floor(s/3600)+"h ago":Math.floor(s/86400)+"d ago";}
-function dateText(v){const n=stamp(v);return n?new Date(n*1000).toLocaleString():"Unavailable";}
-function leaders(){return Array.isArray(data?.leaders)?data.leaders:[];}
-function rankedLeaders(){
-  const list=[...leaders()];
-  if(period==="week"){
-    const eligible=list.filter(t=>{const r=recordOf(t);return r&&r.total>=10;});
-    eligible.sort((a,b)=>{const x=recordOf(a),y=recordOf(b);return (y.rate??-1)-(x.rate??-1)||y.wins-x.wins||(num(b.pnl)??-Infinity)-(num(a.pnl)??-Infinity);});
-    const wallets=new Set(eligible.map(walletOf));
-    const rest=list.filter(t=>!wallets.has(walletOf(t)));
-    return [...eligible,...rest].map((t,i)=>({...t,displayRank:i+1}));
+const $ = id => document.getElementById(id);
+let comboData = null;
+let weekData = null;
+
+function esc(value) {
+  return String(value ?? "").replace(/[&<>"']/g, char => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+  })[char]);
+}
+
+function money(value) {
+  if (value === null || value === undefined || !Number.isFinite(Number(value))) return "N/A";
+  return Number(value).toLocaleString("en-US", {
+    style: "currency", currency: "USD", maximumFractionDigits: 0
+  });
+}
+
+function dateTime(value) {
+  if (value === null || value === undefined || value === 0) return "N/A";
+  const date = new Date(Number(value));
+  return Number.isNaN(date.getTime()) ? "N/A" : date.toLocaleString();
+}
+
+function relativeTime(value) {
+  if (value === null || value === undefined || value === 0) return "Time unavailable";
+  const delta = Date.now() - Number(value);
+  if (!Number.isFinite(delta)) return "Time unavailable";
+  if (delta < 60000) return "Just now";
+  if (delta < 3600000) return Math.floor(delta / 60000) + "m ago";
+  if (delta < 86400000) return Math.floor(delta / 3600000) + "h ago";
+  return Math.floor(delta / 86400000) + "d ago";
+}
+
+function comboSearchText(combo) {
+  return [
+    combo.comboId,
+    combo.status,
+    ...(combo.legs || []).flatMap(leg => [
+      leg.title, leg.eventTitle, leg.outcome
+    ]),
+    ...(combo.traders || []).map(trader => trader.name)
+  ].join(" ").toLowerCase();
+}
+
+function visibleCombos() {
+  if (!comboData) return [];
+
+  const query = $("search").value.trim().toLowerCase();
+  const minimum = Number($("minimum").value);
+  const openOnly = $("mode").value === "open";
+
+  const rows = (comboData.comboPicks || []).filter(combo => {
+    if ((combo.traderCount || 0) < minimum) return false;
+    if (openOnly && !combo.isOpen) return false;
+    if (query && !comboSearchText(combo).includes(query)) return false;
+    return true;
+  });
+
+  const sort = $("sort").value;
+  rows.sort((a, b) => {
+    if (sort === "recent") return (b.updatedAt || 0) - (a.updatedAt || 0);
+    if (sort === "cost") return (b.combinedEntryCost || 0) - (a.combinedEntryCost || 0);
+    return (Number(b.isOpen) - Number(a.isOpen)) ||
+      (b.traderCount || 0) - (a.traderCount || 0) ||
+      (b.updatedAt || 0) - (a.updatedAt || 0);
+  });
+
+  return rows;
+}
+
+function renderCombos() {
+  const root = $("combos");
+
+  if (!comboData) {
+    root.innerHTML = '<div class="empty">Could not load combos.json.</div>';
+    return;
   }
-  return list.sort((a,b)=>(num(a.rank)??9999)-(num(b.rank)??9999)).map((t,i)=>({...t,displayRank:i+1}));
+
+  const rows = visibleCombos();
+
+  if (!rows.length) {
+    root.innerHTML = '<div class="empty">No combo groups match these filters. If the API returned no actual combos, the scanner will not invent any.</div>';
+    return;
+  }
+
+  root.innerHTML = rows.map(combo => {
+    const legs = (combo.legs || []).map((leg, index) => `
+      <div class="leg">
+        <div>
+          <div class="leg-name">${index + 1}. ${esc(leg.title || "Unknown market")}</div>
+          <div class="leg-meta">
+            ${esc(leg.eventTitle || "")}
+            ${leg.outcome ? " • " + esc(leg.outcome) : ""}
+          </div>
+        </div>
+        <div class="leg-meta">${esc(leg.status || "Unknown")}</div>
+      </div>
+    `).join("");
+
+    const traders = (combo.traders || []).map(trader => `
+      <div class="trader">
+        <b>#${esc(trader.rank ?? "—")} ${esc(trader.name || "Unknown trader")}</b>
+        <small>Entry: ${money(trader.entryCost)} · Value: ${money(trader.currentValue)}</small>
+      </div>
+    `).join("");
+
+    return `
+      <article class="combo">
+        <div class="combo-head">
+          <div>
+            <div class="combo-title">${esc(combo.legs?.[0]?.eventTitle || combo.legs?.[0]?.title || "Multi-market combo")}</div>
+            <div class="pills">
+              <span class="pill ${combo.isOpen ? "open" : ""}">${combo.isOpen ? "OPEN / HELD" : esc(combo.status || "STATUS UNKNOWN")}</span>
+              <span class="pill">${esc(combo.legCount || combo.legs?.length || 0)} legs</span>
+              <span class="pill">${esc(combo.traderCount || 0)} shared traders</span>
+            </div>
+            <div class="leg-meta" style="margin-top:7px">Combo ID: ${esc(combo.comboId)}</div>
+          </div>
+          <div><div class="muted">Traders</div><div class="value">${esc(combo.traderCount || 0)}</div></div>
+          <div><div class="muted">Combined entry cost</div><div class="value">${money(combo.combinedEntryCost)}</div></div>
+          <div><div class="muted">Last update</div><div class="value">${esc(relativeTime(combo.updatedAt))}</div></div>
+        </div>
+        <div class="legs">
+          <div class="legs-title">Actual combo legs</div>
+          ${legs || '<div class="empty">The API did not return leg details.</div>'}
+        </div>
+        <div class="traders">
+          <div class="legs-title">Traders holding this combo</div>
+          <div class="trader-list">${traders || '<span class="muted">No trader details returned.</span>'}</div>
+        </div>
+      </article>
+    `;
+  }).join("");
 }
-function renderLeaders(){
-  const list=rankedLeaders(),visible=allLeaders?list:list.slice(0,10);
-  $("leadersBody").innerHTML=visible.length?visible.map(t=>{
-    const r=recordOf(t),p=num(t.pnl),v=num(t.volume);
-    return `<tr><td class="rank">${t.displayRank}</td><td><div class="trader-name">${avatar(t)}<span class="name-text">${profileButton(t)}</span></div></td><td class="record" title="${r?`${r.total} resolved results`: "Record unavailable"}">${recordText(t)}</td><td class="${p!==null&&p<0?"negative":"positive"}">${p===null?"N/A":(p>0?"+":"")+cash(p)}</td><td class="money">${cash(v)}</td></tr>`;
-  }).join(""):`<tr><td colspan="5" class="empty">No leaderboard data available.</td></tr>`;
-  $("leadersMore").hidden=list.length<=10;$("leadersMore").textContent=allLeaders?"Show top 10 ↑":`View all ${list.length} traders →`;
-  const ps=list.map(t=>num(t.pnl)).filter(v=>v!==null),vs=list.map(t=>num(t.volume)).filter(v=>v!==null),rs=list.map(recordOf).filter(r=>r&&r.total>=10);
-  const total=ps.reduce((a,b)=>a+b,0);$("totalPnl").textContent=ps.length?cash(total):"N/A";$("totalPnl").className="metric-value "+(total<0?"negative":"positive");
-  $("totalVolume").textContent=vs.length?cash(vs.reduce((a,b)=>a+b,0)):"N/A";
-  $("avgWinRate").textContent=rs.length?(rs.reduce((a,r)=>a+r.rate,0)/rs.length).toFixed(1)+"%":"N/A";
+
+function renderLeaders() {
+  const root = $("leaders");
+  const leaders = weekData?.leaders || [];
+
+  if (!leaders.length) {
+    root.innerHTML = '<tr><td colspan="5" class="empty">No leaderboard data found.</td></tr>';
+    return;
+  }
+
+  root.innerHTML = leaders.map((trader, index) => `
+    <tr>
+      <td>${esc(trader.rank ?? index + 1)}</td>
+      <td><strong>${esc(trader.name || "Unknown")}</strong></td>
+      <td class="${Number(trader.pnl) >= 0 ? "good" : "bad"}">${money(trader.pnl)}</td>
+      <td>${money(trader.volume)}</td>
+      <td>N/A</td>
+    </tr>
+  `).join("");
 }
-function renderConsensus(){
-  const markets=Array.isArray(data?.consensus)?data.consensus:[],visible=allMarkets?markets:markets.slice(0,10);
-  $("consensusBody").innerHTML=visible.length?visible.map((m,i)=>{
-    const members=Array.isArray(m.traders)?m.traders:[];
-    const key=String(m.conditionId||m.slug||m.title||i);
-    const open=expandedMarkets.has(key),side=String(m.side||"Unknown");
-    return `<tr><td>${i+1}</td><td><div class="market-name"><span class="market-symbol">◉</span><span class="market-title">${esc(m.title||"Unknown market")}<br><button class="link-button" style="margin-top:5px" onclick="toggleMarket('${esc(key)}')">${open?"Hide traders":"See traders & records"} (${members.length})</button></span></div></td><td><span class="side-tag ${side.toLowerCase()==="no"?"no":""}">${esc(side)}</span></td><td>${num(m.sameSide)??members.length}</td><td>${cash(m.totalEntry)}</td><td class="muted">${relative(m.newestBuy??m.latestBuy)}</td></tr>${open?`<tr class="expand-row"><td colspan="6"><div class="expand-title">Traders backing ${esc(side)} — weekly record</div><div class="member-list">${members.map(t=>`<div class="member"><div>${profileButton(t)}</div><small>Weekly rank: #${esc(t.rank??"N/A")}</small><small>Record: ${recordText(t)}</small><small>P&amp;L: ${cash(t.pnl)}</small><small>Entry: ${cash(t.amount)}</small></div>`).join("")||"Trader details unavailable in this data file."}</div></td></tr>`:""}`;
-  }).join(""):`<tr><td colspan="6" class="empty">No consensus markets available.</td></tr>`;
-  $("consensusMore").hidden=markets.length<=10;$("consensusMore").textContent=allMarkets?"Show top 10 ↑":`View all ${markets.length} consensus markets →`;
-}
-function recentTrades(){
-  const map=data?.traderActiveTrades||{},ranked=rankedLeaders(),byWallet=new Map(ranked.map(t=>[walletOf(t),t])),out=[];
-  for(const [wallet,trades] of Object.entries(map)){
-    if(!Array.isArray(trades))continue;
-    for(const trade of trades){
-      if(String(trade.side||"").toUpperCase()!=="BUY")continue;
-      const leader=byWallet.get(wallet.toLowerCase())||ranked.find(t=>walletOf(t)===wallet.toLowerCase());
-      out.push({...trade,wallet:wallet.toLowerCase(),leader:leader||{wallet,name:wallet,rank:"N/A"},sortTime:stamp(trade.buyTime??trade.timestamp)||0});
+
+async function loadData() {
+  $("refresh").disabled = true;
+  $("status").textContent = "Loading combo data…";
+
+  try {
+    const cacheBuster = "?t=" + Date.now();
+
+    const [comboResponse, weekResponse] = await Promise.all([
+      fetch("./combos.json" + cacheBuster, { cache: "no-store" }),
+      fetch("./week.json" + cacheBuster, { cache: "no-store" }).catch(() => null)
+    ]);
+
+    if (!comboResponse.ok) {
+      throw new Error("combos.json returned HTTP " + comboResponse.status);
     }
-  }
-  return out.sort((a,b)=>b.sortTime-a.sortTime);
-}
-function renderRecent(){
-  const trades=recentTrades(),visible=allRecent?trades.slice(0,100):trades.slice(0,10);
-  $("recentList").innerHTML=visible.length?visible.map(t=>`<div class="trade"><span class="market-symbol">◉</span><div><div class="trade-title">${esc(t.title||"Unknown market")}</div><div class="trade-details"><span class="side-tag ${String(t.outcome).toLowerCase()==="no"?"no":""}">${esc(t.outcome||"Unknown")}</span><span class="trade-amount">${cash(t.amount)}</span></div><div class="trade-user">Weekly rank #${esc(t.leader.rank??"N/A")} · ${profileButton(t.leader,nameOf(t.leader))} · Record ${recordText(t.leader)}</div></div><div class="trade-time" title="${esc(dateText(t.buyTime??t.timestamp))}">${relative(t.buyTime??t.timestamp)}</div></div>`).join(""):`<div class="empty">No recent BUY trades available.</div>`;
-  $("recentMore").hidden=trades.length<=10;$("recentMore").textContent=allRecent?"Show latest 10 ↑":"View all recent buys →";
-}
-function toggleMarket(key){expandedMarkets.has(key)?expandedMarkets.delete(key):expandedMarkets.add(key);renderConsensus();}
-function toggleLeaders(){allLeaders=!allLeaders;renderLeaders();}
-function toggleConsensus(){allMarkets=!allMarkets;renderConsensus();}
-function toggleRecent(){allRecent=!allRecent;renderRecent();}
-function openProfile(wallet){
-  const t=rankedLeaders().find(x=>walletOf(x)===String(wallet).toLowerCase())||leaders().find(x=>walletOf(x)===String(wallet).toLowerCase());
-  if(!t)return;
-  const r=recordOf(t),trades=(data?.traderActiveTrades?.[t.wallet]||data?.traderActiveTrades?.[wallet]||[]).slice().sort((a,b)=>(stamp(b.buyTime??b.timestamp)||0)-(stamp(a.buyTime??a.timestamp)||0)).slice(0,10);
-  $("profileContent").innerHTML=`<div class="profile-top">${avatar(t)}<div><h2>${esc(nameOf(t))}</h2><div class="muted">Weekly rank #${esc(t.displayRank??t.rank??"N/A")}</div></div></div><div class="profile-grid"><div class="profile-stat"><small>Win-loss record</small><strong>${recordText(t)}</strong></div><div class="profile-stat"><small>Win rate</small><strong>${r&&r.total>=10?r.rate.toFixed(1)+"%":"N/A"}</strong></div><div class="profile-stat"><small>P&amp;L</small><strong>${cash(t.pnl)}</strong></div><div class="profile-stat"><small>Volume</small><strong>${cash(t.volume)}</strong></div><div class="profile-stat"><small>Resolved results</small><strong>${r?r.total:"N/A"}</strong></div><div class="profile-stat"><small>Wallet</small><strong style="font-size:11px;overflow-wrap:anywhere">${esc(t.wallet||"Unavailable")}</strong></div></div><div class="profile-trades"><h3>Recent buys</h3>${trades.map(x=>`<div class="profile-trade"><strong>${esc(x.title||"Unknown market")}</strong><br><span class="muted">${esc(x.outcome||"Unknown outcome")} · ${cash(x.amount)} · ${relative(x.buyTime??x.timestamp)}</span></div>`).join("")||'<div class="empty">No recent buys found.</div>'}</div>`;
-  $("profileDialog").showModal();
-}
-function closeProfile(){$("profileDialog").close();}
-async function selectPeriod(next){
-  period=next;allLeaders=false;allMarkets=false;allRecent=false;expandedMarkets.clear();
-  $("weekTab").classList.toggle("active",period==="week");$("monthTab").classList.toggle("active",period==="month");
-  $("leaderPeriod").textContent=period==="week"?"Week":"Month";$("consensusPeriod").textContent=period==="week"?"Week":"Month";
-  $("errorBox").innerHTML="";$("leadersBody").innerHTML='<tr><td colspan="5" class="loading">Loading…</td></tr>';$("consensusBody").innerHTML='<tr><td colspan="6" class="loading">Loading…</td></tr>';$("recentList").innerHTML='<div class="loading">Loading…</div>';
-  try{
-    const res=await fetch(FILES[period]+"?v="+Date.now(),{cache:"no-store"});
-    if(!res.ok)throw new Error(`${FILES[period]} returned HTTP ${res.status}`);
-    const nextData=await res.json();if(!Array.isArray(nextData.leaders))throw new Error("Leaderboard data is missing.");
-    data=nextData;
-    const date=data.generatedAt?new Date(data.generatedAt):null;
-    $("updatedAt").textContent=date&&!Number.isNaN(date.getTime())?date.toLocaleString():"Timestamp unavailable";
-    renderLeaders();renderConsensus();renderRecent();
-  }catch(e){
-    data=null;$("updatedAt").textContent="Data unavailable";$("errorBox").innerHTML=`<div class="error">Could not load ${esc(FILES[period])}: ${esc(e.message)}. Check that GitHub Actions generated and committed the JSON file.</div>`;
-    $("leadersBody").innerHTML='<tr><td colspan="5" class="empty">Data unavailable.</td></tr>';$("consensusBody").innerHTML='<tr><td colspan="6" class="empty">Data unavailable.</td></tr>';$("recentList").innerHTML='<div class="empty">Data unavailable.</div>';
-    $("totalPnl").textContent="N/A";$("totalVolume").textContent="N/A";$("avgWinRate").textContent="N/A";$("leadersMore").hidden=true;$("consensusMore").hidden=true;$("recentMore").hidden=true;
+
+    comboData = await comboResponse.json();
+
+    weekData = weekResponse && weekResponse.ok
+      ? await weekResponse.json()
+      : null;
+
+    $("comboCount").textContent = (comboData.comboPicks || []).length;
+    $("positionCount").textContent = comboData.comboPositionsFound ?? "N/A";
+    $("walletCount").textContent = comboData.walletsScanned ?? "N/A";
+    $("updated").textContent = comboData.generatedAt
+      ? new Date(comboData.generatedAt).toLocaleString()
+      : "N/A";
+
+    $("status").textContent =
+      `Loaded ${comboData.comboGroupsFound ?? (comboData.comboPicks || []).length} combo groups from Polymarket's actual combo-position endpoint.`;
+
+    renderCombos();
+    renderLeaders();
+  } catch (error) {
+    $("status").textContent =
+      "Could not load combo data: " + error.message +
+      ". Make sure the updater has generated combos.json and GitHub Pages has deployed it.";
+    $("combos").innerHTML = '<div class="empty">Combo data unavailable. Check the updater run and confirm combos.json is published.</div>';
+    $("leaders").innerHTML = '<tr><td colspan="5" class="empty">Leaderboard data unavailable.</td></tr>';
+  } finally {
+    $("refresh").disabled = false;
   }
 }
-selectPeriod("week");
+
+$("refresh").addEventListener("click", loadData);
+$("search").addEventListener("input", renderCombos);
+$("mode").addEventListener("change", renderCombos);
+$("minimum").addEventListener("change", renderCombos);
+$("sort").addEventListener("change", renderCombos);
+
+loadData();
 </script>
 </body>
 </html>
