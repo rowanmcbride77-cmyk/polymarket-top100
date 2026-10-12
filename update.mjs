@@ -2,20 +2,22 @@
 import fs from "node:fs/promises";
 
 const API = "https://data-api.polymarket.com";
-
 const PERIODS = [
-  { key: "week", api: "WEEK", days: 7 },
-  { key: "month", api: "MONTH", days: 30 }
+  { key: "week", api: "WEEK" },
+  { key: "month", api: "MONTH" }
 ];
 
 const CANDIDATE_COUNT = 1000;
 const LEADER_COUNT = 100;
 const PAGE_SIZE = 50;
-const POSITION_LIMIT = 500;
-const TRADE_LIMIT = 50;
-const MIN_RESOLVED_FOR_RANKING = 10;
+const POSITION_FETCH_LIMIT = 100;
+const POSITIONS_PER_TRADER = 10;
+const CONSENSUS_LIMIT = 50;
+const TRADERS_PER_MARKET = 15;
+const TRADE_LIMIT = 10;
+const MAX_JSON_BYTES = 5 * 1024 * 1024;
 const CONCURRENCY = 6;
-const DELAY_MS = 200;
+const DELAY_MS = 150;
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -33,21 +35,27 @@ async function getJson(url, attempts = 4) {
       });
 
       if (response.status === 429 || response.status >= 500) {
-        const retry = Number(response.headers.get("retry-after"));
+        const retryAfter = Number(response.headers.get("retry-after"));
         await sleep(
-          retry > 0 ? Math.min(retry * 1000, 15000) : 1000 * (attempt + 1)
+          retryAfter > 0
+            ? Math.min(retryAfter * 1000, 15000)
+            : 1000 * (attempt + 1)
         );
         throw new Error(`HTTP ${response.status}`);
       }
 
       if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${(await response.text()).slice(0, 200)}`);
+        throw new Error(
+          `HTTP ${response.status}: ${(await response.text()).slice(0, 200)}`
+        );
       }
 
       return await response.json();
     } catch (error) {
       lastError = error;
-      if (attempt < attempts - 1) await sleep(500 * (attempt + 1));
+      if (attempt < attempts - 1) {
+        await sleep(500 * (attempt + 1));
+      }
     }
   }
 
@@ -63,16 +71,18 @@ function asArray(value) {
 
 function num(value) {
   if (value === null || value === undefined || value === "") return null;
-  const n = Number(value);
-  return Number.isFinite(n) ? n : null;
+  const result = Number(value);
+  return Number.isFinite(result) ? result : null;
 }
 
 function timestampMs(value) {
   if (value === null || value === undefined || value === "") return null;
+
   if (typeof value === "number" || /^\d+(\.\d+)?$/.test(String(value))) {
     const n = Number(value);
     return n < 100000000000 ? n * 1000 : n;
   }
+
   const parsed = Date.parse(value);
   return Number.isFinite(parsed) ? parsed : null;
 }
@@ -119,13 +129,23 @@ async function mapLimit(items, limit, callback) {
     while (true) {
       const index = next++;
       if (index >= items.length) return;
-      results[index] = await callback(items[index], index);
+
+      try {
+        results[index] = await callback(items[index], index);
+      } catch (error) {
+        console.error(`Item failed: ${error.message}`);
+        results[index] = null;
+      }
+
       await sleep(DELAY_MS);
     }
   }
 
   await Promise.all(
-    Array.from({ length: Math.min(limit, items.length) }, () => worker())
+    Array.from(
+      { length: Math.min(limit, items.length) },
+      () => worker()
+    )
   );
 
   return results;
@@ -144,12 +164,16 @@ async function getCandidates(period) {
       offset: String(offset)
     });
 
-    const rows = asArray(await getJson(`${API}/v1/leaderboard?${params}`));
+    const rows = asArray(
+      await getJson(`${API}/v1/leaderboard?${params}`)
+    );
+
     if (!rows.length) break;
 
     for (const row of rows) {
       const trader = normalizeLeader(row, candidates.length);
       if (!trader.wallet || seen.has(trader.wallet)) continue;
+
       seen.add(trader.wallet);
       candidates.push(trader);
     }
@@ -160,25 +184,6 @@ async function getCandidates(period) {
   return candidates.slice(0, CANDIDATE_COUNT);
 }
 
-/*
- * Closed-position price data alone is not sufficient to verify
- * each resolution time and outcome reliably. Do not invent records.
- */
-async function attachRecords(candidates) {
-  return candidates.map(trader => ({
-    ...trader,
-    wins: null,
-    losses: null,
-    winRate: null,
-    resolvedMarkets: null,
-    recordVerified: false
-  }));
-}
-
-/*
- * Until verified win/loss records are available, order by P&L.
- * This is explicitly labelled in the JSON output.
- */
 function rankCandidates(candidates) {
   return [...candidates]
     .sort((a, b) => (b.pnl ?? -Infinity) - (a.pnl ?? -Infinity))
@@ -187,7 +192,9 @@ function rankCandidates(candidates) {
 
 function isActivePosition(position, nowMs) {
   const size = num(
-    position.size ?? position.current_size ?? position.currentSize
+    position.size ??
+    position.current_size ??
+    position.currentSize
   );
 
   if (size === null || size <= 0) return false;
@@ -195,7 +202,11 @@ function isActivePosition(position, nowMs) {
   if (position.redeemable === true) return false;
   if (position.mergeable === true) return false;
 
-  const endDate = position.endDate ?? position.end_date ?? position.endDateIso;
+  const endDate =
+    position.endDate ??
+    position.end_date ??
+    position.endDateIso;
+
   if (endDate) {
     const endMs = timestampMs(endDate);
     if (endMs !== null && endMs < nowMs) return false;
@@ -204,51 +215,68 @@ function isActivePosition(position, nowMs) {
   return true;
 }
 
+function compactPosition(position) {
+  return {
+    conditionId:
+      position.conditionId ??
+      position.condition_id ??
+      null,
+    title: position.title || position.question || "Unknown market",
+    outcome: position.outcome ?? position.outcome_name ?? null,
+    size: num(position.size ?? position.current_size ?? position.currentSize),
+    currentValue: num(position.currentValue ?? position.current_value),
+    initialValue: num(position.initialValue ?? position.initial_value),
+    lastEventAt: timestampMs(
+      position.lastEventAt ?? position.last_event_at
+    ),
+    endDate:
+      position.endDate ??
+      position.end_date ??
+      position.endDateIso ??
+      null
+  };
+}
+
 async function getActivePositions(wallet, nowMs) {
-  const positions = [];
+  const params = new URLSearchParams({
+    user: wallet,
+    limit: String(POSITION_FETCH_LIMIT),
+    status: "OPEN",
+    sort_by: "CURRENT_VALUE",
+    sort_direction: "DESC"
+  });
 
-  // V2 positions use cursor pagination.
-  let cursor = null;
-  let pages = 0;
+  const response = await getJson(`${API}/v2/positions?${params}`);
+  const rows = asArray(response);
 
-  do {
-    const params = new URLSearchParams({
-      user: wallet,
-      limit: String(POSITION_LIMIT),
-      status: "OPEN",
-      sort_by: "CURRENT_VALUE",
-      sort_direction: "DESC"
-    });
-
-    if (cursor) params.set("cursor", cursor);
-
-    const response = await getJson(`${API}/v2/positions?${params}`);
-    const rows = asArray(response);
-
-    positions.push(...rows.filter(p => isActivePosition(p, nowMs)));
-
-    cursor = response?.pagination?.next_cursor ?? null;
-    pages++;
-
-    if (!rows.length) break;
-  } while (cursor && pages < 10);
-
-  return positions;
+  return rows
+    .filter(position => isActivePosition(position, nowMs))
+    .sort(
+      (a, b) =>
+        (num(b.currentValue ?? b.current_value) ?? 0) -
+        (num(a.currentValue ?? a.current_value) ?? 0)
+    )
+    .slice(0, POSITIONS_PER_TRADER)
+    .map(compactPosition);
 }
 
 async function attachActivePositions(candidates, nowMs) {
-  const rows = await mapLimit(candidates, CONCURRENCY, async trader => {
-    try {
-      const positions = await getActivePositions(trader.wallet, nowMs);
-      console.log(`Positions loaded: ${trader.name} (${positions.length})`);
-      return [trader.wallet, positions];
-    } catch (error) {
-      console.error(`Positions failed for ${trader.name}: ${error.message}`);
-      return [trader.wallet, []];
+  const rows = await mapLimit(
+    candidates,
+    CONCURRENCY,
+    async trader => {
+      try {
+        const positions = await getActivePositions(trader.wallet, nowMs);
+        console.log(`Positions: ${trader.name} (${positions.length})`);
+        return [trader.wallet, positions];
+      } catch (error) {
+        console.error(`Positions failed for ${trader.name}: ${error.message}`);
+        return [trader.wallet, []];
+      }
     }
-  });
+  );
 
-  return Object.fromEntries(rows);
+  return Object.fromEntries(rows.filter(Boolean));
 }
 
 async function getRecentTrades(wallet) {
@@ -262,6 +290,7 @@ async function getRecentTrades(wallet) {
 
     return rows
       .filter(row => String(row.side || "").toUpperCase() === "BUY")
+      .slice(0, TRADE_LIMIT)
       .map(row => ({
         title: row.title || row.question || row.eventSlug || "Unknown market",
         side: "BUY",
@@ -282,7 +311,7 @@ function buildConsensus(candidates, activePositions) {
 
   for (const trader of candidates) {
     for (const position of activePositions[trader.wallet] || []) {
-      const condition = String(
+      const conditionId = String(
         position.conditionId ?? position.condition_id ?? ""
       ).toLowerCase();
 
@@ -290,13 +319,13 @@ function buildConsensus(candidates, activePositions) {
         position.outcome ?? position.outcome_name ?? ""
       ).trim();
 
-      if (!condition || !side) continue;
+      if (!conditionId || !side) continue;
 
-      const key = `${condition}|${side.toLowerCase()}`;
+      const key = `${conditionId}|${side.toLowerCase()}`;
 
       if (!markets.has(key)) {
         markets.set(key, {
-          conditionId: condition,
+          conditionId,
           title: position.title || position.question || "Unknown market",
           side,
           sameSide: 0,
@@ -310,43 +339,37 @@ function buildConsensus(candidates, activePositions) {
 
       const market = markets.get(key);
       if (market.walletsSeen.has(trader.wallet)) continue;
+
       market.walletsSeen.add(trader.wallet);
       market.sameSide++;
 
-      const amount = num(
-        position.currentValue ??
-        position.current_value ??
-        position.initialValue ??
-        position.initial_value
-      );
+      const amount = num(position.currentValue ?? position.initialValue);
+      const buyTime = timestampMs(position.lastEventAt);
 
-      const buyTime = timestampMs(
-        position.lastEventAt ?? position.last_event_at
-      );
-
-      market.traders.push({
-        name: trader.name,
-        wallet: trader.wallet,
-        rank: trader.rank,
-        wins: trader.wins,
-        losses: trader.losses,
-        winRate: trader.winRate,
-        resolvedMarkets: trader.resolvedMarkets,
-        pnl: trader.pnl,
-        volume: trader.volume,
-        recordVerified: trader.recordVerified,
-        side,
-        amount,
-        buyTime
-      });
+      if (market.traders.length < TRADERS_PER_MARKET) {
+        market.traders.push({
+          name: trader.name,
+          rank: trader.rank,
+          pnl: trader.pnl,
+          volume: trader.volume,
+          side,
+          amount,
+          buyTime
+        });
+      }
 
       if (amount !== null) market.totalEntry += amount;
 
       if (buyTime !== null) {
         market.newestBuy =
-          market.newestBuy === null ? buyTime : Math.max(market.newestBuy, buyTime);
+          market.newestBuy === null
+            ? buyTime
+            : Math.max(market.newestBuy, buyTime);
+
         market.oldestBuy =
-          market.oldestBuy === null ? buyTime : Math.min(market.oldestBuy, buyTime);
+          market.oldestBuy === null
+            ? buyTime
+            : Math.min(market.oldestBuy, buyTime);
       }
     }
   }
@@ -354,49 +377,121 @@ function buildConsensus(candidates, activePositions) {
   return [...markets.values()]
     .filter(market => market.sameSide >= 2)
     .map(({ walletsSeen, ...market }) => market)
-    .sort((a, b) =>
-      b.sameSide - a.sameSide ||
-      b.totalEntry - a.totalEntry ||
-      (b.newestBuy || 0) - (a.newestBuy || 0)
-    );
+    .sort(
+      (a, b) =>
+        b.sameSide - a.sameSide ||
+        b.totalEntry - a.totalEntry ||
+        (b.newestBuy || 0) - (a.newestBuy || 0)
+    )
+    .slice(0, CONSENSUS_LIMIT);
 }
 
-async function buildPeriod(period, candidates, activePositions, nowMs) {
-  const withRecords = await attachRecords(candidates);
-  const ranked = rankCandidates(withRecords);
+function makeOutput(period, candidates, activePositions, tradeRows, nowMs) {
+  const ranked = rankCandidates(candidates);
   const leaders = ranked.slice(0, LEADER_COUNT);
 
-  const tradeRows = await mapLimit(leaders, CONCURRENCY, async trader => [
-    trader.wallet,
-    await getRecentTrades(trader.wallet)
-  ]);
+  const leaderPositions = Object.fromEntries(
+    leaders.map(trader => [
+      trader.wallet,
+      activePositions[trader.wallet] || []
+    ])
+  );
 
-  const output = {
+  return {
     generatedAt: new Date(nowMs).toISOString(),
     period: period.key,
     rankingBasis:
       `P&L leaderboard for ${period.key}; verified period-specific win/loss ranking is unavailable`,
     recordBasis:
-      "N/A: verified resolution outcomes and timestamps are not available from the current record source",
+      "Verified resolution outcomes and timestamps are not available from the current record source",
     candidateCount: candidates.length,
-    minResolvedMarketsForRecordRanking: MIN_RESOLVED_FOR_RANKING,
+    minResolvedMarketsForRecordRanking: 10,
     recordRankingEnabled: false,
     recordWarning:
       "Win/loss records are unavailable rather than inferred from open positions or current prices.",
     leaders,
-    traderActiveTrades: Object.fromEntries(tradeRows),
-    traderActivePositions: activePositions,
+    traderActiveTrades: Object.fromEntries(tradeRows.filter(Boolean)),
+    traderActivePositions: leaderPositions,
     consensus: buildConsensus(ranked, activePositions)
   };
+}
 
-  const filename = `${period.key}.json`;
+async function writeJsonUnderLimit(filename, output) {
+  const compact = () => JSON.stringify(output);
+
+  let json = compact();
+  let bytes = Buffer.byteLength(json, "utf8");
+
+  // Progressively trim large sections until the actual serialized
+  // file is below the workflow's 5 MB limit.
+  while (bytes > MAX_JSON_BYTES) {
+    if (output.consensus.length > 0) {
+      output.consensus = output.consensus.slice(
+        0,
+        Math.floor(output.consensus.length / 2)
+      );
+    } else {
+      for (const wallet of Object.keys(output.traderActivePositions)) {
+        output.traderActivePositions[wallet] =
+          (output.traderActivePositions[wallet] || []).slice(0, 3);
+      }
+
+      for (const wallet of Object.keys(output.traderActiveTrades)) {
+        output.traderActiveTrades[wallet] =
+          (output.traderActiveTrades[wallet] || []).slice(0, 3);
+      }
+
+      const noPositions = Object.values(output.traderActivePositions)
+        .every(positions => positions.length === 0);
+
+      const noTrades = Object.values(output.traderActiveTrades)
+        .every(trades => trades.length === 0);
+
+      if (noPositions && noTrades) {
+        throw new Error(
+          `${filename} remains ${(bytes / 1024 / 1024).toFixed(2)} MB after trimming positions, trades, and consensus. Check whether another workflow step is generating this file.`
+        );
+      }
+    }
+
+    json = compact();
+    bytes = Buffer.byteLength(json, "utf8");
+  }
+
   const tempFilename = `${filename}.tmp`;
-
-  await fs.writeFile(tempFilename, JSON.stringify(output), "utf8");
+  await fs.writeFile(tempFilename, json, "utf8");
   await fs.rename(tempFilename, filename);
 
   console.log(
-    `Wrote ${filename}: ${leaders.length} leaders, ${output.consensus.length} consensus markets`
+    `Wrote ${filename}: ${(bytes / 1024 / 1024).toFixed(2)} MB`
+  );
+}
+
+async function buildPeriod(period, candidates, activePositions, nowMs) {
+  const ranked = rankCandidates(candidates);
+  const leaders = ranked.slice(0, LEADER_COUNT);
+
+  const tradeRows = await mapLimit(
+    leaders,
+    CONCURRENCY,
+    async trader => [
+      trader.wallet,
+      await getRecentTrades(trader.wallet)
+    ]
+  );
+
+  const output = makeOutput(
+    period,
+    ranked,
+    activePositions,
+    tradeRows,
+    nowMs
+  );
+
+  await writeJsonUnderLimit(`${period.key}.json`, output);
+
+  console.log(
+    `${period.key}: ${leaders.length} leaders, ${output.consensus.length} consensus markets`
   );
 }
 
@@ -412,12 +507,16 @@ async function main() {
   console.log(`Monthly candidates: ${monthCandidates.length}`);
 
   const unique = new Map();
+
   for (const trader of [...weekCandidates, ...monthCandidates]) {
     if (!unique.has(trader.wallet)) unique.set(trader.wallet, trader);
   }
 
   console.log(`Loading positions for ${unique.size} unique traders...`);
-  const activePositions = await attachActivePositions([...unique.values()], nowMs);
+  const activePositions = await attachActivePositions(
+    [...unique.values()],
+    nowMs
+  );
 
   await buildPeriod(PERIODS[0], weekCandidates, activePositions, nowMs);
   await buildPeriod(PERIODS[1], monthCandidates, activePositions, nowMs);
