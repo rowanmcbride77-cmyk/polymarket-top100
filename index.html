@@ -622,10 +622,31 @@ async function loadData() {
   $("recentList").innerHTML = `<div class="loading">Loading recent buys…</div>`;
 
   try {
-    const response = await fetch(FILES[period] + "?t=" + Date.now(), {cache:"no-store"});
-    if (!response.ok) throw new Error(`${FILES[period]} returned HTTP ${response.status}`);
-    const result = await response.json();
-    if (!result || typeof result !== "object") throw new Error("The data file is not valid JSON.");
+    const filename = FILES[period];
+    const candidates = [
+      filename + "?t=" + Date.now(),
+      "https://raw.githubusercontent.com/rowanmcbride77-cmyk/polymarket-top100/main/" + filename + "?t=" + Date.now()
+    ];
+    let result = null;
+    let lastError = null;
+
+    for (const url of candidates) {
+      try {
+        const response = await fetch(url, {cache:"no-store"});
+        if (!response.ok) throw new Error(`${url.split("?")[0]} returned HTTP ${response.status}`);
+        const parsed = await response.json();
+        if (!parsed || typeof parsed !== "object" || !Array.isArray(parsed.leaders)) {
+          throw new Error("The data file loaded but does not contain a leaders array.");
+        }
+        result = parsed;
+        break;
+      } catch (error) {
+        lastError = error;
+      }
+    }
+
+    if (!result) throw lastError || new Error("Could not load dashboard data from GitHub Pages or GitHub.");
+
 
     data = result;
     const updated = result.updatedAt || result.generatedAt || result.lastUpdated;
