@@ -121,6 +121,51 @@ function normalizeLeader(row, index) {
   };
 }
 
+async function getResolvedRecord(wallet, period, nowMs) {
+  const days = period.key === "week" ? 7 : 30;
+  const cutoff = nowMs - days * 86400000;
+  let wins = 0, losses = 0;
+  const seen = new Set();
+  for (let offset = 0; offset < 1000; offset += 50) {
+    const params = new URLSearchParams({
+      user: wallet, limit: "50", offset: String(offset),
+      sortBy: "TIMESTAMP", sortDirection: "DESC"
+    });
+    let rows;
+    try {
+      rows = asArray(await getJson(`${API}/closed-positions?${params}`, 3));
+    } catch (error) {
+      console.error(`Record lookup failed for ${wallet}: ${error.message}`);
+      return null;
+    }
+    if (!rows.length) break;
+    for (const row of rows) {
+      const when = timestampMs(row.timestamp ?? row.closedAt ?? row.updatedAt);
+      if (when === null || when < cutoff || when > nowMs) continue;
+      const condition = String(row.conditionId ?? row.condition_id ?? "");
+      const outcome = String(row.outcome ?? "");
+      const key = condition + "|" + outcome;
+      if (!condition || seen.has(key)) continue;
+      const price = num(row.curPrice ?? row.cur_price ?? row.currentPrice ?? row.price);
+      if (price === null) continue;
+      if (price >= 0.99) { wins++; seen.add(key); }
+      else if (price <= 0.01) { losses++; seen.add(key); }
+    }
+    const oldest = timestampMs(rows[rows.length - 1].timestamp ?? rows[rows.length - 1].closedAt);
+    if (rows.length < 50 || (oldest !== null && oldest < cutoff)) break;
+  }
+  return { wins, losses, winRate: wins + losses ? wins / (wins + losses) * 100 : null,
+    resolvedMarkets: wins + losses, recordVerified: true };
+}
+
+async function attachRecords(leaders, period, nowMs) {
+  const rows = await mapLimit(leaders, 3, async trader => {
+    const record = await getResolvedRecord(trader.wallet, period, nowMs);
+    return record ? [trader.wallet, record] : null;
+  });
+  return Object.fromEntries(rows.filter(Boolean));
+}
+
 async function mapLimit(items, limit, callback) {
   const results = new Array(items.length);
   let next = 0;
@@ -386,9 +431,9 @@ function buildConsensus(candidates, activePositions) {
     .slice(0, CONSENSUS_LIMIT);
 }
 
-function makeOutput(period, candidates, activePositions, tradeRows, nowMs) {
+function makeOutput(period, candidates, activePositions, tradeRows, nowMs, consensusCandidates, records) {
   const ranked = rankCandidates(candidates);
-  const leaders = ranked.slice(0, LEADER_COUNT);
+  const leaders = ranked.slice(0, LEADER_COUNT).map(trader => ({ ...trader, ...(records[trader.wallet] || {}) }));
 
   const leaderPositions = Object.fromEntries(
     leaders.map(trader => [
@@ -412,7 +457,7 @@ function makeOutput(period, candidates, activePositions, tradeRows, nowMs) {
     leaders,
     traderActiveTrades: Object.fromEntries(tradeRows.filter(Boolean)),
     traderActivePositions: leaderPositions,
-    consensus: buildConsensus(ranked, activePositions)
+    consensus: buildConsensus(consensusCandidates, activePositions)
   };
 }
 
