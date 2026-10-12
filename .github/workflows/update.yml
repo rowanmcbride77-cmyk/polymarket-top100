@@ -1,77 +1,43 @@
-name: Update Polymarket Scanner
+
+name: Update Polymarket Tracker
 
 on:
   workflow_dispatch:
   schedule:
-    - cron: "17 */3 * * *"
+    - cron: "*/15 * * * *"
 
 permissions:
   contents: write
 
 concurrency:
-  group: polymarket-data-update
-  cancel-in-progress: false
+  group: polymarket-tracker-update
+  cancel-in-progress: true
 
 jobs:
   update:
     runs-on: ubuntu-latest
-    timeout-minutes: 180
+    timeout-minutes: 8
 
     steps:
-      - name: Check out repository
+      - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          ref: main
 
-      - name: Set up Node
+      - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22
 
-      - name: Verify updater exists
-        run: |
-          test -f update.mjs || {
-            echo "ERROR: update.mjs was not found in the repository root."
-            exit 1
-          }
-
-          echo "Running update.mjs from:"
-          pwd
-
-      - name: Run updater
+      - name: Update tracker data
         run: node update.mjs
 
-      - name: Verify generated data
-        run: |
-          set -e
-
-          for file in data/week.json data/month.json data/threeMonth.json data/status.json; do
-            if [ ! -f "$file" ]; then
-              echo "ERROR: Missing generated file: $file"
-              exit 1
-            fi
-          done
-
-          node --input-type=module -e '
-            import fs from "node:fs";
-            const d = JSON.parse(fs.readFileSync("data/week.json", "utf8"));
-            console.log("Generated at:", d.generatedAt);
-            console.log("Leaders:", d.leaders?.length ?? 0);
-            console.log("Active trade wallets:", Object.keys(d.traderActiveTrades ?? {}).length);
-            console.log("Active position wallets:", Object.keys(d.traderActivePositions ?? {}).length);
-            console.log("Consensus markets:", d.consensus?.length ?? 0);
-          '
-
-      - name: Commit generated data
+      - name: Commit updated data
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          git add data/week.json data/month.json data/threeMonth.json data/status.json
-
+          git add week.json month.json status.json
           if git diff --cached --quiet; then
-            echo "No generated data changes to commit."
-          else
-            git commit -m "Update Polymarket scanner data"
-            git push origin main
+            echo "No data changes to commit."
+            exit 0
           fi
+          git commit -m "Update Polymarket tracker data"
+          git push
