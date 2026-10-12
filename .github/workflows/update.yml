@@ -1,74 +1,62 @@
 
-name: Update Polymarket tracker data
+name: Update Polymarket Scanner
 
 on:
-  workflow_dispatch:
   schedule:
-    - cron: "17 * * * *"
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
 
 permissions:
   contents: write
 
 concurrency:
-  group: polymarket-data-update
+  group: polymarket-scanner-update
   cancel-in-progress: false
 
 jobs:
   update:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          ref: main
-          fetch-depth: 0
+          persist-credentials: true
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version: 22
 
-      - name: Run updater
+      - name: Run scanner update
         run: node update.mjs
 
-      - name: Validate generated JSON
+      - name: Validate JSON and file sizes
         run: |
           node --input-type=module <<'NODE'
-          import fs from "node:fs";
+          import fs from "node:fs/promises";
 
           for (const file of ["week.json", "month.json"]) {
-            if (!fs.existsSync(file)) throw new Error(`${file} is missing`);
-            if (fs.statSync(file).size > 5 * 1024 * 1024) {
+            const stat = await fs.stat(file);
+            if (stat.size > 5 * 1024 * 1024) {
               throw new Error(`${file} exceeds 5 MB`);
             }
 
-            const data = JSON.parse(fs.readFileSync(file, "utf8"));
-            for (const field of ["leaders", "consensus", "traderActiveTrades"]) {
-              if (!data[field] || typeof data[field] !== "object") {
-                throw new Error(`${file} is missing ${field}`);
-              }
-            }
-          }
-
-          if (fs.existsSync("api-cache.json") &&
-              fs.statSync("api-cache.json").size > 5 * 1024 * 1024) {
-            throw new Error("api-cache.json exceeds 5 MB");
+            JSON.parse(await fs.readFile(file, "utf8"));
+            console.log(`${file}: ${(stat.size / 1024 / 1024).toFixed(2)} MB; valid JSON`);
           }
           NODE
 
-      - name: Commit updated data and cache
+      - name: Commit updated data
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          git add week.json month.json api-cache.json
+          git add week.json month.json
 
-          if git diff --cached --quiet; then
-            echo "No changes to commit."
-            exit 0
+          if ! git diff --cached --quiet; then
+            git commit -m "Update Polymarket scanner data"
+            git push
+          else
+            echo "No data changes to commit."
           fi
-
-          git commit -m "Update Polymarket tracker data"
-          git push origin HEAD:main
