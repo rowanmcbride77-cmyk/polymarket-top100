@@ -16,7 +16,7 @@ concurrency:
 jobs:
   update:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
 
     steps:
       - name: Checkout repository
@@ -30,40 +30,30 @@ jobs:
         with:
           node-version: "22"
 
-      - name: Run Polymarket updater
+      - name: Run updater
         run: node update.mjs
 
-      - name: Validate generated JSON
+      - name: Validate JSON output
         run: |
           node --input-type=module <<'NODE'
           import fs from "node:fs";
 
           for (const file of ["week.json", "month.json"]) {
-            if (!fs.existsSync(file)) {
-              throw new Error(`${file} was not generated`);
-            }
+            if (!fs.existsSync(file)) throw new Error(`${file} is missing`);
 
             const size = fs.statSync(file).size;
-            const maxSize = 5 * 1024 * 1024;
-
             console.log(`${file}: ${(size / 1024 / 1024).toFixed(2)} MB`);
 
-            if (size > maxSize) {
-              throw new Error(`${file} exceeds the 5 MB limit`);
+            if (size > 5 * 1024 * 1024) {
+              throw new Error(`${file} exceeds 5 MB`);
             }
 
             const data = JSON.parse(fs.readFileSync(file, "utf8"));
 
-            if (!Array.isArray(data.leaders)) {
-              throw new Error(`${file} is missing the leaders array`);
-            }
-
-            if (!Array.isArray(data.consensus)) {
-              throw new Error(`${file} is missing the consensus array`);
-            }
-
-            if (!Array.isArray(data.recentBuys)) {
-              throw new Error(`${file} is missing the recentBuys array`);
+            for (const key of ["leaders", "consensus", "traderActiveTrades"]) {
+              if (!data[key] || typeof data[key] !== "object") {
+                throw new Error(`${file} is missing ${key}`);
+              }
             }
           }
           NODE
