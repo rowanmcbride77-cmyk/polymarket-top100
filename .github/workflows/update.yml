@@ -1,43 +1,84 @@
 
-name: Update Polymarket Tracker
+name: Update Polymarket tracker data
 
 on:
   workflow_dispatch:
   schedule:
-    - cron: "*/15 * * * *"
+    - cron: "17 * * * *"
 
 permissions:
   contents: write
 
 concurrency:
-  group: polymarket-tracker-update
-  cancel-in-progress: true
+  group: polymarket-data-update
+  cancel-in-progress: false
 
 jobs:
   update:
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 15
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: "22"
 
-      - name: Update tracker data
+      - name: Run Polymarket updater
         run: node update.mjs
 
-      - name: Commit updated data
+      - name: Validate generated JSON
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from "node:fs";
+
+          for (const file of ["week.json", "month.json"]) {
+            if (!fs.existsSync(file)) {
+              throw new Error(`${file} was not generated`);
+            }
+
+            const size = fs.statSync(file).size;
+            const maxSize = 5 * 1024 * 1024;
+
+            console.log(`${file}: ${(size / 1024 / 1024).toFixed(2)} MB`);
+
+            if (size > maxSize) {
+              throw new Error(`${file} exceeds the 5 MB limit`);
+            }
+
+            const data = JSON.parse(fs.readFileSync(file, "utf8"));
+
+            if (!Array.isArray(data.leaders)) {
+              throw new Error(`${file} is missing the leaders array`);
+            }
+
+            if (!Array.isArray(data.consensus)) {
+              throw new Error(`${file} is missing the consensus array`);
+            }
+
+            if (!Array.isArray(data.recentBuys)) {
+              throw new Error(`${file} is missing the recentBuys array`);
+            }
+          }
+          NODE
+
+      - name: Commit and push updated data
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add week.json month.json status.json
+
+          git add week.json month.json
+
           if git diff --cached --quiet; then
             echo "No data changes to commit."
             exit 0
           fi
+
           git commit -m "Update Polymarket tracker data"
-          git push
+          git push origin HEAD:main
