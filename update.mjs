@@ -446,14 +446,14 @@ function makeOutput(period, candidates, activePositions, tradeRows, nowMs, conse
     generatedAt: new Date(nowMs).toISOString(),
     period: period.key,
     rankingBasis:
-      `P&L leaderboard for ${period.key}; verified period-specific win/loss ranking is unavailable`,
+      `Leaderboard ordered by ${period.key} P&L, with resolved-market record data`,
     recordBasis:
-      "Verified resolution outcomes and timestamps are not available from the current record source",
+      `Fully resolved positions in the last ${period.key === "week" ? "7" : "30"} days; exits before settlement are excluded`,
     candidateCount: candidates.length,
     minResolvedMarketsForRecordRanking: 10,
-    recordRankingEnabled: false,
+    recordRankingEnabled: true,
     recordWarning:
-      "Win/loss records are unavailable rather than inferred from open positions or current prices.",
+      "Only positions settled near $1 or $0 count as wins or losses; early exits are excluded.",
     leaders,
     traderActiveTrades: Object.fromEntries(tradeRows.filter(Boolean)),
     traderActivePositions: leaderPositions,
@@ -515,6 +515,8 @@ async function writeJsonUnderLimit(filename, output) {
 async function buildPeriod(period, candidates, activePositions, nowMs) {
   const ranked = rankCandidates(candidates);
   const leaders = ranked.slice(0, LEADER_COUNT);
+  console.log(`Loading resolved records for ${leaders.length} ${period.key} leaders...`);
+  const records = await attachRecords(leaders, period, nowMs);
 
   const tradeRows = await mapLimit(
     leaders,
@@ -530,7 +532,9 @@ async function buildPeriod(period, candidates, activePositions, nowMs) {
     ranked,
     activePositions,
     tradeRows,
-    nowMs
+    nowMs,
+    consensusCandidates,
+    records
   );
 
   await writeJsonUnderLimit(`${period.key}.json`, output);
@@ -563,8 +567,8 @@ async function main() {
     nowMs
   );
 
-  await buildPeriod(PERIODS[0], weekCandidates, activePositions, nowMs);
-  await buildPeriod(PERIODS[1], monthCandidates, activePositions, nowMs);
+  await buildPeriod(PERIODS[0], weekCandidates, activePositions, nowMs, rankCandidates(weekCandidates));
+  await buildPeriod(PERIODS[1], monthCandidates, activePositions, nowMs, rankCandidates(weekCandidates));
 
   console.log("Polymarket tracker update completed.");
 }
