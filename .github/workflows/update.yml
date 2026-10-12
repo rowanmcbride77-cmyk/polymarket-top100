@@ -1,43 +1,41 @@
 
-name: Update Polymarket Tracker
+name: Update Polymarket Scanner
 
 on:
   workflow_dispatch:
   schedule:
-    - cron: "*/15 * * * *"
+    - cron: "17 */3 * * *"
 
 permissions:
   contents: write
 
 concurrency:
-  group: polymarket-tracker-update
-  cancel-in-progress: true
+  group: polymarket-data-update
+  cancel-in-progress: false
 
 jobs:
   update:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 180
 
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          ref: main
 
-      - name: Set up Node.js
+      - name: Set up Node
         uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version: 22
 
-      - name: Generate leaderboard data
+      - name: Run updater
         run: node update.mjs
 
-      - name: Commit generated JSON files
+      - name: Commit generated data
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add week.json month.json
-          if git diff --cached --quiet; then
-            echo "No data changes to commit."
-          else
-            git commit -m "Update Polymarket tracker data"
-            git push
-          fi
+          git add data/week.json data/month.json data/threeMonth.json data/status.json
+          git diff --cached --quiet || git commit -m "Update Polymarket scanner data"
+          git push
