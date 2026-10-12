@@ -33,40 +33,40 @@ jobs:
       - name: Run updater
         run: node update.mjs
 
-      - name: Validate JSON output
+      - name: Validate generated JSON
         run: |
           node --input-type=module <<'NODE'
           import fs from "node:fs";
 
           for (const file of ["week.json", "month.json"]) {
             if (!fs.existsSync(file)) throw new Error(`${file} is missing`);
-
-            const size = fs.statSync(file).size;
-            console.log(`${file}: ${(size / 1024 / 1024).toFixed(2)} MB`);
-
-            if (size > 5 * 1024 * 1024) {
+            if (fs.statSync(file).size > 5 * 1024 * 1024) {
               throw new Error(`${file} exceeds 5 MB`);
             }
 
             const data = JSON.parse(fs.readFileSync(file, "utf8"));
-
-            for (const key of ["leaders", "consensus", "traderActiveTrades"]) {
-              if (!data[key] || typeof data[key] !== "object") {
-                throw new Error(`${file} is missing ${key}`);
+            for (const field of ["leaders", "consensus", "traderActiveTrades"]) {
+              if (!data[field] || typeof data[field] !== "object") {
+                throw new Error(`${file} is missing ${field}`);
               }
             }
           }
+
+          if (fs.existsSync("api-cache.json") &&
+              fs.statSync("api-cache.json").size > 5 * 1024 * 1024) {
+            throw new Error("api-cache.json exceeds 5 MB");
+          }
           NODE
 
-      - name: Commit and push updated data
+      - name: Commit updated data and cache
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          git add week.json month.json
+          git add week.json month.json api-cache.json
 
           if git diff --cached --quiet; then
-            echo "No data changes to commit."
+            echo "No changes to commit."
             exit 0
           fi
 
