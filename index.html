@@ -322,14 +322,47 @@ function leaders() {
 }
 
 function activePositions(trader) {
-  const positions = trader?.activePositions || trader?.positions || [];
-  return Array.isArray(positions) ? positions : [];
+  const direct = trader?.activePositions || trader?.positions;
+  if (Array.isArray(direct)) return direct;
+
+  const wallet = walletOf(trader);
+  const mapped = wallet && data?.traderActivePositions
+    ? data.traderActivePositions[wallet]
+    : null;
+  return Array.isArray(mapped) ? mapped : [];
 }
 
 function trades() {
   const list = Array.isArray(data?.recentBuys) ? data.recentBuys :
-    Array.isArray(data?.recentTrades) ? data.recentTrades : [];
-  return list;
+    Array.isArray(data?.recentTrades) ? data.recentTrades : null;
+  if (list) return list;
+
+  const activity = data?.traderActiveTrades;
+  if (!activity || typeof activity !== "object") return [];
+
+  const names = new Map(leaders().map(trader => [
+    walletOf(trader),
+    nameOf(trader)
+  ]));
+  const ranks = new Map(leaders().map(trader => [
+    walletOf(trader),
+    trader.rank
+  ]));
+
+  return Object.entries(activity).flatMap(([wallet, rows]) =>
+    (Array.isArray(rows) ? rows : []).map(trade => ({
+      ...trade,
+      wallet,
+      traderName: names.get(wallet) || "Top trader",
+      traderRank: ranks.get(wallet),
+      timestamp: trade.buyTime ?? trade.timestamp ?? trade.createdAt ?? trade.time,
+      amount: trade.amount ?? trade.usdcSize ?? trade.value ?? trade.size,
+      title: trade.title || trade.market || trade.question || "Untitled market",
+      side: trade.outcome || trade.side || "BUY"
+    }))
+  ).sort((a, b) =>
+    (timestamp(b.timestamp) ?? 0) - (timestamp(a.timestamp) ?? 0)
+  );
 }
 
 function consensus() {
