@@ -512,7 +512,7 @@ async function writeJsonUnderLimit(filename, output) {
   );
 }
 
-async function buildPeriod(period, candidates, activePositions, nowMs) {
+async function buildPeriod(period, candidates, activePositions, nowMs, consensusCandidates) {
   const ranked = rankCandidates(candidates);
   const leaders = ranked.slice(0, LEADER_COUNT);
   console.log(`Loading resolved records for ${leaders.length} ${period.key} leaders...`);
