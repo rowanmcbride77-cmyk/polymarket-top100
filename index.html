@@ -575,6 +575,10 @@ function openProfile(wallet) {
   const volume = num(trader.volume ?? trader.vol);
   const positions = activePositions(trader);
   const record = recordOf(trader);
+  const wallet = walletOf(trader);
+  const recentTrades = Array.isArray(data?.traderActiveTrades?.[wallet])
+    ? data.traderActiveTrades[wallet]
+    : [];
 
   $("profileContent").innerHTML = `
     <div class="profile-top">${avatar(trader)}<div><h2>${esc(nameOf(trader))}</h2><div class="subtitle">Trader profile</div></div></div>
@@ -589,9 +593,18 @@ function openProfile(wallet) {
         <div class="profile-trade">
           <strong>${esc(position.title || position.market || position.question || "Untitled market")}</strong><br>
           <span class="side-tag ${String(position.outcome || position.side).toLowerCase() === "no" ? "no" : ""}">${esc(position.outcome || position.side || "Position")}</span>
-          &nbsp; Entry: ${cash(position.initialValue ?? position.amount ?? position.currentValue)}
-          <br><small class="subtitle">Activity: ${esc(relative(position.lastEventAt ?? position.timestamp ?? position.updatedAt))}</small>
+          &nbsp; Current value: ${cash(position.currentValue ?? position.current_value)}
+          <br><small class="subtitle">Last activity: ${esc(relative(position.lastEventAt ?? position.timestamp ?? position.updatedAt))}</small>
         </div>`).join("") : `<div class="empty">No active positions supplied for this trader.</div>`}
+    </div>
+    <div class="profile-trades"><h3>Recent buys</h3>
+      ${recentTrades.length ? recentTrades.map(trade => `
+        <div class="profile-trade">
+          <strong>${esc(trade.title || trade.market || trade.question || "Untitled market")}</strong><br>
+          <span class="side-tag ${String(trade.outcome || "").toLowerCase() === "no" ? "no" : ""}">${esc(trade.outcome || "Unknown side")}</span>
+          &nbsp; Buy amount: ${cash(trade.amount)}
+          <br><small class="subtitle">Bought: ${esc(dateText(trade.buyTime ?? trade.timestamp ?? trade.createdAt))}</small>
+        </div>`).join("") : `<div class="empty">No recent buy history supplied for this trader.</div>`}
     </div>`;
 
   $("profileDialog").showModal();
