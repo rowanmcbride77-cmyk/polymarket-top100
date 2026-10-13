@@ -504,6 +504,22 @@ async function getMarketConsensus(market, knownNames) {
     .map(({ walletsSeen, ...group }) => group);
 }
 
+function marketEndDate(market) {
+  return market.endDate ?? market.end_date ?? market.endDateIso ?? market.endDateISO ?? market.end_date_iso ?? null;
+}
+
+function isSportsMarket(market) {
+  const tags = Array.isArray(market.tags) ? market.tags.map(tag => typeof tag === "string" ? tag : (tag.label || tag.slug || tag.name || "")) : [];
+  const metadata = [market.category, market.sportsMarketType, market.sports_market_type, market.eventTitle, market.event_title, market.slug, market.question, market.title, market.description, ...tags].filter(Boolean).join(" ").toLowerCase();
+  const keywords = ["sport", "nfl", "nba", "wnba", "mlb", "nhl", "ncaa", "ncaaf", "ncaab", "college football", "college basketball", "football", "basketball", "baseball", "hockey", "soccer", "mls", "premier league", "champions league", "world cup", "tennis", "atp", "wta", "golf", "pga", "lpga", "formula 1", "f1", "nascar", "indycar", "motogp", "ufc", "mma", "boxing", "cricket", "rugby", "volleyball", "lacrosse", "esports", "e-sports", "super bowl", "stanley cup", "world series", "march madness"];
+  return keywords.some(keyword => metadata.includes(keyword));
+}
+
+function isResolvingSoon(market, nowMs) {
+  const endMs = timestampMs(marketEndDate(market));
+  return endMs !== null && endMs > nowMs && endMs <= nowMs + CONSENSUS_WINDOW_HOURS * 60 * 60 * 1000;
+}
+
 async function getBroadConsensusMarkets(knownTraders, nowMs) {
   const params = new URLSearchParams({
     active: "true",
