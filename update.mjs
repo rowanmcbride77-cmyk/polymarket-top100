@@ -505,48 +505,96 @@ async function getMarketConsensus(market, knownNames) {
 }
 
 function marketEndDate(market) {
-  return market.endDate ?? market.end_date ?? market.endDateIso ?? market.endDateISO ?? market.end_date_iso ?? null;
+  return market.gameStartTime ?? market.game_start_time ?? market.eventStartTime ??
+    market.event_start_time ?? market.endDate ?? market.end_date ??
+    market.endDateIso ?? market.endDateISO ?? market.end_date_iso ?? null;
 }
 
 function isSportsMarket(market) {
-  const tags = Array.isArray(market.tags) ? market.tags.map(tag => typeof tag === "string" ? tag : (tag.label || tag.slug || tag.name || "")) : [];
-  const metadata = [market.category, market.sportsMarketType, market.sports_market_type, market.eventTitle, market.event_title, market.slug, market.question, market.title, market.description, ...tags].filter(Boolean).join(" ").toLowerCase();
-  const keywords = ["sport", "nfl", "nba", "wnba", "mlb", "nhl", "ncaa", "ncaaf", "ncaab", "college football", "college basketball", "football", "basketball", "baseball", "hockey", "soccer", "mls", "premier league", "champions league", "world cup", "tennis", "atp", "wta", "golf", "pga", "lpga", "formula 1", "f1", "nascar", "indycar", "motogp", "ufc", "mma", "boxing", "cricket", "rugby", "volleyball", "lacrosse", "esports", "e-sports", "super bowl", "stanley cup", "world series", "march madness"];
+  const tags = Array.isArray(market.tags)
+    ? market.tags.map(tag => typeof tag === "string" ? tag : (tag.label || tag.slug || tag.name || ""))
+    : [];
+  const events = Array.isArray(market.events) ? market.events : [];
+  const eventText = events.flatMap(event => [
+    event.title, event.slug, event.category, event.sport, event.seriesSlug,
+    ...(Array.isArray(event.tags) ? event.tags.map(tag => typeof tag === "string" ? tag : (tag.label || tag.slug || tag.name || "")) : [])
+  ]);
+  // Gamma sports markets commonly expose gameId/gameStartTime/sportsMarketType.
+  if (market.gameId || market.game_id || market.gameStartTime || market.game_start_time ||
+      market.sportsMarketType || market.sports_market_type) return true;
+
+  const metadata = [
+    market.category, market.sport, market.sports, market.sportsMarketType,
+    market.sports_market_type, market.eventTitle, market.event_title,
+    market.slug, market.question, market.title, market.description,
+    market.groupItemTitle, ...tags, ...eventText
+  ].filter(Boolean).join(" ").toLowerCase();
+  const keywords = [
+    "sport", "nfl", "nba", "wnba", "mlb", "nhl", "ncaa", "ncaaf", "ncaab",
+    "college football", "college basketball", "football", "basketball", "baseball",
+    "hockey", "soccer", "mls", "premier league", "champions league", "world cup",
+    "tennis", "atp", "wta", "golf", "pga", "lpga", "formula 1", "f1", "nascar",
+    "indycar", "motogp", "ufc", "mma", "boxing", "cricket", "rugby", "volleyball",
+    "lacrosse", "esports", "e-sports", "super bowl", "stanley cup", "world series",
+    "march madness", "liga", "bundesliga", "serie a", "la liga", "ligue 1"
+  ];
   return keywords.some(keyword => metadata.includes(keyword));
 }
 
 function isResolvingSoon(market, nowMs) {
   const rawEndDate = marketEndDate(market);
   let endMs = timestampMs(rawEndDate);
-  // Gamma sometimes provides date-only end dates. Treat those as the end
-  // of that UTC calendar day rather than midnight at its start.
-  if (typeof rawEndDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(rawEndDate)) {
+  if (typeof rawEndDate === "string" && /^\\d{4}-\\d{2}-\\d{2}$/.test(rawEndDate)) {
     endMs = Date.parse(rawEndDate + "T23:59:59.999Z");
   }
-  return endMs !== null && endMs > nowMs && endMs <= nowMs + CONSENSUS_WINDOW_HOURS * 60 * 60 * 1000;
+  // This is a practical upcoming-game window, not a claim that Gamma endDate
+  // is the exact resolution deadline; on sports markets it often represents kickoff.
+  return endMs !== null && endMs > nowMs &&
+    endMs <= nowMs + CONSENSUS_WINDOW_HOURS * 60 * 60 * 1000;
 }
 
 async function getBroadConsensusMarkets(knownTraders, nowMs) {
-  const params = new URLSearchParams({
-    active: "true",
-    closed: "false",
-    limit: String(CONSENSUS_MARKET_SCAN_LIMIT),
-    order: "volumeNum",
-    ascending: "false"
-  });
-  const rawMarkets = asArray(await getJson(GAMMA_API + "/markets?" + params));
-  const markets = rawMarkets
-    .filter(market =>
-      (market.active === undefined || market.active === true) &&
-      market.closed !== true &&
-      Boolean(market.conditionId ?? market.condition_id) &&
-      isSportsMarket(market) &&
-      isResolvingSoon(market, nowMs)
-    )
+  // Do not scan only the top 1,000 markets by overall volume: that can exclude
+  // sports events before they are ever evaluated. Walk the active market pages.
+  const pageSize = 500;
+  const maxPages = 20;
+  const marketsById = new Map();
+  for (let page = 0; page < maxPages; page++) {
+    const params = new URLSearchParams({
+      active: "true",
+      closed: "false",
+      limit: String(pageSize),
+      offset: String(page * pageSize),
+      order: "volume",
+      ascending: "false"
+    });
+    const rows = asArray(await getJson(GAMMA_API + "/markets?" + params));
+    console.log("Consensus market discovery page " + (page + 1) + ": " + rows.length + " markets");
+    for (const market of rows) {
+      const id = market.conditionId ?? market.condition_id ?? market.id;
+      if (id) marketsById.set(String(id), market);
+    }
+    if (rows.length < pageSize) break;
+  }
+
+  const rawMarkets = [...marketsById.values()];
+  const sportsMarkets = rawMarkets.filter(market =>
+    (market.active === undefined || market.active === true) &&
+    market.closed !== true &&
+    market.acceptingOrders !== false &&
+    Boolean(market.conditionId ?? market.condition_id) &&
+    isSportsMarket(market)
+  );
+  const markets = sportsMarkets
+    .filter(market => isResolvingSoon(market, nowMs))
     .slice(0, CONSENSUS_MARKET_SCAN_LIMIT);
 
+  console.log("Consensus discovery: " + rawMarkets.length + " active markets scanned; " +
+    sportsMarkets.length + " recognized sports markets; " + markets.length +
+    " sports markets in the upcoming " + CONSENSUS_WINDOW_HOURS + "h window.");
+
   const knownNames = new Map(knownTraders.map(trader => [trader.wallet, trader]));
-  console.log("Scanning current holders across " + markets.length + " high-volume active markets...");
+  console.log("Scanning current holders across " + markets.length + " sports markets...");
   const marketGroups = await mapLimit(
     markets,
     CONCURRENCY,
