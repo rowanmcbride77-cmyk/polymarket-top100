@@ -643,24 +643,31 @@ async function getBroadConsensusMarkets(knownTraders, nowMs) {
 
 function buildConsensus(holderGroups, candidates, records = {}) {
   const candidateMap = new Map(candidates.map(trader => [trader.wallet, trader]));
-  return holderGroups.map(group => ({
-    ...group,
-    traders: group.traders.map(holder => {
+  return holderGroups.map(group => {
+    const traders = group.traders.flatMap(holder => {
       const candidate = candidateMap.get(holder.wallet);
-      const record = records[holder.wallet] || {};
-      return {
+      if (!candidate) return [];
+      const record = records[holder.wallet] || candidate;
+      return [{
         ...holder,
-        name: holder.name || candidate?.name || "Trader",
-        rank: candidate?.rank ?? holder.rank ?? null,
-        pnl: candidate?.pnl ?? holder.pnl ?? null,
-        volume: candidate?.volume ?? holder.volume ?? null,
+        name: holder.name || candidate.name || "Trader",
+        rank: candidate.sportsRank ?? null,
+        overallRank: candidate.rank ?? null,
+        pnl: candidate.pnl ?? holder.pnl ?? null,
+        volume: candidate.volume ?? holder.volume ?? null,
         wins: record.wins ?? null,
         losses: record.losses ?? null,
         winRate: record.winRate ?? null,
-        resolvedMarkets: record.resolvedMarkets ?? null
-      };
-    })
-  })).filter(group => group.sameSide >= 2)
+        resolvedMarkets: record.resolvedMarkets ?? null,
+        sportsWins: record.sportsWins ?? null,
+        sportsLosses: record.sportsLosses ?? null,
+        sportsWinRate: record.sportsWinRate ?? null,
+        sportsResolvedMarkets: record.sportsResolvedMarkets ?? null
+      }];
+    });
+    const totalValue = traders.reduce((sum, trader) => sum + (num(trader.amount) ?? 0), 0);
+    return { ...group, traders, sameSide: traders.length, totalValue };
+  }).filter(group => group.sameSide >= 2)
     .sort((a, b) => b.sameSide - a.sameSide || b.totalValue - a.totalValue || (b.newestBuy || 0) - (a.newestBuy || 0))
     .slice(0, CONSENSUS_LIMIT);
 }
