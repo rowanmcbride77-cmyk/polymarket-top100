@@ -177,7 +177,7 @@ dialog::backdrop{background:#000b}
           <div class="heading-left"><span class="heading-icon">👥</span><h2>Top Consensus Markets</h2></div>
           <span class="pill" id="consensusPeriod">All categories · 24h</span>
         </div>
-        <div class="source-note" style="margin:0 0 12px">All categories, focused on markets expected to resolve within 24 hours. Consensus requires at least two qualified traders taking the same exact outcome, with entries in the last 60 minutes and at least 20 resolved positions. Long-term markets are excluded by default; actual resolution timing depends on the market data provided by Polymarket.</div>
+        <div class="source-note" style="margin:0 0 12px">Consensus is built by matching the same open positions shown in trader profiles. It requires at least two qualified traders holding the same exact outcome and at least 20 resolved positions in the selected period. The default window is 24 hours; actual resolution timing depends on Polymarket market metadata.</div>
         <div class="filters">
           <label>Min. traders
             <select id="minTraders" onchange="renderConsensus()">
@@ -190,8 +190,8 @@ dialog::backdrop{background:#000b}
           </label>
           <label>Resolves within
             <select id="recency" onchange="renderConsensus()">
-              <option value="24">24 hours</option>
-              <option value="72" selected>72 hours</option>
+              <option value="24" selected>24 hours</option>
+              <option value="72">72 hours</option>
             </select>
           </label>
         </div>
@@ -605,7 +605,7 @@ function selectPeriod(nextPeriod) {
   $("weekTab").classList.toggle("active", period === "week");
   $("monthTab").classList.toggle("active", period === "month");
   $("leaderPeriod").textContent = period === "week" ? "Week" : "Month";
-  $("consensusPeriod").textContent = "Sports · 72h";
+  $("consensusPeriod").textContent = "All categories · 24h";
   loadData();
 }
 
@@ -632,16 +632,17 @@ function openProfile(wallet) {
       <div class="profile-stat"><small>${period === "week" ? "Weekly" : "Monthly"} P&amp;L</small><strong class="${pnl !== null && pnl < 0 ? "negative" : "positive"}">${cash(pnl)}</strong></div>
       <div class="profile-stat"><small>Volume</small><strong>${cash(volume)}</strong></div>
     </div>
-    <div class="profile-trades"><h3>Closed markets / positions</h3><div id="closedPositionsContent" class="empty">Loading full closed-position history…</div></div>
     <div class="profile-trades"><h3>Active positions</h3>
       ${positions.length ? positions.map(position => `
         <div class="profile-trade">
           <strong>${esc(position.title || position.market || position.question || "Untitled market")}</strong><br>
           <span class="side-tag ${String(position.outcome || position.side).toLowerCase() === "no" ? "no" : ""}">${esc(position.outcome || position.side || "Position")}</span>
+          &nbsp; Invested: ${cash(position.initialValue ?? position.initial_value)}
           &nbsp; Current value: ${cash(position.currentValue ?? position.current_value)}
           <br><small class="subtitle">Last activity: ${esc(relative(position.lastEventAt ?? position.timestamp ?? position.updatedAt))}</small>
         </div>`).join("") : `<div class="empty">No active positions supplied for this trader.</div>`}
     </div>
+    <div class="profile-trades"><h3>Closed markets / positions</h3><div id="closedPositionsContent" class="empty">Loading full closed-position history…</div></div>
     <div class="profile-trades"><h3>Recent buys</h3>
       ${recentTrades.length ? recentTrades.map(trade => `
         <div class="profile-trade">
@@ -671,11 +672,12 @@ function renderClosedPositionHistory(wallet) {
   let output = '<div class="source-note" style="margin:0 0 10px">Loaded ' + rows.length.toLocaleString() + ' closed positions. Positive/negative realized P&amp;L is used for the record; it is not necessarily a market-settlement outcome.</div><div class="member-list">';
   output += visible.map(position => {
     const pnl = num(position.realized_pnl ?? position.realizedPnl ?? position.cashPnl ?? position.cash_pnl);
+    const invested = num(position.initialValue ?? position.initial_value ?? position.initial_value_usd ?? position.costBasis ?? position.cost_basis);
     const outcome = position.outcome || "Position";
     const time = position.last_event_at ?? position.lastEventAt;
     const condition = position.condition_id ?? position.conditionId ?? "";
     const sideClass = String(outcome).toLowerCase() === "no" ? "no" : "";
-    return '<div class="member"><div><strong>' + esc(position.title || position.name || "Untitled market") + '</strong><small><span class="side-tag ' + sideClass + '">' + esc(outcome) + '</span> · ' + esc(condition ? condition.slice(0, 12) + "…" : "Market ID unavailable") + '</small></div><div class="' + (pnl !== null && pnl < 0 ? "negative" : "positive") + '">' + (pnl === null ? "P&amp;L N/A" : cash(pnl)) + '<small>Realized P&amp;L</small></div><div class="member-time"><strong>' + esc(relative(time)) + '</strong><small>' + esc(dateText(time)) + '</small></div></div>';
+    return '<div class="member"><div><strong>' + esc(position.title || position.name || "Untitled market") + '</strong><small><span class="side-tag ' + sideClass + '">' + esc(outcome) + '</span> · ' + esc(condition ? condition.slice(0, 12) + "…" : "Market ID unavailable") + '</small></div><div>' + (invested === null ? "N/A" : cash(invested)) + '<small>Amount invested</small></div><div class="' + (pnl !== null && pnl < 0 ? "negative" : "positive") + '">' + (pnl === null ? "P&amp;L N/A" : cash(pnl)) + '<small>Realized P&amp;L</small></div><div class="member-time"><strong>' + esc(relative(time)) + '</strong><small>' + esc(dateText(time)) + '</small></div></div>';
   }).join("");
   output += "</div>";
   if (rows.length > 100) output += '<button class="link-button" data-wallet="' + esc(wallet) + '" onclick="toggleClosedMarkets(this.dataset.wallet)">' + (showAll ? "Show first 100 ↑" : "View all " + rows.length.toLocaleString() + " closed positions →") + "</button>";
