@@ -256,13 +256,13 @@ async function mapLimit(items, limit, callback) {
   return results;
 }
 
-async function getCandidates(period) {
+async function getCandidates(period, category = "OVERALL") {
   const candidates = [];
   const seen = new Set();
 
   for (let offset = 0; offset < CANDIDATE_COUNT; offset += PAGE_SIZE) {
     const params = new URLSearchParams({
-      category: "OVERALL",
+      category,
       timePeriod: period.api,
       orderBy: "PNL",
       limit: String(PAGE_SIZE),
@@ -465,9 +465,8 @@ async function getMarketConsensus(market, knownNames) {
   for (const position of rows) {
     if (position.redeemable === true || position.mergeable === true) continue;
 
-    const wallet = String(position.proxy_wallet ?? position.proxyWallet ?? "").toLowerCase();
-    if (!knownNames.has(wallet)) continue;
-    const side = String(position.outcome ?? "").trim();
+    const wallet = String(position.proxy_wallet ?? position.proxyWallet ?? position.user ?? "").toLowerCase();
+    const side = String(position.outcome ?? position.outcome_name ?? "").trim();
     const value = num(position.current_value ?? position.currentValue);
     if (!wallet || !side || value === null || value < MIN_CONSENSUS_POSITION_VALUE) continue;
 
@@ -504,7 +503,7 @@ async function getMarketConsensus(market, knownNames) {
     if (group.traders.length < TRADERS_PER_MARKET) {
       group.traders.push({
         wallet,
-        name: knownNames.get(wallet)?.name || null,
+        name: knownNames.get(wallet)?.name || position.name || position.userName || null,
         rank: knownNames.get(wallet)?.rank ?? null,
         pnl: knownNames.get(wallet)?.pnl ?? null,
         volume: knownNames.get(wallet)?.volume ?? null,
@@ -822,7 +821,8 @@ async function main() {
   );
 
   const fullRecordCache = new Map();
-  const consensusGroups = await getBroadConsensusMarkets([...unique.values()], nowMs);
+  const consensusCandidatePool = [...unique.values()];
+  const consensusGroups = await getBroadConsensusMarkets(consensusCandidatePool, nowMs);
   console.log("Broad consensus groups: " + consensusGroups.length);
   await buildPeriod(PERIODS[0], weekCandidates, activePositions, nowMs, [...unique.values()], fullRecordCache, consensusGroups);
   await buildPeriod(PERIODS[1], monthCandidates, activePositions, nowMs, [...unique.values()], fullRecordCache, consensusGroups);
