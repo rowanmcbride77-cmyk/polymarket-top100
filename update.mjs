@@ -135,7 +135,7 @@ async function getResolvedRecord(wallet, period, nowMs) {
   let wins = 0;
   let losses = 0;
 
-  for (let offset = 0; offset < 100000; offset += 50) {
+  for (let offset = 0; offset < 1000; offset += 50) {
     const params = new URLSearchParams({
       user: wallet,
       limit: "50",
