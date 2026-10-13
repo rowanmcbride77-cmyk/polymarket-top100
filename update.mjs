@@ -664,7 +664,7 @@ function buildConsensus(holderGroups, candidates, records = {}) {
     .sort((a, b) => b.sameSide - a.sameSide || b.totalValue - a.totalValue || (b.newestBuy || 0) - (a.newestBuy || 0))
     .slice(0, CONSENSUS_LIMIT);
 }
-function makeOutput(period, ranked, activePositions, tradeRows, nowMs, consensusCandidates, records, leaderRecords, consensusGroups) {
+function makeOutput(period, ranked, sportsRanked, activePositions, tradeRows, nowMs, consensusCandidates, records, leaderRecords, consensusGroups) {
   const leaders = ranked.slice(0, LEADER_COUNT).map(trader => ({
     ...trader,
     ...(leaderRecords[trader.wallet] || {})
