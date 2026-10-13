@@ -122,40 +122,11 @@ function normalizeLeader(row, index) {
 }
 
 async function getResolvedRecord(wallet, period, nowMs) {
-  const days = period.key === "week" ? 7 : 30;
-  const cutoff = nowMs - days * 86400000;
-  let wins = 0, losses = 0;
-  const seen = new Set();
-  for (let offset = 0; offset < 1000; offset += 50) {
-    const params = new URLSearchParams({
-      user: wallet, limit: "50", offset: String(offset),
-      sortBy: "TIMESTAMP", sortDirection: "DESC"
-    });
-    let rows;
-    try {
-      rows = asArray(await getJson(`${API}/closed-positions?${params}`, 3));
-    } catch (error) {
-      console.error(`Record lookup failed for ${wallet}: ${error.message}`);
-      return null;
-    }
-    if (!rows.length) break;
-    for (const row of rows) {
-      const when = timestampMs(row.timestamp ?? row.closedAt ?? row.updatedAt);
-      if (when === null || when < cutoff || when > nowMs) continue;
-      const condition = String(row.conditionId ?? row.condition_id ?? "");
-      const outcome = String(row.outcome ?? "");
-      const key = condition + "|" + outcome;
-      if (!condition || seen.has(key)) continue;
-      const price = num(row.curPrice ?? row.cur_price ?? row.currentPrice ?? row.price);
-      if (price === null) continue;
-      if (price >= 0.99) { wins++; seen.add(key); }
-      else if (price <= 0.01) { losses++; seen.add(key); }
-    }
-    const oldest = timestampMs(rows[rows.length - 1].timestamp ?? rows[rows.length - 1].closedAt);
-    if (rows.length < 50 || (oldest !== null && oldest < cutoff)) break;
-  }
-  return { wins, losses, winRate: wins + losses ? wins / (wins + losses) * 100 : null,
-    resolvedMarkets: wins + losses, recordVerified: true };
+  // The Data API closed-positions timestamp is not a verified settlement
+  // timestamp. Do not infer a weekly/monthly win-loss record from it.
+  // Return unavailable until records can be built from confirmed market
+  // resolutions and settlement outcomes.
+  return null;
 }
 
 async function attachRecords(leaders, period, nowMs) {
@@ -456,7 +427,7 @@ function makeOutput(period, candidates, activePositions, tradeRows, nowMs, conse
       `Fully resolved positions in the last ${period.key === "week" ? "7" : "30"} days; exits before settlement are excluded`,
     candidateCount: candidates.length,
     minResolvedMarketsForRecordRanking: 10,
-    recordRankingEnabled: true,
+    recordRankingEnabled: false,
     recordWarning:
       "Only positions settled near $1 or $0 count as wins or losses; early exits are excluded.",
     leaders,
