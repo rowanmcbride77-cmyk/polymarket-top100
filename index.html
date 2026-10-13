@@ -602,7 +602,7 @@ function openProfile(wallet) {
     <div class="profile-top">${avatar(trader)}<div><h2>${esc(nameOf(trader))}</h2><div class="subtitle">Trader profile</div></div></div>
     <div class="profile-grid">
       <div class="profile-stat"><small>Leaderboard rank</small><strong>#${esc(trader.rank ?? trader.displayRank ?? "—")}</strong></div>
-      <div class="profile-stat"><small>Period win-loss record</small><strong>${record ? recordText(trader) : "N/A"}</strong></div>
+      <div class="profile-stat"><small>Closed-position record (realized P&amp;L)</small><strong>${record ? recordText(trader) : "N/A"}</strong></div>
       <div class="profile-stat"><small>Win rate</small><strong>${num(trader.winRate) === null ? "N/A" : num(trader.winRate).toFixed(1) + "%"}</strong></div>
       <div class="profile-stat"><small>${period === "week" ? "Weekly" : "Monthly"} P&amp;L</small><strong class="${pnl !== null && pnl < 0 ? "negative" : "positive"}">${cash(pnl)}</strong></div>
       <div class="profile-stat"><small>Volume</small><strong>${cash(volume)}</strong></div>
@@ -653,7 +653,7 @@ function renderClosedPositionHistory(wallet) {
     return '<div class="member"><div><strong>' + esc(position.title || position.name || "Untitled market") + '</strong><small><span class="side-tag ' + sideClass + '">' + esc(outcome) + '</span> · ' + esc(condition ? condition.slice(0, 12) + "…" : "Market ID unavailable") + '</small></div><div class="' + (pnl !== null && pnl < 0 ? "negative" : "positive") + '">' + (pnl === null ? "P&amp;L N/A" : cash(pnl)) + '<small>Realized P&amp;L</small></div><div class="member-time"><strong>' + esc(relative(time)) + '</strong><small>' + esc(dateText(time)) + '</small></div></div>';
   }).join("");
   output += "</div>";
-  if (rows.length > 100) output += '<button class="link-button" onclick="toggleClosedMarkets(\'' + esc(wallet) + '\')">' + (showAll ? "Show first 100 ↑" : "View all " + rows.length.toLocaleString() + " closed positions →") + "</button>";
+  if (rows.length > 100) output += '<button class="link-button" data-wallet="' + esc(wallet) + '" onclick="toggleClosedMarkets(this.dataset.wallet)">' + (showAll ? "Show first 100 ↑" : "View all " + rows.length.toLocaleString() + " closed positions →") + "</button>";
   container.innerHTML = output;
 }
 
