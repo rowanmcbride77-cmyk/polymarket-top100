@@ -362,7 +362,7 @@ function compactPosition(position) {
     outcome: position.outcome ?? position.outcome_name ?? null,
     size: num(position.size ?? position.current_size ?? position.currentSize),
     currentValue: num(position.currentValue ?? position.current_value),
-    initialValue: num(position.initialValue ?? position.initial_value ?? position.initial_value_usd),
+    initialValue: num(position.entry_cost_usdc ?? position.total_cost_usdc ?? position.initialValue ?? position.initial_value ?? position.initial_value_usd),
     realizedPnl: num(position.realizedPnl ?? position.realized_pnl ?? position.cashPnl ?? position.cash_pnl),
     lastEventAt: timestampMs(
       position.lastEventAt ?? position.last_event_at
@@ -660,7 +660,7 @@ async function getBroadConsensusMarkets(knownTraders, nowMs, activePositions) {
       if (group.walletsSeen.has(wallet)) continue;
       group.walletsSeen.add(wallet);
       const currentValue = num(position.currentValue ?? position.current_value) ?? 0;
-      const invested = num(position.initialValue ?? position.initial_value) ?? currentValue;
+      const invested = num(position.entry_cost_usdc ?? position.total_cost_usdc ?? position.initialValue ?? position.initial_value) ?? currentValue;
       const lastEventAt = timestampMs(position.lastEventAt ?? position.last_event_at ?? position.firstEntryAt ?? position.first_entry_at);
       group.sameSide++;
       group.totalValue += currentValue;
