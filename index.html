@@ -305,6 +305,10 @@ function profileButton(trader, label = nameOf(trader)) {
 
 function timestamp(value) {
   let n = num(value);
+  if (n === null && typeof value === "string") {
+    const parsed = Date.parse(value);
+    if (Number.isFinite(parsed)) n = parsed / 1000;
+  }
   if (n === null || n <= 0) return null;
   if (n > 1e12) n /= 1000;
   return n;
