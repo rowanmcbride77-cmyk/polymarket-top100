@@ -56,40 +56,18 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          git add week.json month.json
+          # Preserve this run's generated files, sync to latest main, then
+          # apply only the generated data files on top of the current branch.
+          cp week.json /tmp/scanner-week.json
+          cp month.json /tmp/scanner-month.json
+          git fetch origin main
+          git reset --hard origin/main
+          cp /tmp/scanner-week.json week.json
+          cp /tmp/scanner-month.json month.json
 
+          git add week.json month.json
           if ! git diff --cached --quiet; then
             git commit -m "Update Polymarket scanner data"
-
-            # Another workflow or website edit may have pushed to main
-            # while this run was generating data. Rebase this data commit
-            # onto the latest main; if the JSON files conflict, keep the
-            # freshly generated scanner output from this run.
-            git fetch origin main
-            if ! git rebase origin/main; then
-              # During rebase, --theirs is the generated data commit being
-              # replayed. Resolve only conflicting JSON files this way.
-              conflicts="$(git diff --name-only --diff-filter=U)"
-              if [ -n "$conflicts" ] && ! printf '%s\\n' "$conflicts" | grep -Ev '^(week|month)\\.json
-
-            git push origin HEAD:main
-          else
-            echo "No data changes to commit."
-          fi
- | grep -q .; then
-                printf '%s\\n' "$conflicts" | while IFS= read -r file; do
-                  [ -n "$file" ] || continue
-                  git checkout --theirs -- "$file"
-                  git add "$file"
-                done
-                GIT_EDITOR=true git rebase --continue
-              else
-                git rebase --abort
-                echo "Unexpected conflict outside generated JSON; aborting safely."
-                exit 1
-              fi
-            fi
-
             git push origin HEAD:main
           else
             echo "No data changes to commit."
