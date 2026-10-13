@@ -351,7 +351,7 @@ async function getRecentTrades(wallet) {
   }
 }
 
-function buildConsensus(candidates, activePositions) {
+function buildConsensus(candidates, activePositions, records = {}) {
   const markets = new Map();
 
   for (const trader of candidates) {
@@ -393,10 +393,15 @@ function buildConsensus(candidates, activePositions) {
 
       if (market.traders.length < TRADERS_PER_MARKET) {
         market.traders.push({
+          wallet: trader.wallet,
           name: trader.name,
           rank: trader.rank,
           pnl: trader.pnl,
           volume: trader.volume,
+          wins: records[trader.wallet]?.wins ?? null,
+          losses: records[trader.wallet]?.losses ?? null,
+          winRate: records[trader.wallet]?.winRate ?? null,
+          resolvedMarkets: records[trader.wallet]?.resolvedMarkets ?? null,
           side,
           amount,
           buyTime
@@ -457,7 +462,7 @@ function makeOutput(period, candidates, activePositions, tradeRows, nowMs, conse
     leaders,
     traderActiveTrades: Object.fromEntries(tradeRows.filter(Boolean)),
     traderActivePositions: leaderPositions,
-    consensus: buildConsensus(consensusCandidates, activePositions)
+    consensus: buildConsensus(consensusCandidates, activePositions, records)
   };
 }
 
