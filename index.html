@@ -170,9 +170,9 @@ dialog::backdrop{background:#000b}
       <section class="panel">
         <div class="panel-heading">
           <div class="heading-left"><span class="heading-icon">👥</span><h2>Top Consensus Markets</h2></div>
-          <span class="pill" id="consensusPeriod">Broad scan</span>
+          <span class="pill" id="consensusPeriod">Sports · 72h</span>
         </div>
-        <div class="source-note" style="margin:0 0 12px">Broad scan of up to 250 high-volume active markets, counting distinct holders with $5+ current positions. Member lists show the largest holders found on each side; records are shown when available.</div>
+        <div class="source-note" style="margin:0 0 12px">Sports markets only, limited to markets with an expected end/resolution within the next 72 hours. Counts are distinct holders with $5+ current positions; YES and NO consensus are kept separate. Member lists show the largest holders found on each side.</div>
         <div class="filters">
           <label>Min. traders
             <select id="minTraders" onchange="renderConsensus()">
@@ -183,17 +183,16 @@ dialog::backdrop{background:#000b}
               <option value="20">20+</option>
             </select>
           </label>
-          <label>Recent activity
+          <label>Resolves within
             <select id="recency" onchange="renderConsensus()">
-              <option value="0">Any time</option>
-              <option value="24" selected>24 hours</option>
-              <option value="72">72 hours</option>
+              <option value="24">24 hours</option>
+              <option value="72" selected>72 hours</option>
             </select>
           </label>
         </div>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>#</th><th>Market</th><th>Side</th><th>Traders</th><th>Combined Value</th><th>Activity</th></tr></thead>
+            <thead><tr><th>#</th><th>Market</th><th>Side</th><th>Traders</th><th>Combined Value</th><th>Resolves</th></tr></thead>
             <tbody id="consensusBody"><tr><td colspan="6" class="loading">Loading consensus…</td></tr></tbody>
           </table>
         </div>
@@ -402,6 +401,10 @@ function marketTime(market) {
     market?.timestamp ?? market?.updatedAt ?? null;
 }
 
+function marketEndTime(market) {
+  return market?.endDate ?? market?.end_date ?? market?.endDateIso ?? market?.endDateISO ?? market?.end_date_iso ?? null;
+}
+
 function marketKey(market, index) {
   return String(market?.conditionId || market?.marketId || market?.slug ||
     `${marketTitle(market)}-${marketSide(market)}-${index}`);
@@ -449,15 +452,15 @@ function renderLeaders() {
 
 function renderConsensus() {
   const minCount = Number($("minTraders").value || 2);
-  const hours = Number($("recency").value || 0);
-  const cutoff = hours ? Date.now() / 1000 - hours * 3600 : 0;
+  const hours = Number($("recency").value || 72);
+  const now = Date.now() / 1000;
+  const cutoff = now + hours * 3600;
 
   const filtered = consensus().map((market, index) => ({...market, _index:index}))
     .filter(market => traderCount(market) >= minCount)
     .filter(market => {
-      if (!cutoff) return true;
-      const time = timestamp(marketTime(market));
-      return time !== null && time >= cutoff;
+      const endTime = timestamp(marketEndTime(market));
+      return endTime !== null && endTime > now && endTime <= cutoff;
     })
     .sort((a, b) => traderCount(b) - traderCount(a));
 
@@ -480,7 +483,7 @@ function renderConsensus() {
       <td><span class="${sideClass}">${esc(side)}</span></td>
       <td><strong>${count}</strong></td>
       <td class="money">${cash(amount)}</td>
-      <td title="${esc(dateText(time))}">${esc(relative(time))}</td>
+      <td title="${esc(dateText(marketEndTime(market)))}">${esc(relative(marketEndTime(market)))}</td>
     </tr>`;
 
     const detail = expanded ? `<tr class="expand-row"><td colspan="6">
@@ -580,7 +583,7 @@ function selectPeriod(nextPeriod) {
   $("weekTab").classList.toggle("active", period === "week");
   $("monthTab").classList.toggle("active", period === "month");
   $("leaderPeriod").textContent = period === "week" ? "Week" : "Month";
-  $("consensusPeriod").textContent = period === "week" ? "Week" : "Month";
+  $("consensusPeriod").textContent = "Sports · 72h";
   loadData();
 }
 
