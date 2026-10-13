@@ -600,8 +600,8 @@ async function main() {
     nowMs
   );
 
-  await buildPeriod(PERIODS[0], weekCandidates, activePositions, nowMs, rankCandidates(weekCandidates));
-  await buildPeriod(PERIODS[1], monthCandidates, activePositions, nowMs, rankCandidates(weekCandidates));
+  await buildPeriod(PERIODS[0], weekCandidates, activePositions, nowMs, weekCandidates);
+  await buildPeriod(PERIODS[1], monthCandidates, activePositions, nowMs, weekCandidates);
 
   console.log("Polymarket tracker update completed.");
 }
