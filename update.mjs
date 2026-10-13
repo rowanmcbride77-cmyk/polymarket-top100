@@ -594,9 +594,28 @@ function isResolvingSoon(market, nowMs) {
 }
 
 async function getBroadConsensusMarkets(knownTraders, nowMs, activePositions) {
-  // Use the exact same per-trader OPEN-position data that powers the profile
-  // dropdowns. This avoids a separate market-holder query silently disagreeing
-  // with the positions users can already see on the site.
+  // The profile payload is intentionally capped to ten positions per trader.
+  // That is too small for consensus discovery, so fetch the full first page
+  // (up to 100) independently for each candidate wallet.
+  const consensusPositions = await mapLimit(knownTraders, CONCURRENCY, async trader => {
+    const wallet = String(trader.wallet || "").toLowerCase();
+    if (!wallet) return [wallet, []];
+    try {
+      const params = new URLSearchParams({
+        user: wallet,
+        limit: "100",
+        status: "OPEN",
+        sort_by: "CURRENT_VALUE",
+        sort_direction: "DESC"
+      });
+      const response = await getJson(API + "/v2/positions?" + params);
+      return [wallet, asArray(response).map(compactPosition)];
+    } catch (error) {
+      console.warn("Consensus positions fetch failed for " + wallet + ": " + error.message);
+      return [wallet, Array.isArray(activePositions?.[wallet]) ? activePositions[wallet] : []];
+    }
+  });
+  const allPositionsByWallet = new Map(consensusPositions);
   const pageSize = 500;
   const maxPages = 20;
   const marketsById = new Map();
@@ -627,7 +646,7 @@ async function getBroadConsensusMarkets(knownTraders, nowMs, activePositions) {
   for (const trader of knownTraders) {
     const wallet = String(trader.wallet || "").toLowerCase();
     if (!wallet) continue;
-    const positions = Array.isArray(activePositions?.[wallet]) ? activePositions[wallet] : [];
+    const positions = allPositionsByWallet.get(wallet) || (Array.isArray(activePositions?.[wallet]) ? activePositions[wallet] : []);
     for (const position of positions) {
       openPositionsSeen++;
       const conditionId = String(position.conditionId ?? position.condition_id ?? "").toLowerCase();
@@ -714,7 +733,11 @@ function buildConsensus(holderGroups, candidates, records = {}) {
       const record = records[wallet] || records[candidate.wallet] || candidate;
       // A consensus member must have a usable resolved-position sample in the
       // same selected period; never label all-time history as recent activity.
-      if ((num(record.resolvedMarkets) ?? 0) < MIN_TRADER_RESOLVED_MARKETS) return [];
+      // The candidate leaderboard already applies its minimum-history rules.
+      // Requiring 20 positions resolved in just the last 7/30 days made valid
+      // high-history traders disappear from consensus almost universally.
+      const lifetimeResolved = num(candidate.resolvedMarkets ?? candidate.totalResolvedMarkets ?? candidate.closedMarkets);
+      if (lifetimeResolved !== null && lifetimeResolved < MIN_TRADER_RESOLVED_MARKETS) return [];
       return [{
         ...holder,
         wallet,
