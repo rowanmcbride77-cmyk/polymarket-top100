@@ -473,6 +473,11 @@ async function getMarketConsensus(market, knownNames) {
     const value = num(position.current_value ?? position.currentValue);
     if (!wallet || !side || value === null || value < MIN_CONSENSUS_POSITION_VALUE) continue;
 
+    // last_event_at reflects the most recent activity; first_entry_at can be
+    // months old even when a trader recently added to an open position.
+    const lastEventAt = timestampMs(position.last_event_at ?? position.lastEventAt ?? position.updated_at ?? position.updatedAt ?? position.first_entry_at ?? position.firstEntryAt);
+    if (lastEventAt === null || lastEventAt < Date.now() - CONSENSUS_ENTRY_WINDOW_MINUTES * 60 * 1000) continue;
+
     const key = side.toLowerCase();
     if (!grouped.has(key)) {
       grouped.set(key, {
@@ -496,9 +501,6 @@ async function getMarketConsensus(market, knownNames) {
     group.sameSide++;
     group.totalValue += value;
     group.totalEntry += value;
-
-    const lastEventAt = timestampMs(position.first_entry_at ?? position.firstEntryAt ?? position.last_event_at ?? position.lastEventAt);
-    if (lastEventAt === null || lastEventAt < Date.now() - CONSENSUS_ENTRY_WINDOW_MINUTES * 60 * 1000) continue;
     if (lastEventAt !== null) {
       group.newestBuy = group.newestBuy === null ? lastEventAt : Math.max(group.newestBuy, lastEventAt);
       group.oldestBuy = group.oldestBuy === null ? lastEventAt : Math.min(group.oldestBuy, lastEventAt);
@@ -518,8 +520,10 @@ async function getMarketConsensus(market, knownNames) {
     }
   }
 
-  return [...grouped.values()]
-    .filter(group => group.sameSide >= 2)
+  const qualifyingGroups = [...grouped.values()]
+    .filter(group => group.sameSide >= 2);
+  if (qualifyingGroups.length === 0) console.log("No same-side group had 2+ holders with position activity in the last " + CONSENSUS_ENTRY_WINDOW_MINUTES + " minutes for market " + conditionId);
+  return qualifyingGroups
     .map(({ walletsSeen, ...group }) => group);
 }
 
@@ -607,6 +611,7 @@ async function getBroadConsensusMarkets(knownTraders, nowMs) {
   const markets = sportsMarkets
     .filter(market => isResolvingSoon(market, nowMs))
     .slice(0, CONSENSUS_MARKET_SCAN_LIMIT);
+  console.log("Consensus diagnostics: " + JSON.stringify({ discovered: rawMarkets.length, activeWithCondition: sportsMarkets.length, resolvingWithin24h: markets.length, candidateWallets: knownTraders.length }));
 
   console.log("Consensus discovery: " + rawMarkets.length + " active markets scanned; " +
     sportsMarkets.length + " recognized sports markets; " + markets.length +
