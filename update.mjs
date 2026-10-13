@@ -466,6 +466,7 @@ async function getMarketConsensus(market, knownNames) {
     if (position.redeemable === true || position.mergeable === true) continue;
 
     const wallet = String(position.proxy_wallet ?? position.proxyWallet ?? "").toLowerCase();
+    if (!knownNames.has(wallet)) continue;
     const side = String(position.outcome ?? "").trim();
     const value = num(position.current_value ?? position.currentValue);
     if (!wallet || !side || value === null || value < MIN_CONSENSUS_POSITION_VALUE) continue;
