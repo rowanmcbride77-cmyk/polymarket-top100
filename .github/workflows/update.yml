@@ -60,7 +60,24 @@ jobs:
 
           if ! git diff --cached --quiet; then
             git commit -m "Update Polymarket scanner data"
-            git push
+
+            # Another workflow or website edit may have pushed to main
+            # while this run was generating data. Rebase this data commit
+            # onto the latest main; if the JSON files conflict, keep the
+            # freshly generated scanner output from this run.
+            git fetch origin main
+            if ! git rebase origin/main; then
+              if git status --porcelain | grep -Eq 'week\\.json|month\\.json'; then
+                git checkout --theirs -- week.json month.json
+                git add week.json month.json
+                GIT_EDITOR=true git rebase --continue
+              else
+                git rebase --abort
+                exit 1
+              fi
+            fi
+
+            git push origin HEAD:main
           else
             echo "No data changes to commit."
           fi
