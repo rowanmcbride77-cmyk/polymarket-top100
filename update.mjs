@@ -192,6 +192,9 @@ async function getResolvedRecord(wallet, period, nowMs, maxPositions = RANKING_R
   const resolvedMarkets = wins + losses;
   return {
     wins, losses,
+    sportsWins, sportsLosses,
+    sportsResolvedMarkets: sportsWins + sportsLosses,
+    sportsWinRate: (sportsWins + sportsLosses) ? (sportsWins / (sportsWins + sportsLosses)) * 100 : null,
     winRate: resolvedMarkets ? (wins / resolvedMarkets) * 100 : null,
     resolvedMarkets,
     recordVerified: resolvedMarkets > 0,
