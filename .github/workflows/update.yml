@@ -67,12 +67,25 @@ jobs:
             # freshly generated scanner output from this run.
             git fetch origin main
             if ! git rebase origin/main; then
-              if git status --porcelain | grep -Eq 'week\\.json|month\\.json'; then
-                git checkout --theirs -- week.json month.json
-                git add week.json month.json
+              # During rebase, --theirs is the generated data commit being
+              # replayed. Resolve only conflicting JSON files this way.
+              conflicts="$(git diff --name-only --diff-filter=U)"
+              if [ -n "$conflicts" ] && ! printf '%s\\n' "$conflicts" | grep -Ev '^(week|month)\\.json
+
+            git push origin HEAD:main
+          else
+            echo "No data changes to commit."
+          fi
+ | grep -q .; then
+                printf '%s\\n' "$conflicts" | while IFS= read -r file; do
+                  [ -n "$file" ] || continue
+                  git checkout --theirs -- "$file"
+                  git add "$file"
+                done
                 GIT_EDITOR=true git rebase --continue
               else
                 git rebase --abort
+                echo "Unexpected conflict outside generated JSON; aborting safely."
                 exit 1
               fi
             fi
