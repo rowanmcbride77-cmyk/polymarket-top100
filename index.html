@@ -157,7 +157,7 @@ dialog::backdrop{background:#000b}
           <div><div class="metric-label">Avg. Win Rate</div><div class="metric-value" id="avgWinRate">N/A</div></div>
         </div>
         <div class="source-note">
-          Top 100 Win–Loss counts are based on realized P&amp;L across up to 5,000 recent closed positions per trader, so the count can exceed 250. This is not necessarily the same as markets won or lost at settlement. Ranking still uses a smaller recent sample, with sample size, period P&amp;L, and volume as tie-breakers. Consensus counts distinct traders holding the same market outcome.
+          Top 100 Win–Loss counts are based on realized P&amp;L across up to 5,000 recent closed positions per trader, so the count can exceed 250. This is not necessarily the same as markets won or lost at settlement. Ranking still uses a smaller recent sample, with sample size, period P&amp;L, and volume as tie-breakers. Consensus scans broad current holders across active markets, rather than only leaderboard traders. Position counts include holdings valued at $5 or more; the largest holders are shown in each market detail.
         </div>
       </section>
     </div>
@@ -166,8 +166,9 @@ dialog::backdrop{background:#000b}
       <section class="panel">
         <div class="panel-heading">
           <div class="heading-left"><span class="heading-icon">👥</span><h2>Top Consensus Markets</h2></div>
-          <span class="pill" id="consensusPeriod">Week</span>
+          <span class="pill" id="consensusPeriod">Broad scan</span>
         </div>
+        <div class="source-note" style="margin:0 0 12px">Broad scan of up to 250 high-volume active markets, counting distinct holders with $5+ current positions. Member lists show the largest holders found on each side; records are shown when available.</div>
         <div class="filters">
           <label>Min. traders
             <select id="minTraders" onchange="renderConsensus()">
@@ -188,7 +189,7 @@ dialog::backdrop{background:#000b}
         </div>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>#</th><th>Market</th><th>Side</th><th>Traders</th><th>Total Entry</th><th>Activity</th></tr></thead>
+            <thead><tr><th>#</th><th>Market</th><th>Side</th><th>Traders</th><th>Combined Value</th><th>Activity</th></tr></thead>
             <tbody id="consensusBody"><tr><td colspan="6" class="loading">Loading consensus…</td></tr></tbody>
           </table>
         </div>
@@ -490,7 +491,7 @@ function renderConsensus() {
         const pnlLabel = memberPnl === null ? `${periodLabel} P&L N/A` : `${periodLabel} P&L ${cash(memberPnl)}`;
         return `<div class="member">
           <div>${profileButton(member, memberName)}<small>${recordLabel} · ${pnlLabel}</small></div>
-          <div><strong>${cash(memberAmount)}</strong><small>Entry amount</small></div>
+          <div><strong>${cash(memberAmount)}</strong><small>Current value</small></div>
           <div class="member-time"><strong>${esc(relative(memberTime))}</strong><small>${esc(dateText(memberTime))}</small></div>
         </div>`;
       }).join("")}</div>` : `<div class="empty">Individual trader details are not included in this data file yet.</div>`}
