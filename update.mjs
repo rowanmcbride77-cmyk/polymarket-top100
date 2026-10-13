@@ -173,6 +173,9 @@ async function getResolvedRecord(wallet, period, nowMs, maxPositions = RANKING_R
       if (!key || seen.has(key)) continue;
       seen.add(key);
       if (pnl > 0) wins++; else losses++;
+      if (isSportsMarket(row)) {
+        if (pnl > 0) sportsWins++; else sportsLosses++;
+      }
     }
 
     if (maxPositions !== null && scannedPositions >= maxPositions) {
