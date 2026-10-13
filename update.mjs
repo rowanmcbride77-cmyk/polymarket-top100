@@ -584,7 +584,7 @@ function isSportsMarket(market) {
 function isResolvingSoon(market, nowMs) {
   const rawEndDate = marketEndDate(market);
   let endMs = timestampMs(rawEndDate);
-  if (typeof rawEndDate === "string" && /^\\d{4}-\\d{2}-\\d{2}$/.test(rawEndDate)) {
+  if (typeof rawEndDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(rawEndDate)) {
     endMs = Date.parse(rawEndDate + "T23:59:59.999Z");
   }
   // This is a practical upcoming-game window, not a claim that Gamma endDate
