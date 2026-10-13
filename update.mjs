@@ -516,7 +516,13 @@ function isSportsMarket(market) {
 }
 
 function isResolvingSoon(market, nowMs) {
-  const endMs = timestampMs(marketEndDate(market));
+  const rawEndDate = marketEndDate(market);
+  let endMs = timestampMs(rawEndDate);
+  // Gamma sometimes provides date-only end dates. Treat those as the end
+  // of that UTC calendar day rather than midnight at its start.
+  if (typeof rawEndDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(rawEndDate)) {
+    endMs = Date.parse(rawEndDate + "T23:59:59.999Z");
+  }
   return endMs !== null && endMs > nowMs && endMs <= nowMs + CONSENSUS_WINDOW_HOURS * 60 * 60 * 1000;
 }
 
