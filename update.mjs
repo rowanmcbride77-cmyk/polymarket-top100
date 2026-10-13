@@ -653,7 +653,7 @@ function buildConsensus(holderGroups, candidates, records = {}) {
     const traders = group.traders.flatMap(holder => {
       const wallet = String(holder.wallet || "").toLowerCase();
       const candidate = candidateMap.get(wallet);
-      if (!candidate || (candidate.resolvedMarkets ?? candidate.sportsResolvedMarkets ?? 0) < MIN_TRADER_RESOLVED_MARKETS) return [];
+      if (!candidate) return [];
       const record = records[wallet] || records[candidate.wallet] || candidate;
       return [{
         ...holder,
