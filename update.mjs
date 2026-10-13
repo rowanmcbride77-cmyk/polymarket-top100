@@ -289,6 +289,13 @@ async function getCandidates(period) {
   return candidates.slice(0, CANDIDATE_COUNT);
 }
 
+function rankSportsCandidates(candidates, records = {}) {
+  const rows = candidates.map(trader => ({ ...trader, ...(records[trader.wallet] || {}) }));
+  return rows.filter(trader => (trader.sportsResolvedMarkets || 0) >= 5 && trader.sportsWinRate !== null)
+    .sort((a, b) => (b.sportsWinRate || 0) - (a.sportsWinRate || 0) || (b.sportsResolvedMarkets || 0) - (a.sportsResolvedMarkets || 0))
+    .map((trader, index) => ({ ...trader, sportsRank: index + 1 }));
+}
+
 function rankCandidates(candidates, records = {}) {
   return [...candidates]
     .map(trader => ({ ...trader, ...(records[trader.wallet] || {}) }))
