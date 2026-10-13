@@ -769,6 +769,7 @@ async function buildPeriod(period, candidates, activePositions, nowMs, consensus
   const output = makeOutput(
     period,
     ranked,
+    sportsRanked,
     activePositions,
     tradeRows,
     nowMs,
