@@ -643,16 +643,20 @@ async function getBroadConsensusMarkets(knownTraders, nowMs) {
 }
 
 function buildConsensus(holderGroups, candidates, records = {}) {
-  const candidateMap = new Map(candidates.map(trader => [trader.wallet, trader]));
+  const candidateMap = new Map(candidates.map(trader => [
+    String(trader.wallet || "").toLowerCase(), trader
+  ]));
   return holderGroups.map(group => {
     const traders = group.traders.flatMap(holder => {
-      const candidate = candidateMap.get(holder.wallet);
+      const wallet = String(holder.wallet || "").toLowerCase();
+      const candidate = candidateMap.get(wallet);
       if (!candidate) return [];
-      const record = records[holder.wallet] || candidate;
+      const record = records[wallet] || records[candidate.wallet] || candidate;
       return [{
         ...holder,
+        wallet,
         name: holder.name || candidate.name || "Trader",
-        rank: candidate.sportsRank ?? null,
+        rank: candidate.sportsRank ?? candidate.rank ?? null,
         overallRank: candidate.rank ?? null,
         pnl: candidate.pnl ?? holder.pnl ?? null,
         volume: candidate.volume ?? holder.volume ?? null,
