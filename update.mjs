@@ -692,7 +692,7 @@ function makeOutput(period, ranked, sportsRanked, activePositions, tradeRows, no
     leaders,
     traderActiveTrades: Object.fromEntries(tradeRows.filter(Boolean)),
     traderActivePositions: leaderPositions,
-    consensus: buildConsensus(consensusGroups, consensusCandidates, records)
+    consensus: buildConsensus(consensusGroups, sportsRanked, records)
   };
 }
 
