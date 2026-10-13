@@ -17,9 +17,11 @@ const RANKING_RECORD_LIMIT = 250;
 const LEADER_RECORD_LIMIT = null;
 const CONSENSUS_LIMIT = 50;
 const CONSENSUS_MARKET_SCAN_LIMIT = 1000;
-const CONSENSUS_WINDOW_HOURS = 72;
+const CONSENSUS_WINDOW_HOURS = 24;
 const CONSENSUS_HOLDERS_PER_MARKET = 1000;
 const MIN_CONSENSUS_POSITION_VALUE = 5;
+const CONSENSUS_ENTRY_WINDOW_MINUTES = 60;
+const MIN_TRADER_RESOLVED_MARKETS = 20;
 const TRADERS_PER_MARKET = 100;
 const TRADE_LIMIT = 10;
 const MAX_JSON_BYTES = 5 * 1024 * 1024;
@@ -348,6 +350,7 @@ function compactPosition(position) {
     lastEventAt: timestampMs(
       position.lastEventAt ?? position.last_event_at
     ),
+    firstEntryAt: timestampMs(position.firstEntryAt ?? position.first_entry_at),
     endDate:
       position.endDate ??
       position.end_date ??
@@ -494,7 +497,8 @@ async function getMarketConsensus(market, knownNames) {
     group.totalValue += value;
     group.totalEntry += value;
 
-    const lastEventAt = timestampMs(position.last_event_at ?? position.lastEventAt);
+    const lastEventAt = timestampMs(position.first_entry_at ?? position.firstEntryAt ?? position.last_event_at ?? position.lastEventAt);
+    if (lastEventAt === null || lastEventAt < Date.now() - CONSENSUS_ENTRY_WINDOW_MINUTES * 60 * 1000) continue;
     if (lastEventAt !== null) {
       group.newestBuy = group.newestBuy === null ? lastEventAt : Math.max(group.newestBuy, lastEventAt);
       group.oldestBuy = group.oldestBuy === null ? lastEventAt : Math.min(group.oldestBuy, lastEventAt);
@@ -520,9 +524,9 @@ async function getMarketConsensus(market, knownNames) {
 }
 
 function marketEndDate(market) {
-  return market.gameStartTime ?? market.game_start_time ?? market.eventStartTime ??
-    market.event_start_time ?? market.endDate ?? market.end_date ??
-    market.endDateIso ?? market.endDateISO ?? market.end_date_iso ?? null;
+  return market.endDate ?? market.end_date ?? market.endDateIso ?? market.endDateISO ??
+    market.end_date_iso ?? market.resolveTime ?? market.resolve_time ??
+    market.gameStartTime ?? market.game_start_time ?? market.eventStartTime ?? market.event_start_time ?? null;
 }
 
 function isSportsMarket(market) {
@@ -598,7 +602,7 @@ async function getBroadConsensusMarkets(knownTraders, nowMs) {
     market.closed !== true &&
     market.acceptingOrders !== false &&
     Boolean(market.conditionId ?? market.condition_id) &&
-    isSportsMarket(market)
+    true
   );
   const markets = sportsMarkets
     .filter(market => isResolvingSoon(market, nowMs))
@@ -609,7 +613,7 @@ async function getBroadConsensusMarkets(knownTraders, nowMs) {
     " sports markets in the upcoming " + CONSENSUS_WINDOW_HOURS + "h window.");
 
   const knownNames = new Map(knownTraders.map(trader => [trader.wallet, trader]));
-  console.log("Scanning current holders across " + markets.length + " sports markets...");
+  console.log("Scanning current holders across " + markets.length + " short-window markets...");
   const marketGroups = await mapLimit(
     markets,
     CONCURRENCY,
@@ -649,7 +653,7 @@ function buildConsensus(holderGroups, candidates, records = {}) {
     const traders = group.traders.flatMap(holder => {
       const wallet = String(holder.wallet || "").toLowerCase();
       const candidate = candidateMap.get(wallet);
-      if (!candidate) return [];
+      if (!candidate || (candidate.resolvedMarkets ?? candidate.sportsResolvedMarkets ?? 0) < MIN_TRADER_RESOLVED_MARKETS) return [];
       const record = records[wallet] || records[candidate.wallet] || candidate;
       return [{
         ...holder,
@@ -699,7 +703,7 @@ function makeOutput(period, ranked, sportsRanked, activePositions, tradeRows, no
     minResolvedMarketsForRecordRanking: 10,
     recordRankingEnabled: true,
     recordWarning:
-      `Ranking uses up to ${RANKING_RECORD_LIMIT} recent closed positions per candidate. Top 100 Win–Loss counts scan all available closed positions with cursor pagination and can exceed 250. A “+” marks a scan that did not reach the end. Realized P&L-based wins/losses are not necessarily market-settlement outcomes.`,
+      `Consensus qualification requires at least ${MIN_TRADER_RESOLVED_MARKETS} resolved positions. Ranking uses up to ${RANKING_RECORD_LIMIT} recent closed positions per candidate. Realized P&L-based wins/losses are not necessarily market-settlement outcomes.`,
     leaders,
     traderActiveTrades: Object.fromEntries(tradeRows.filter(Boolean)),
     traderActivePositions: leaderPositions,
