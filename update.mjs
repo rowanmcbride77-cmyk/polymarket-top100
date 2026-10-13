@@ -12,6 +12,8 @@ const LEADER_COUNT = 100;
 const PAGE_SIZE = 50;
 const POSITION_FETCH_LIMIT = 100;
 const POSITIONS_PER_TRADER = 10;
+const RANKING_RECORD_LIMIT = 250;
+const LEADER_RECORD_LIMIT = 5000;
 const CONSENSUS_LIMIT = 50;
 const TRADERS_PER_MARKET = 15;
 const TRADE_LIMIT = 10;
@@ -121,7 +123,7 @@ function normalizeLeader(row, index) {
   };
 }
 
-async function getResolvedRecord(wallet, period, nowMs) {
+async function getResolvedRecord(wallet, period, nowMs, maxPositions = RANKING_RECORD_LIMIT) {
   if (!wallet) return null;
 
   // Polymarket's closed-positions endpoint does not expose a ready-made
@@ -133,8 +135,10 @@ async function getResolvedRecord(wallet, period, nowMs) {
   let wins = 0;
   let losses = 0;
   let examined = 0;
+  let scannedPositions = 0;
+  let recordComplete = false;
 
-  for (let offset = 0; offset < 250; offset += 50) {
+  for (let offset = 0; offset < maxPositions; offset += 50) {
     const params = new URLSearchParams({
       user: wallet,
       limit: "50",
@@ -143,7 +147,11 @@ async function getResolvedRecord(wallet, period, nowMs) {
       sortDirection: "DESC"
     });
     const rows = asArray(await getJson(`${API}/closed-positions?${params}`));
-    if (!rows.length) break;
+    if (!rows.length) {
+      recordComplete = true;
+      break;
+    }
+    scannedPositions += rows.length;
 
     for (const row of rows) {
       const pnl = num(row.realizedPnl ?? row.realized_pnl ?? row.cashPnl ?? row.cash_pnl);
@@ -161,7 +169,10 @@ async function getResolvedRecord(wallet, period, nowMs) {
       else losses++;
     }
 
-    if (rows.length < 50) break;
+    if (rows.length < 50) {
+      recordComplete = true;
+      break;
+    }
   }
 
   const resolvedMarkets = wins + losses;
@@ -171,13 +182,23 @@ async function getResolvedRecord(wallet, period, nowMs) {
     winRate: resolvedMarkets ? (wins / resolvedMarkets) * 100 : null,
     resolvedMarkets,
     recordVerified: resolvedMarkets > 0,
-    recordBasis: `Up to 250 most recent closed positions; wins/losses classified by realized P&L`
+    scannedPositions,
+    recordComplete,
+    recordLimit: maxPositions,
+    recordBasis: `${recordComplete ? "All available" : "Up to " + maxPositions} most recent closed positions scanned; wins/losses classified by realized P&L, not necessarily market settlement outcome`
   };
 }
-async function attachRecords(traders, period, nowMs) {
+async function attachRecords(traders, period, nowMs, maxPositions = RANKING_RECORD_LIMIT, cache = null) {
   const rows = await mapLimit(traders, CONCURRENCY, async trader => {
     try {
-      const record = await getResolvedRecord(trader.wallet, period, nowMs);
+      let recordPromise;
+      if (cache && cache.has(trader.wallet)) {
+        recordPromise = cache.get(trader.wallet);
+      } else {
+        recordPromise = getResolvedRecord(trader.wallet, period, nowMs, maxPositions);
+        if (cache) cache.set(trader.wallet, recordPromise);
+      }
+      const record = await recordPromise;
       return record ? [trader.wallet, record] : null;
     } catch (error) {
       console.error(`Record lookup failed for ${trader.name}: ${error.message}`);
@@ -464,9 +485,11 @@ function buildConsensus(candidates, activePositions, records = {}) {
     .slice(0, CONSENSUS_LIMIT);
 }
 
-function makeOutput(period, candidates, activePositions, tradeRows, nowMs, consensusCandidates, records) {
-  const ranked = rankCandidates(candidates, records);
-  const leaders = ranked.slice(0, LEADER_COUNT);
+function makeOutput(period, ranked, activePositions, tradeRows, nowMs, consensusCandidates, records, leaderRecords) {
+  const leaders = ranked.slice(0, LEADER_COUNT).map(trader => ({
+    ...trader,
+    ...(leaderRecords[trader.wallet] || {})
+  }));
 
   const leaderPositions = Object.fromEntries(
     leaders.map(trader => [
@@ -479,13 +502,13 @@ function makeOutput(period, candidates, activePositions, tradeRows, nowMs, conse
     generatedAt: new Date(nowMs).toISOString(),
     period: period.key,
     rankingBasis:
-      `Ranked by win rate from up to 250 most recent closed positions; ties broken by sample size, period P&L, then volume`,
-    recordBasis: `Win/loss is classified by realized P&L on up to 250 most recent closed positions; this is not a full all-time account record`,
+      `Ranked by win rate from up to ${RANKING_RECORD_LIMIT} most recent closed positions; ties broken by sample size, period P&L, then volume`,
+    recordBasis: `Top 100 displayed records scan up to ${LEADER_RECORD_LIMIT} recent closed positions per trader; ranking uses a smaller sample. Realized P&L is not the same as a verified market-settlement win/loss record.`,
     candidateCount: candidates.length,
     minResolvedMarketsForRecordRanking: 10,
     recordRankingEnabled: true,
     recordWarning:
-      "Win/loss counts use realized P&L on a sample of up to 250 most recent closed positions per trader. Traders with fewer than 10 classifiable positions are excluded. This is a sample-based ranking, not a complete all-time record.",
+      `Ranks use up to ${RANKING_RECORD_LIMIT} recent closed positions per candidate. The Top 100 Win–Loss column separately scans up to ${LEADER_RECORD_LIMIT} positions, so counts can exceed 250. A record is marked complete only if pagination reaches the end; realized P&L-based wins/losses are not necessarily market-settlement outcomes.`,
     leaders,
     traderActiveTrades: Object.fromEntries(tradeRows.filter(Boolean)),
     traderActivePositions: leaderPositions,
@@ -544,12 +567,14 @@ async function writeJsonUnderLimit(filename, output) {
   );
 }
 
-async function buildPeriod(period, candidates, activePositions, nowMs, consensusCandidates) {
-  console.log(`Loading closed-position records for ${candidates.length} ${period.key} candidates...`);
-  const records = await attachRecords(candidates, period, nowMs);
+async function buildPeriod(period, candidates, activePositions, nowMs, consensusCandidates, fullRecordCache) {
+  console.log(`Loading sample closed-position records for ${candidates.length} ${period.key} candidates...`);
+  const records = await attachRecords(candidates, period, nowMs, RANKING_RECORD_LIMIT);
   const ranked = rankCandidates(candidates, records);
   const leaders = ranked.slice(0, LEADER_COUNT);
   console.log(`${period.key}: ${leaders.length} traders qualify with at least 10 classifiable closed positions`);
+  console.log(`Loading expanded records (up to ${LEADER_RECORD_LIMIT} positions) for ${leaders.length} ${period.key} leaders...`);
+  const leaderRecords = await attachRecords(leaders, period, nowMs, LEADER_RECORD_LIMIT, fullRecordCache);
 
   const tradeRows = await mapLimit(
     leaders,
@@ -567,7 +592,8 @@ async function buildPeriod(period, candidates, activePositions, nowMs, consensus
     tradeRows,
     nowMs,
     consensusCandidates,
-    records
+    records,
+    leaderRecords
   );
 
   await writeJsonUnderLimit(`${period.key}.json`, output);
@@ -600,8 +626,9 @@ async function main() {
     nowMs
   );
 
-  await buildPeriod(PERIODS[0], weekCandidates, activePositions, nowMs, weekCandidates);
-  await buildPeriod(PERIODS[1], monthCandidates, activePositions, nowMs, weekCandidates);
+  const fullRecordCache = new Map();
+  await buildPeriod(PERIODS[0], weekCandidates, activePositions, nowMs, weekCandidates, fullRecordCache);
+  await buildPeriod(PERIODS[1], monthCandidates, activePositions, nowMs, weekCandidates, fullRecordCache);
 
   console.log("Polymarket tracker update completed.");
 }
