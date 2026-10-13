@@ -589,7 +589,7 @@ function makeOutput(period, ranked, activePositions, tradeRows, nowMs, consensus
     rankingBasis:
       `Ranked by win rate from up to ${RANKING_RECORD_LIMIT} most recent closed positions; ties broken by sample size, period P&L, then volume`,
     recordBasis: `Top 100 displayed records scan up to ${LEADER_RECORD_LIMIT} recent closed positions per trader; ranking uses a smaller sample. Realized P&L is not the same as a verified market-settlement win/loss record.`,
-    candidateCount: candidates.length,
+    candidateCount: ranked.length,
     minResolvedMarketsForRecordRanking: 10,
     recordRankingEnabled: true,
     recordWarning:
@@ -715,8 +715,8 @@ async function main() {
   const fullRecordCache = new Map();
   const consensusGroups = await getBroadConsensusMarkets([...unique.values()]);
   console.log("Broad consensus groups: " + consensusGroups.length);
-  await buildPeriod(PERIODS[0], weekCandidates, activePositions, nowMs, weekCandidates, fullRecordCache, consensusGroups);
-  await buildPeriod(PERIODS[1], monthCandidates, activePositions, nowMs, weekCandidates, fullRecordCache, consensusGroups);
+  await buildPeriod(PERIODS[0], weekCandidates, activePositions, nowMs, [...unique.values()], fullRecordCache, consensusGroups);
+  await buildPeriod(PERIODS[1], monthCandidates, activePositions, nowMs, [...unique.values()], fullRecordCache, consensusGroups);
 
   console.log("Polymarket tracker update completed.");
 }
