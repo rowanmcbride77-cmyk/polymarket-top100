@@ -16,7 +16,8 @@ const POSITIONS_PER_TRADER = 10;
 const RANKING_RECORD_LIMIT = 250;
 const LEADER_RECORD_LIMIT = null;
 const CONSENSUS_LIMIT = 50;
-const CONSENSUS_MARKET_SCAN_LIMIT = 250;
+const CONSENSUS_MARKET_SCAN_LIMIT = 1000;
+const CONSENSUS_WINDOW_HOURS = 72;
 const CONSENSUS_HOLDERS_PER_MARKET = 1000;
 const MIN_CONSENSUS_POSITION_VALUE = 5;
 const TRADERS_PER_MARKET = 15;
@@ -459,6 +460,7 @@ async function getMarketConsensus(market, knownNames) {
       grouped.set(key, {
         conditionId,
         title: position.title || position.name || market.question || market.title || "Unknown market",
+        endDate: marketEndDate(market),
         side,
         sameSide: 0,
         totalValue: 0,
@@ -502,7 +504,7 @@ async function getMarketConsensus(market, knownNames) {
     .map(({ walletsSeen, ...group }) => group);
 }
 
-async function getBroadConsensusMarkets(knownTraders) {
+async function getBroadConsensusMarkets(knownTraders, nowMs) {
   const params = new URLSearchParams({
     active: "true",
     closed: "false",
@@ -515,7 +517,9 @@ async function getBroadConsensusMarkets(knownTraders) {
     .filter(market =>
       (market.active === undefined || market.active === true) &&
       market.closed !== true &&
-      Boolean(market.conditionId ?? market.condition_id)
+      Boolean(market.conditionId ?? market.condition_id) &&
+      isSportsMarket(market) &&
+      isResolvingSoon(market, nowMs)
     )
     .slice(0, CONSENSUS_MARKET_SCAN_LIMIT);
 
@@ -718,7 +722,7 @@ async function main() {
   );
 
   const fullRecordCache = new Map();
-  const consensusGroups = await getBroadConsensusMarkets([...unique.values()]);
+  const consensusGroups = await getBroadConsensusMarkets([...unique.values()], nowMs);
   console.log("Broad consensus groups: " + consensusGroups.length);
   await buildPeriod(PERIODS[0], weekCandidates, activePositions, nowMs, [...unique.values()], fullRecordCache, consensusGroups);
   await buildPeriod(PERIODS[1], monthCandidates, activePositions, nowMs, [...unique.values()], fullRecordCache, consensusGroups);
