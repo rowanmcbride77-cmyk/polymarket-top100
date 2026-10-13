@@ -684,6 +684,7 @@ function makeOutput(period, ranked, sportsRanked, activePositions, tradeRows, no
       `Ranked by win rate from up to ${RANKING_RECORD_LIMIT} most recent closed positions; ties broken by sample size, period P&L, then volume`,
     recordBasis: "Top 100 displayed records scan all available closed positions using cursor pagination; ranking uses a smaller sample. Realized P&L is not the same as a verified market-settlement win/loss record.",
     candidateCount: ranked.length,
+    sportsLeaders: sportsRanked.slice(0, LEADER_COUNT),
     minResolvedMarketsForRecordRanking: 10,
     recordRankingEnabled: true,
     recordWarning:
