@@ -121,14 +121,77 @@ function normalizeLeader(row, index) {
   };
 }
 
-async function getResolvedRecord() {
-  // No verified per-period win/loss source is available; never infer it from
-  // closed-position snapshots or label all-time records as weekly/monthly.
-  return null;
+async function getResolvedRecord(wallet, period, nowMs) {
+  if (!wallet) return null;
+
+  // Closed-position rows have a settlement price and settlement timestamp.
+  // Count only settled positions whose settlement timestamp falls in this
+  // leaderboard's window; do not substitute an all-time record.
+  const days = period.key === "week" ? 7 : 30;
+  const startMs = nowMs - days * 24 * 60 * 60 * 1000;
+  const endSeconds = Math.floor(nowMs / 1000);
+  const startSeconds = Math.floor(startMs / 1000);
+  const seen = new Set();
+  let wins = 0;
+  let losses = 0;
+
+  for (let offset = 0; offset < 100000; offset += 50) {
+    const params = new URLSearchParams({
+      user: wallet,
+      limit: "50",
+      offset: String(offset),
+      sortBy: "TIMESTAMP",
+      sortDirection: "DESC"
+    });
+    const rows = asArray(await getJson(`${API}/closed-positions?${params}`));
+    if (!rows.length) break;
+
+    let passedWindow = false;
+    for (const row of rows) {
+      const timestamp = timestampMs(row.timestamp);
+      if (timestamp === null) continue;
+      if (timestamp < startMs) {
+        passedWindow = true;
+        continue;
+      }
+      if (timestamp > nowMs) continue;
+
+      const price = num(row.curPrice ?? row.cur_price);
+      if (price === null) continue;
+      // One closed-position outcome is one win/loss; avoid duplicate API rows.
+      const key = String(row.asset ?? "") || `${row.conditionId ?? row.condition_id ?? ""}|${row.outcomeIndex ?? row.outcome_index ?? row.outcome ?? ""}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+
+      if (price >= 0.99) wins++;
+      else if (price <= 0.01) losses++;
+    }
+
+    if (passedWindow || rows.length < 50) break;
+  }
+
+  const resolvedMarkets = wins + losses;
+  return {
+    wins,
+    losses,
+    winRate: resolvedMarkets ? (wins / resolvedMarkets) * 100 : null,
+    resolvedMarkets,
+    recordVerified: true,
+    recordBasis: `Closed positions settled within the last ${days} days`
+  };
 }
 
-async function attachRecords() {
-  return {};
+async function attachRecords(traders, period, nowMs) {
+  const rows = await mapLimit(traders, CONCURRENCY, async trader => {
+    try {
+      const record = await getResolvedRecord(trader.wallet, period, nowMs);
+      return record ? [trader.wallet, record] : null;
+    } catch (error) {
+      console.error(`Record lookup failed for ${trader.name}: ${error.message}`);
+      return null;
+    }
+  });
+  return Object.fromEntries(rows.filter(Boolean));
 }
 
 async function mapLimit(items, limit, callback) {
@@ -417,12 +480,12 @@ function makeOutput(period, candidates, activePositions, tradeRows, nowMs, conse
     period: period.key,
     rankingBasis:
       `Leaderboard ordered by ${period.key} P&L, with resolved-market record data`,
-    recordBasis: "No verified period-specific win-loss data available",
+    recordBasis: `Win-loss record counts closed positions settled within the selected ${period.key} window`,
     candidateCount: candidates.length,
     minResolvedMarketsForRecordRanking: 10,
-    recordRankingEnabled: false,
+    recordRankingEnabled: true,
     recordWarning:
-      "The public API does not provide a verified period-specific win-loss record; records are intentionally omitted.",
+      "Records count settled closed positions within the selected period; they may differ from Polymarket profile all-time statistics.",
     leaders,
     traderActiveTrades: Object.fromEntries(tradeRows.filter(Boolean)),
     traderActivePositions: leaderPositions,
