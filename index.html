@@ -459,6 +459,19 @@ function renderLeaders() {
     : "N/A";
 }
 
+function renderSportsLeaders() {
+  const rows = Array.isArray(data?.sportsLeaders) ? data.sportsLeaders : [];
+  const body = $("sportsLeadersBody");
+  if (!body) return;
+  body.innerHTML = rows.length ? rows.slice(0, 25).map((trader, index) => {
+    const wins = num(trader.sportsWins) ?? 0;
+    const losses = num(trader.sportsLosses) ?? 0;
+    const rate = num(trader.sportsWinRate);
+    const sample = num(trader.sportsResolvedMarkets) ?? 0;
+    return '<tr><td class="rank">' + (index + 1) + '</td><td><div class="trader-name">' + avatar(trader) + '<span class="name-text">' + profileButton(trader) + '</span></div></td><td class="record">' + wins + '–' + losses + '</td><td class="record">' + (rate === null ? 'N/A' : rate.toFixed(1) + '%') + '</td><td>' + sample + '</td></tr>';
+  }).join('') : '<tr><td colspan="5" class="empty">No traders have five or more classifiable closed sports positions in this candidate pool yet.</td></tr>';
+}
+
 function renderConsensus() {
   const minCount = Number($("minTraders").value || 2);
   const hours = Number($("recency").value || 72);
