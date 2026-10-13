@@ -362,7 +362,7 @@ function compactPosition(position) {
     outcome: position.outcome ?? position.outcome_name ?? null,
     size: num(position.size ?? position.current_size ?? position.currentSize),
     currentValue: num(position.currentValue ?? position.current_value),
-    initialValue: num(position.initialValue ?? position.initial_value ?? position.initial_value_usd ?? position.cashPnl),
+    initialValue: num(position.initialValue ?? position.initial_value ?? position.initial_value_usd),
     realizedPnl: num(position.realizedPnl ?? position.realized_pnl ?? position.cashPnl ?? position.cash_pnl),
     lastEventAt: timestampMs(
       position.lastEventAt ?? position.last_event_at
@@ -756,7 +756,7 @@ function makeOutput(period, ranked, sportsRanked, activePositions, tradeRows, no
     generatedAt: new Date(nowMs).toISOString(),
     period: period.key,
     rankingBasis:
-      `Ranked by win rate from up to ${RANKING_RECORD_LIMIT} most recent closed positions; ties broken by sample size, period P&L, then volume`,
+      `Ranked by win rate from up to ${RANKING_RECORD_LIMIT} closed positions in the selected ${period.key === "week" ? "7-day" : "30-day"} period; ties broken by sample size, period P&L, then volume`,
     recordBasis: "Win-loss records are scoped to the selected period (7 days for week, 30 days for month). Wins/losses are classified by realized P&L, not necessarily verified market-settlement outcomes.",
     candidateCount: ranked.length,
     sportsLeaders: sportsRanked.slice(0, LEADER_COUNT),
