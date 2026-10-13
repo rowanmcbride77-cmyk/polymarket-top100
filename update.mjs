@@ -133,8 +133,11 @@ function normalizeLeader(row, index) {
 async function getResolvedRecord(wallet, period, nowMs, maxPositions = RANKING_RECORD_LIMIT) {
   if (!wallet) return null;
 
-  // Ranking candidates use a small sample. Top 100 records use the v2 cursor
-  // API and continue until every available CLOSED position has been scanned.
+  // WEEK and MONTH records must be scoped to the selected time window.
+  // Previously this scanned all historical closed positions, making all-time
+  // totals look like recent-period trade counts.
+  const periodDays = String(period?.api || period || "").toUpperCase() === "MONTH" ? 30 : 7;
+  const cutoffMs = nowMs - periodDays * 24 * 60 * 60 * 1000;
   const seen = new Set();
   let wins = 0;
   let losses = 0;
@@ -163,8 +166,17 @@ async function getResolvedRecord(wallet, period, nowMs, maxPositions = RANKING_R
       break;
     }
 
+    let reachedPeriodCutoff = false;
     for (const row of rows) {
       if (maxPositions !== null && scannedPositions >= maxPositions) break;
+      const eventMs = timestampMs(row.last_event_at ?? row.lastEventAt ?? row.timestamp ?? row.updated_at ?? row.updatedAt);
+      // API results are sorted newest-first, so once we pass the period boundary
+      // there are no more in-window closed positions on subsequent pages.
+      if (eventMs !== null && eventMs < cutoffMs) {
+        reachedPeriodCutoff = true;
+        break;
+      }
+      if (eventMs === null) continue;
       scannedPositions++;
       const pnl = num(row.realized_pnl ?? row.realizedPnl ?? row.cashPnl ?? row.cash_pnl);
       if (pnl === null || Math.abs(pnl) < 0.000001) continue;
@@ -180,6 +192,10 @@ async function getResolvedRecord(wallet, period, nowMs, maxPositions = RANKING_R
       }
     }
 
+    if (reachedPeriodCutoff) {
+      recordComplete = true;
+      break;
+    }
     if (maxPositions !== null && scannedPositions >= maxPositions) {
       recordComplete = pagination.has_more !== true && !pagination.next_cursor;
       break;
@@ -204,8 +220,8 @@ async function getResolvedRecord(wallet, period, nowMs, maxPositions = RANKING_R
     recordComplete,
     recordLimit: maxPositions,
     recordBasis: recordComplete
-      ? "All available closed positions scanned; wins/losses classified by realized P&L, not necessarily market settlement outcome"
-      : `Sample of up to ${maxPositions} recent closed positions; wins/losses classified by realized P&L`
+      ? `Closed positions from the last ${periodDays} days scanned; wins/losses classified by realized P&L, not necessarily market settlement outcome`
+      : `Sample of up to ${maxPositions} closed positions from the last ${periodDays} days; wins/losses classified by realized P&L`
   };
 }
 async function attachRecords(traders, period, nowMs, maxPositions = RANKING_RECORD_LIMIT, cache = null) {
@@ -346,7 +362,8 @@ function compactPosition(position) {
     outcome: position.outcome ?? position.outcome_name ?? null,
     size: num(position.size ?? position.current_size ?? position.currentSize),
     currentValue: num(position.currentValue ?? position.current_value),
-    initialValue: num(position.initialValue ?? position.initial_value),
+    initialValue: num(position.initialValue ?? position.initial_value ?? position.initial_value_usd ?? position.cashPnl),
+    realizedPnl: num(position.realizedPnl ?? position.realized_pnl ?? position.cashPnl ?? position.cash_pnl),
     lastEventAt: timestampMs(
       position.lastEventAt ?? position.last_event_at
     ),
@@ -576,9 +593,10 @@ function isResolvingSoon(market, nowMs) {
     endMs <= nowMs + CONSENSUS_WINDOW_HOURS * 60 * 60 * 1000;
 }
 
-async function getBroadConsensusMarkets(knownTraders, nowMs) {
-  // Do not scan only the top 1,000 markets by overall volume: that can exclude
-  // sports events before they are ever evaluated. Walk the active market pages.
+async function getBroadConsensusMarkets(knownTraders, nowMs, activePositions) {
+  // Use the exact same per-trader OPEN-position data that powers the profile
+  // dropdowns. This avoids a separate market-holder query silently disagreeing
+  // with the positions users can already see on the site.
   const pageSize = 500;
   const maxPages = 20;
   const marketsById = new Map();
@@ -594,60 +612,94 @@ async function getBroadConsensusMarkets(knownTraders, nowMs) {
     const rows = asArray(await getJson(GAMMA_API + "/markets?" + params));
     console.log("Consensus market discovery page " + (page + 1) + ": " + rows.length + " markets");
     for (const market of rows) {
-      const id = market.conditionId ?? market.condition_id ?? market.id;
-      if (id) marketsById.set(String(id), market);
+      const id = market.conditionId ?? market.condition_id;
+      if (id) marketsById.set(String(id).toLowerCase(), market);
     }
     if (rows.length < pageSize) break;
   }
 
-  const rawMarkets = [...marketsById.values()];
-  const sportsMarkets = rawMarkets.filter(market =>
-    (market.active === undefined || market.active === true) &&
-    market.closed !== true &&
-    market.acceptingOrders !== false &&
-    Boolean(market.conditionId ?? market.condition_id) &&
-    true
-  );
-  const markets = sportsMarkets
-    .filter(market => isResolvingSoon(market, nowMs))
-    .slice(0, CONSENSUS_MARKET_SCAN_LIMIT);
-  console.log("Consensus diagnostics: " + JSON.stringify({ discovered: rawMarkets.length, activeWithCondition: sportsMarkets.length, resolvingWithin24h: markets.length, candidateWallets: knownTraders.length }));
+  const knownByWallet = new Map(knownTraders.map(trader => [String(trader.wallet || "").toLowerCase(), trader]));
+  const groups = new Map();
+  let openPositionsSeen = 0;
+  let positionsMatchedToMarket = 0;
+  let positionsInWindow = 0;
 
-  console.log("Consensus discovery: " + rawMarkets.length + " active markets scanned; " +
-    sportsMarkets.length + " recognized sports markets; " + markets.length +
-    " sports markets in the upcoming " + CONSENSUS_WINDOW_HOURS + "h window.");
+  for (const trader of knownTraders) {
+    const wallet = String(trader.wallet || "").toLowerCase();
+    if (!wallet) continue;
+    const positions = Array.isArray(activePositions?.[wallet]) ? activePositions[wallet] : [];
+    for (const position of positions) {
+      openPositionsSeen++;
+      const conditionId = String(position.conditionId ?? position.condition_id ?? "").toLowerCase();
+      if (!conditionId) continue;
+      const market = marketsById.get(conditionId);
+      if (!market || market.closed === true || market.active === false) continue;
+      positionsMatchedToMarket++;
+      if (!isResolvingSoon(market, nowMs)) continue;
+      positionsInWindow++;
 
-  const knownNames = new Map(knownTraders.map(trader => [trader.wallet, trader]));
-  console.log("Scanning current holders across " + markets.length + " short-window markets...");
-  const marketGroups = await mapLimit(
-    markets,
-    CONCURRENCY,
-    market => getMarketConsensus(market, knownNames)
-  );
+      const side = String(position.outcome ?? position.outcome_name ?? "").trim();
+      if (!side) continue;
+      const key = conditionId + "|" + side.toLowerCase();
+      if (!groups.has(key)) {
+        groups.set(key, {
+          conditionId,
+          title: position.title || market.question || market.title || "Unknown market",
+          endDate: marketEndDate(market),
+          side,
+          sameSide: 0,
+          totalValue: 0,
+          totalEntry: 0,
+          newestBuy: null,
+          oldestBuy: null,
+          traders: [],
+          walletsSeen: new Set()
+        });
+      }
+      const group = groups.get(key);
+      if (group.walletsSeen.has(wallet)) continue;
+      group.walletsSeen.add(wallet);
+      const currentValue = num(position.currentValue ?? position.current_value) ?? 0;
+      const invested = num(position.initialValue ?? position.initial_value) ?? currentValue;
+      const lastEventAt = timestampMs(position.lastEventAt ?? position.last_event_at ?? position.firstEntryAt ?? position.first_entry_at);
+      group.sameSide++;
+      group.totalValue += currentValue;
+      group.totalEntry += invested;
+      if (lastEventAt !== null) {
+        group.newestBuy = group.newestBuy === null ? lastEventAt : Math.max(group.newestBuy, lastEventAt);
+        group.oldestBuy = group.oldestBuy === null ? lastEventAt : Math.min(group.oldestBuy, lastEventAt);
+      }
+      if (group.traders.length < TRADERS_PER_MARKET) {
+        group.traders.push({
+          wallet,
+          name: trader.name || null,
+          rank: trader.rank ?? null,
+          pnl: trader.pnl ?? null,
+          volume: trader.volume ?? null,
+          side,
+          amount: invested,
+          currentValue,
+          buyTime: lastEventAt
+        });
+      }
+    }
+  }
 
-  let groups = marketGroups.flat()
+  const holderGroups = [...groups.values()]
+    .filter(group => group.sameSide >= 2)
+    .map(({ walletsSeen, ...group }) => group)
     .sort((a, b) => b.sameSide - a.sameSide || b.totalValue - a.totalValue || (b.newestBuy || 0) - (a.newestBuy || 0))
     .slice(0, CONSENSUS_LIMIT);
 
-  const profileWallets = [...new Set(groups.flatMap(group =>
-    group.traders.filter(trader => !trader.name).map(trader => trader.wallet)
-  ))];
-  console.log("Resolving public names for " + profileWallets.length + " consensus traders...");
-  const profileRows = await mapLimit(profileWallets, CONCURRENCY, async wallet => {
-    const name = await getPublicProfileName(wallet);
-    return name ? [wallet, name] : null;
-  });
-  const profileNames = Object.fromEntries(profileRows.filter(Boolean));
-
-  groups = groups.map(group => ({
-    ...group,
-    traders: group.traders.map(trader => ({
-      ...trader,
-      name: trader.name || profileNames[trader.wallet] || "Trader"
-    }))
+  console.log("Consensus position matching: " + JSON.stringify({
+    discoveredMarkets: marketsById.size,
+    candidateWallets: knownTraders.length,
+    openPositionsSeen,
+    positionsMatchedToMarket,
+    positionsIn24hWindow: positionsInWindow,
+    sameSideGroups: holderGroups.length
   }));
-
-  return groups;
+  return holderGroups;
 }
 
 function buildConsensus(holderGroups, candidates, records = {}) {
@@ -660,6 +712,9 @@ function buildConsensus(holderGroups, candidates, records = {}) {
       const candidate = candidateMap.get(wallet);
       if (!candidate) return [];
       const record = records[wallet] || records[candidate.wallet] || candidate;
+      // A consensus member must have a usable resolved-position sample in the
+      // same selected period; never label all-time history as recent activity.
+      if ((num(record.resolvedMarkets) ?? 0) < MIN_TRADER_RESOLVED_MARKETS) return [];
       return [{
         ...holder,
         wallet,
@@ -702,13 +757,13 @@ function makeOutput(period, ranked, sportsRanked, activePositions, tradeRows, no
     period: period.key,
     rankingBasis:
       `Ranked by win rate from up to ${RANKING_RECORD_LIMIT} most recent closed positions; ties broken by sample size, period P&L, then volume`,
-    recordBasis: "Top 100 displayed records scan all available closed positions using cursor pagination; ranking uses a smaller sample. Realized P&L is not the same as a verified market-settlement win/loss record.",
+    recordBasis: "Win-loss records are scoped to the selected period (7 days for week, 30 days for month). Wins/losses are classified by realized P&L, not necessarily verified market-settlement outcomes.",
     candidateCount: ranked.length,
     sportsLeaders: sportsRanked.slice(0, LEADER_COUNT),
     minResolvedMarketsForRecordRanking: 10,
     recordRankingEnabled: true,
     recordWarning:
-      `Consensus qualification requires at least ${MIN_TRADER_RESOLVED_MARKETS} resolved positions. Ranking uses up to ${RANKING_RECORD_LIMIT} recent closed positions per candidate. Realized P&L-based wins/losses are not necessarily market-settlement outcomes.`,
+      `Consensus qualification requires at least ${MIN_TRADER_RESOLVED_MARKETS} resolved positions in the selected period. Ranking uses up to ${RANKING_RECORD_LIMIT} closed positions from that same period. Realized P&L-based wins/losses are not necessarily market-settlement outcomes.`,
     leaders,
     traderActiveTrades: Object.fromEntries(tradeRows.filter(Boolean)),
     traderActivePositions: leaderPositions,
@@ -831,7 +886,7 @@ async function main() {
 
   const fullRecordCache = new Map();
   const consensusCandidatePool = [...unique.values()];
-  const consensusGroups = await getBroadConsensusMarkets(consensusCandidatePool, nowMs);
+  const consensusGroups = await getBroadConsensusMarkets(consensusCandidatePool, nowMs, activePositions);
   console.log("Broad consensus groups: " + consensusGroups.length);
   await buildPeriod(PERIODS[0], weekCandidates, activePositions, nowMs, [...unique.values()], fullRecordCache, consensusGroups);
   await buildPeriod(PERIODS[1], monthCandidates, activePositions, nowMs, [...unique.values()], fullRecordCache, consensusGroups);
