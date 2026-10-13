@@ -546,7 +546,7 @@ function isSportsMarket(market) {
     market.groupItemTitle, ...tags, ...eventText
   ].filter(Boolean).join(" ").toLowerCase();
   const keywords = [
-    "sport", "nfl", "nba", "wnba", "mlb", "nhl", "ncaa", "ncaaf", "ncaab",
+    "sport", "spread:", "moneyline", "over/under", "o/u", "nfl", "nba", "wnba", "mlb", "nhl", "ncaa", "ncaaf", "ncaab",
     "college football", "college basketball", "football", "basketball", "baseball",
     "hockey", "soccer", "mls", "premier league", "champions league", "world cup",
     "tennis", "atp", "wta", "golf", "pga", "lpga", "formula 1", "f1", "nascar",
