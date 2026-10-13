@@ -751,6 +751,7 @@ async function buildPeriod(period, candidates, activePositions, nowMs, consensus
   console.log(`Loading sample closed-position records for ${candidates.length} ${period.key} candidates...`);
   const records = await attachRecords(candidates, period, nowMs, RANKING_RECORD_LIMIT);
   const ranked = rankCandidates(candidates, records);
+  const sportsRanked = rankSportsCandidates(candidates, records);
   const leaders = ranked.slice(0, LEADER_COUNT);
   console.log(`${period.key}: ${leaders.length} traders qualify with at least 10 classifiable closed positions`);
   console.log(`Loading all available closed-position records for ${leaders.length} ${period.key} leaders...`);
