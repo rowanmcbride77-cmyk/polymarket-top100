@@ -140,8 +140,8 @@ dialog::backdrop{background:#000b}
         </div>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>#</th><th>Trader</th><th>Record</th><th>P&amp;L</th><th>Volume</th></tr></thead>
-            <tbody id="leadersBody"><tr><td colspan="5" class="loading">Loading traders…</td></tr></tbody>
+            <thead><tr><th>#</th><th>Trader</th><th>Period P&amp;L</th><th>Volume</th></tr></thead>
+            <tbody id="leadersBody"><tr><td colspan="4" class="loading">Loading traders…</td></tr></tbody>
           </table>
         </div>
         <button class="link-button" id="leadersMore" onclick="toggleLeaders()">View all traders →</button>
@@ -157,7 +157,7 @@ dialog::backdrop{background:#000b}
           <div><div class="metric-label">Avg. Win Rate</div><div class="metric-value" id="avgWinRate">N/A</div></div>
         </div>
         <div class="source-note">
-          Records and win rates are shown only when verified resolved-market results are supplied by the data updater. Until then, the leaderboard follows the selected-period P&amp;L ranking. Consensus counts distinct traders on the same market and same outcome.
+          Leaderboard is ranked by Polymarket’s selected-period P&amp;L. The public API does not provide a verified weekly/monthly win-loss record for each trader, so this dashboard will not display all-time records as if they were period records. Consensus counts distinct traders on the same market and same outcome.
         </div>
       </section>
     </div>
@@ -417,11 +417,10 @@ function renderLeaders() {
     return `<tr>
       <td class="rank">${trader.displayRank}</td>
       <td><div class="trader-name">${avatar(trader)}<span class="name-text">${profileButton(trader)}</span></div></td>
-      <td class="record" title="Verified resolved-market record, when available">${recordText(trader)}</td>
       <td class="${pnlClass}">${pnl === null ? "N/A" : (pnl > 0 ? "+" : "") + cash(pnl)}</td>
       <td class="money">${cash(volume)}</td>
     </tr>`;
-  }).join("") : `<tr><td colspan="5" class="empty">No leaderboard data available. Check that the updater has created ${esc(FILES[period])}.</td></tr>`;
+  }).join("") : `<tr><td colspan="4" class="empty">No leaderboard data available. Check that the updater has created ${esc(FILES[period])}.</td></tr>`;
 
   $("leadersMore").textContent = allLeaders ? "Show fewer ↑" : "View all traders →";
   $("leadersMore").style.display = list.length > 10 ? "inline-block" : "none";
@@ -484,8 +483,9 @@ function renderConsensus() {
         const memberTime = member.buyTime ?? member.buyAt ?? member.timestamp ?? member.lastEventAt ?? member.time;
         const memberRecord = recordOf(member);
         const memberPnl = num(member.pnl);
-        const recordLabel = memberRecord ? `Week ${memberRecord.wins}–${memberRecord.losses} (${memberRecord.rate.toFixed(1)}%)` : "Weekly record unavailable";
-        const pnlLabel = memberPnl === null ? "P&L N/A" : `Week P&L ${cash(memberPnl)}`;
+        const recordLabel = "Period win-loss record unavailable";
+        const periodLabel = period === "week" ? "Week" : "Month";
+        const pnlLabel = memberPnl === null ? `${periodLabel} P&L N/A` : `${periodLabel} P&L ${cash(memberPnl)}`;
         return `<div class="member">
           <div>${profileButton(member, memberName)}<small>${recordLabel} · ${pnlLabel}</small></div>
           <div><strong>${cash(memberAmount)}</strong><small>Entry amount</small></div>
@@ -592,8 +592,8 @@ function openProfile(wallet) {
     <div class="profile-top">${avatar(trader)}<div><h2>${esc(nameOf(trader))}</h2><div class="subtitle">Trader profile</div></div></div>
     <div class="profile-grid">
       <div class="profile-stat"><small>Leaderboard rank</small><strong>#${esc(trader.rank ?? trader.displayRank ?? "—")}</strong></div>
-      <div class="profile-stat"><small>Weekly resolved record</small><strong>${record ? `${recordText(trader)}${record.rate === null ? "" : ` (${record.rate.toFixed(1)}%)`}` : "N/A — not verified"}</strong></div>
-      <div class="profile-stat"><small>Weekly P&amp;L</small><strong class="${pnl !== null && pnl < 0 ? "negative" : "positive"}">${cash(pnl)}</strong></div>
+      <div class="profile-stat"><small>Period win-loss record</small><strong>Not available from verified period data</strong></div>
+      <div class="profile-stat"><small>${period === "week" ? "Weekly" : "Monthly"} P&amp;L</small><strong class="${pnl !== null && pnl < 0 ? "negative" : "positive"}">${cash(pnl)}</strong></div>
       <div class="profile-stat"><small>Volume</small><strong>${cash(volume)}</strong></div>
     </div>
     <div class="profile-trades"><h3>Active positions</h3>
@@ -625,7 +625,7 @@ function closeProfile() {
 async function loadData() {
   loading = true;
   $("errorBox").innerHTML = "";
-  $("leadersBody").innerHTML = `<tr><td colspan="5" class="loading">Loading traders…</td></tr>`;
+  $("leadersBody").innerHTML = `<tr><td colspan="4" class="loading">Loading traders…</td></tr>`;
   $("consensusBody").innerHTML = `<tr><td colspan="6" class="loading">Loading consensus…</td></tr>`;
   $("recentList").innerHTML = `<div class="loading">Loading recent buys…</div>`;
 
@@ -666,7 +666,7 @@ async function loadData() {
   } catch (error) {
     data = null;
     $("updatedAt").textContent = "Unavailable";
-    $("leadersBody").innerHTML = `<tr><td colspan="5" class="empty">Could not load ${esc(FILES[period])}.</td></tr>`;
+    $("leadersBody").innerHTML = `<tr><td colspan="4" class="empty">Could not load ${esc(FILES[period])}.</td></tr>`;
     $("consensusBody").innerHTML = `<tr><td colspan="6" class="empty">Consensus data unavailable.</td></tr>`;
     $("recentList").innerHTML = `<div class="empty">Recent-buy data unavailable.</div>`;
     $("totalPnl").textContent = "—";
