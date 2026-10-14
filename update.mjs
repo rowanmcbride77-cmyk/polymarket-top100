@@ -771,10 +771,26 @@ function buildConsensus(holderGroups, candidates, records = {}) {
     .slice(0, CONSENSUS_LIMIT);
 }
 function makeOutput(period, ranked, sportsRanked, activePositions, tradeRows, nowMs, consensusCandidates, records, leaderRecords, consensusGroups) {
-  const leaders = ranked.slice(0, LEADER_COUNT).map(trader => ({
-    ...trader,
-    ...(leaderRecords[trader.wallet] || {})
-  }));
+  // Preserve the exact period-scoped record used to rank this list.
+  // Full-history enrichment must never overwrite weekly/monthly wins, losses,
+  // win rate, or resolved-market count, otherwise the displayed numbers no
+  // longer match the sort order.
+  const leaders = ranked.slice(0, LEADER_COUNT).map(trader => {
+    const lifetime = leaderRecords[trader.wallet] || {};
+    return {
+      ...lifetime,
+      ...trader,
+      lifetimeWins: lifetime.wins ?? null,
+      lifetimeLosses: lifetime.losses ?? null,
+      lifetimeWinRate: lifetime.winRate ?? null,
+      lifetimeResolvedMarkets: lifetime.resolvedMarkets ?? null,
+      wins: trader.wins,
+      losses: trader.losses,
+      winRate: trader.winRate,
+      resolvedMarkets: trader.resolvedMarkets,
+      recordBasis: trader.recordBasis
+    };
+  });
 
   const leaderPositions = Object.fromEntries(
     leaders.map(trader => [
