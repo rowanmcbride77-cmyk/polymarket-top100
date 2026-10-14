@@ -938,8 +938,11 @@ async function main() {
   console.log("Broad consensus groups: " + consensusGroups.length);
   // Consensus members must come from the actual record-ranked candidates for
   // the selected period, not merely anyone in the raw P&L candidate fetch.
-  await buildPeriod(PERIODS[0], weekCandidates, activePositions, nowMs, null, fullRecordCache, consensusGroups);
-  await buildPeriod(PERIODS[1], monthCandidates, activePositions, nowMs, null, fullRecordCache, consensusGroups);
+  // IMPORTANT: consensus membership must use the full discovered candidate pool,
+  // not the tiny record-filtered leaderboard. The latter can make valid overlaps
+  // vanish even when the position scan found them.
+  await buildPeriod(PERIODS[0], weekCandidates, activePositions, nowMs, consensusCandidatePool, fullRecordCache, consensusGroups);
+  await buildPeriod(PERIODS[1], monthCandidates, activePositions, nowMs, consensusCandidatePool, fullRecordCache, consensusGroups);
 
   console.log("Polymarket tracker update completed.");
 }
