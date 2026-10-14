@@ -20,7 +20,7 @@ const CONSENSUS_MARKET_SCAN_LIMIT = 1000;
 const CONSENSUS_WINDOW_HOURS = 24;
 const CONSENSUS_HOLDERS_PER_MARKET = 1000;
 const MIN_CONSENSUS_POSITION_VALUE = 5;
-const CONSENSUS_ENTRY_WINDOW_MINUTES = 60;
+const CONSENSUS_ENTRY_WINDOW_MINUTES = 24 * 60;
 const MIN_TRADER_RESOLVED_MARKETS = 20;
 const TRADERS_PER_MARKET = 100;
 const TRADE_LIMIT = 10;
@@ -780,13 +780,13 @@ function makeOutput(period, ranked, sportsRanked, activePositions, tradeRows, no
     period: period.key,
     rankingBasis:
       `Ranked by win rate from up to ${RANKING_RECORD_LIMIT} closed positions in the selected ${period.key === "week" ? "7-day" : "30-day"} period; ties broken by sample size, period P&L, then volume`,
-    recordBasis: "Win-loss records are scoped to the selected period (7 days for week, 30 days for month). Wins/losses are classified by realized P&L, not necessarily verified market-settlement outcomes.",
+    recordBasis: "IMPORTANT: win/loss figures are currently classified from realized P&L on closed positions and are not verified market-settlement outcomes. Treat them as profitable/unprofitable exits, not a verified prediction record.",
     candidateCount: ranked.length,
     sportsLeaders: sportsRanked.slice(0, LEADER_COUNT),
     minResolvedMarketsForRecordRanking: 10,
     recordRankingEnabled: true,
     recordWarning:
-      `Consensus qualification requires at least ${MIN_TRADER_RESOLVED_MARKETS} resolved positions in the selected period. Ranking uses up to ${RANKING_RECORD_LIMIT} closed positions from that same period. Realized P&L-based wins/losses are not necessarily market-settlement outcomes.`,
+      `Consensus includes same-side open positions in markets with a listed end date within 24 hours. Trader win/loss figures are based on realized P&L on closed positions and are not yet verified against settlement outcomes.`,
     leaders,
     traderActiveTrades: Object.fromEntries(tradeRows.filter(Boolean)),
     traderActivePositions: leaderPositions,
