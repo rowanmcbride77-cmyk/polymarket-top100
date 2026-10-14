@@ -8,10 +8,9 @@ const PERIODS = [
   { key: "month", api: "MONTH" }
 ];
 
-const CANDIDATE_COUNT = 10000;
+const CANDIDATE_COUNT = 1000;
 const PROCESS_CANDIDATE_COUNT = 1000;
 const LEADERBOARD_PAGE_COUNT = 1000;
-const DISCOVERY_CATEGORIES = ["OVERALL", "SPORTS", "CRYPTO", "POLITICS", "ESPORTS", "CULTURE", "MENTIONS", "WEATHER", "ECONOMICS", "TECH", "FINANCE"];
 const MIN_CONSENSUS_WIN_RATE = 90;
 const LEADER_COUNT = 100;
 const PAGE_SIZE = 50;
@@ -279,42 +278,47 @@ async function mapLimit(items, limit, callback) {
   return results;
 }
 
-async function getCandidates(period, category = "OVERALL") {
-  // P&L and volume leaderboards discover candidates only; final rank is record-based.
-  // Polymarket does not provide a native win/loss leaderboard.
-  const candidates = [];
+async function getCandidates(period) {
+  // Candidate source is Polymarket's own public v2 leaderboard. Fetch the
+  // overall PnL and volume boards with cursor pagination; no third-party board
+  // or guessed offset pagination. The leaderboard is a candidate pool only:
+  // ranking below is based on the closed-position record proxy.
   const byWallet = new Map();
 
-  for (const discoveryCategory of (category === "OVERALL" ? DISCOVERY_CATEGORIES : [category])) {
-    for (const orderBy of ["PNL", "VOL"]) {
-      for (let offset = 0; offset <= LEADERBOARD_PAGE_COUNT; offset += PAGE_SIZE) {
-        const params = new URLSearchParams({
-          category: discoveryCategory, timePeriod: period.api, orderBy,
-          limit: String(PAGE_SIZE), offset: String(offset)
-        });
-        const rows = asArray(await getJson(`${API}/v1/leaderboard?${params}`));
-        if (!rows.length) break;
-        for (const row of rows) {
-        const trader = normalizeLeader(row, candidates.length);
+  for (const sortBy of ["PNL", "VOLUME"]) {
+    let cursor = null;
+    let page = 0;
+    do {
+      const params = new URLSearchParams({
+        time_period: period.api.toLowerCase(),
+        category: "overall",
+        sort_by: sortBy,
+        limit: String(Math.min(1000, CANDIDATE_COUNT))
+      });
+      if (cursor) params.set("cursor", cursor);
+      const response = await getJson(`${API}/v2/leaderboard?${params}`);
+      const rows = asArray(response);
+      for (let i = 0; i < rows.length; i++) {
+        const trader = normalizeLeader(rows[i], byWallet.size);
         if (!trader.wallet) continue;
         const existing = byWallet.get(trader.wallet);
         if (existing) {
           existing.pnl = trader.pnl ?? existing.pnl;
           existing.volume = trader.volume ?? existing.volume;
-          if (!existing.name || existing.name === "Unknown") existing.name = trader.name;
-          continue;
+          if ((!existing.name || existing.name === "Unknown") && trader.name) existing.name = trader.name;
+        } else {
+          byWallet.set(trader.wallet, trader);
         }
-        byWallet.set(trader.wallet, trader);
-        candidates.push(trader);
-        if (candidates.length >= CANDIDATE_COUNT) break;
-        }
-        if (candidates.length >= CANDIDATE_COUNT || rows.length < PAGE_SIZE || offset >= LEADERBOARD_PAGE_COUNT) break;
       }
-      if (candidates.length >= CANDIDATE_COUNT) break;
-    }
-    if (candidates.length >= CANDIDATE_COUNT) break;
+      page++;
+      cursor = response?.pagination?.next_cursor || null;
+      if (!rows.length || !cursor || byWallet.size >= CANDIDATE_COUNT || page >= 3) break;
+    } while (true);
+    if (byWallet.size >= CANDIDATE_COUNT) break;
   }
-  console.log(`${period.key}: discovered ${candidates.length} unique candidates across ${DISCOVERY_CATEGORIES.length} categories and P&L/volume boards; final rank is record-based`);
+
+  const candidates = [...byWallet.values()].slice(0, CANDIDATE_COUNT);
+  console.log(`${period.key}: fetched ${candidates.length} unique traders from Polymarket's official v2 overall PnL/volume leaderboard; ranking uses closed-position record data`);
   return candidates;
 }
 
@@ -881,16 +885,15 @@ async function writeJsonUnderLimit(filename, output) {
 }
 
 async function buildPeriod(period, discoveredCandidates, activePositions, nowMs, consensusCandidates, fullRecordCache, consensusGroups) {
-  // Discover broadly, but enrich a bounded sample. Each enrichment calls multiple
-  // Polymarket endpoints; running all 10,000 wallets through every stage caused
-  // workflow cancellations before JSON validation and commit.
+  // Enrich the fetched official leaderboard candidate pool. Candidate discovery
+  // is intentionally limited to the first 1,000 unique leaderboard traders.
   const candidates = discoveredCandidates.slice(0, PROCESS_CANDIDATE_COUNT);
   console.log(`Discovered ${discoveredCandidates.length} ${period.key} candidates; loading closed-position records for bounded sample of ${candidates.length}...`);
   const records = await attachRecords(candidates, period, nowMs, RANKING_RECORD_LIMIT);
   const ranked = rankCandidates(candidates, records);
   const sportsRanked = rankSportsCandidates(candidates, records);
   const leaders = ranked.slice(0, LEADER_COUNT);
-  console.log(`${period.key}: ${leaders.length} traders qualify with at least 10 classifiable closed positions`);
+  console.log(`${period.key}: ${leaders.length} traders qualify with at least ${MIN_TRADER_RESOLVED_MARKETS} classifiable closed positions and ${MIN_CONSENSUS_WIN_RATE}%+ profitable-close rate`);
   // Reuse the period-scoped record sample used for ranking; avoid a second history scan.
   const leaderRecords = records;
 
@@ -926,7 +929,7 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     pool: period.key,
     candidateCount: ranked.length,
     discoveredCandidateCount: discoveredCandidates.length,
-    candidatePoolBasis: "Expanded discovery scans up to 10,000 unique traders per period across OVERALL, SPORTS, CRYPTO, POLITICS, ESPORTS, CULTURE, MENTIONS, WEATHER, ECONOMICS, TECH, and FINANCE P&L/volume leaderboards. Each trader still needs at least 20 classified closed positions and a 90% profitable-close rate proxy. This proxy is NOT settlement-verified prediction accuracy; category boards overlap and this is not guaranteed to cover every Polymarket trader.",
+    candidatePoolBasis: "Up to 1,000 unique traders fetched from Polymarket official Data API v2 overall PnL and volume leaderboards using cursor pagination. This is a leaderboard-derived candidate pool, not every Polymarket trader. Final ranking requires at least 20 classified closed positions and a 90% profitable-close rate proxy.",
     resolutionWindowHours: CONSENSUS_WINDOW_HOURS,
     entryActivityWindowHours: CONSENSUS_ENTRY_WINDOW_MINUTES / 60,
     recordBasis: "90% threshold applies to profitable-close rate based on realized P&L, NOT verified market settlement outcomes. Do not interpret this as a verified prediction win rate.",
