@@ -46,8 +46,37 @@ jobs:
               throw new Error(`${file} exceeds 5 MB`);
             }
 
-            JSON.parse(await fs.readFile(file, "utf8"));
-            console.log(`${file}: ${(stat.size / 1024 / 1024).toFixed(2)} MB; valid JSON`);
+            const parsed = JSON.parse(await fs.readFile(file, "utf8"));
+            if (!parsed || typeof parsed !== "object" || !parsed.generatedAt) {
+              throw new Error(`\${file} is missing generatedAt metadata`);
+            }
+
+            if (file === "week.json" || file === "month.json") {
+              const leaders = Array.isArray(parsed.leaders) ? parsed.leaders : [];
+              const misleadingCappedRecords = leaders.filter(row =>
+                row.recordComplete === false &&
+                (row.wins !== null || row.losses !== null || row.winRate !== null)
+              );
+              if (misleadingCappedRecords.length) {
+                throw new Error(`\${file} contains \${misleadingCappedRecords.length} capped records presented as complete counts/rates`);
+              }
+              console.log(`\${file}: \${leaders.length} leaders; \${leaders.filter(row => row.recordComplete === false).length} incomplete records hidden`);
+            }
+
+            if (file === "consensus-week.json" || file === "consensus-month.json") {
+              const groups = Array.isArray(parsed.consensus) ? parsed.consensus : [];
+              const invalidGroups = groups.filter(group => {
+                const traders = Array.isArray(group.traders) ? group.traders : [];
+                const wallets = new Set(traders.map(row => String(row.wallet || "").toLowerCase()).filter(Boolean));
+                return wallets.size < 2 || wallets.size !== traders.length || group.sameSide !== traders.length;
+              });
+              if (invalidGroups.length) {
+                throw new Error(`\${file} contains \${invalidGroups.length} consensus groups without at least two distinct, unique wallets`);
+              }
+              console.log(`\${file}: \${groups.length} consensus groups passed distinct-wallet checks`);
+            }
+
+            console.log(`\${file}: \${(stat.size / 1024 / 1024).toFixed(2)} MB; valid JSON`);
           }
           NODE
 
