@@ -648,6 +648,7 @@ async function getBroadConsensusMarkets(knownTraders, nowMs, activePositions) {
   });
 
   const allPositionsByWallet = new Map(consensusPositions.map(row => [row[0], row[1]]));
+  const traderByWallet = new Map(knownTraders.map(trader => [String(trader.wallet || "").toLowerCase(), trader]));
   const groups = new Map();
   let openPositionsSeen = 0;
   let positionsWithConditionAndSide = 0;
@@ -657,7 +658,7 @@ async function getBroadConsensusMarkets(knownTraders, nowMs, activePositions) {
   for (const [wallet, positions, hasMore, pages] of consensusPositions) {
     positionPagesFetched += pages || 0;
     if (hasMore) walletsWithMorePositions++;
-    const trader = knownTraders.find(row => String(row.wallet || "").toLowerCase() === wallet);
+    const trader = traderByWallet.get(wallet);
     if (!trader) continue;
     for (const position of positions) {
       openPositionsSeen++;
