@@ -336,6 +336,9 @@ function isActivePosition(position, nowMs) {
 
   if (size === null || size <= 0) return false;
   if (position.closed === true) return false;
+  // Trust explicit API lifecycle status over inferred end dates.
+  const status = String(position.status ?? "").toUpperCase();
+  if (status && status !== "OPEN" && status !== "ACTIVE") return false;
   if (position.redeemable === true) return false;
   if (position.mergeable === true) return false;
 
@@ -363,7 +366,7 @@ function compactPosition(position) {
     size: num(position.size ?? position.current_size ?? position.currentSize),
     currentValue: num(position.currentValue ?? position.current_value),
     initialValue: num(position.entry_cost_usdc ?? position.total_cost_usdc ?? position.initialValue ?? position.initial_value ?? position.initial_value_usd),
-    realizedPnl: num(position.realizedPnl ?? position.realized_pnl ?? position.cashPnl ?? position.cash_pnl),
+    realizedPnl: num(position.realizedPnl ?? position.realized_pnl ?? position.cashPnl ?? position.cash_pnl ?? position.total_pnl ?? position.totalPnl),
     lastEventAt: timestampMs(
       position.lastEventAt ?? position.last_event_at
     ),
@@ -783,7 +786,7 @@ function makeOutput(period, ranked, sportsRanked, activePositions, tradeRows, no
     generatedAt: new Date(nowMs).toISOString(),
     period: period.key,
     rankingBasis:
-      `Ranked by win rate from up to ${RANKING_RECORD_LIMIT} closed positions in the selected ${period.key === "week" ? "7-day" : "30-day"} period; ties broken by sample size, period P&L, then volume`,
+      `Candidate universe is the Polymarket ${period.key.toUpperCase()} P&L leaderboard (up to ${CANDIDATE_COUNT} wallets). Within that limited universe, ranked by observed positive/negative realized-P&L outcomes from closed positions in the selected ${period.key === "week" ? "7-day" : "30-day"} period; ties broken by sample size, period P&L, then volume. This is not a platform-wide win-rate ranking.`,
     recordBasis: "IMPORTANT: win/loss figures are currently classified from realized P&L on closed positions and are not verified market-settlement outcomes. Treat them as profitable/unprofitable exits, not a verified prediction record.",
     candidateCount: ranked.length,
     sportsLeaders: sportsRanked.slice(0, LEADER_COUNT),
@@ -794,7 +797,7 @@ function makeOutput(period, ranked, sportsRanked, activePositions, tradeRows, no
     leaders,
     traderActiveTrades: Object.fromEntries(tradeRows.filter(Boolean)),
     traderActivePositions: leaderPositions,
-    consensus: buildConsensus(consensusGroups, consensusCandidates, records)
+    consensus: buildConsensus(consensusGroups, consensusCandidates || ranked, records)
   };
 }
 
@@ -889,7 +892,8 @@ async function buildPeriod(period, candidates, activePositions, nowMs, consensus
   await writeJsonUnderLimit(`consensus-${period.key}.json`, {
     generatedAt: new Date(nowMs).toISOString(),
     pool: period.key,
-    candidateCount: consensusCandidates.length,
+    candidateCount: (consensusCandidates || ranked).length,
+    candidatePoolBasis: "Record-ranked qualifying traders within the selected period's top-P&L candidate universe; not a platform-wide top-1000 win-rate ranking.",
     resolutionWindowHours: CONSENSUS_WINDOW_HOURS,
     entryActivityWindowHours: CONSENSUS_ENTRY_WINDOW_MINUTES / 60,
     recordBasis: "Win-loss is not settlement-verified; current trader records are based on realized P&L on closed positions.",
@@ -928,8 +932,10 @@ async function main() {
   const consensusCandidatePool = [...unique.values()];
   const consensusGroups = await getBroadConsensusMarkets(consensusCandidatePool, nowMs, activePositions);
   console.log("Broad consensus groups: " + consensusGroups.length);
-  await buildPeriod(PERIODS[0], weekCandidates, activePositions, nowMs, weekCandidates, fullRecordCache, consensusGroups);
-  await buildPeriod(PERIODS[1], monthCandidates, activePositions, nowMs, monthCandidates, fullRecordCache, consensusGroups);
+  // Consensus members must come from the actual record-ranked candidates for
+  // the selected period, not merely anyone in the raw P&L candidate fetch.
+  await buildPeriod(PERIODS[0], weekCandidates, activePositions, nowMs, null, fullRecordCache, consensusGroups);
+  await buildPeriod(PERIODS[1], monthCandidates, activePositions, nowMs, null, fullRecordCache, consensusGroups);
 
   console.log("Polymarket tracker update completed.");
 }
