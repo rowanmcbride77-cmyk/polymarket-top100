@@ -730,8 +730,9 @@ async function getBroadConsensusMarkets(knownTraders, nowMs, activePositions) {
   const holderGroups = [...groups.values()]
     .filter(group => group.sameSide >= 2)
     .map(({ walletsSeen, ...group }) => group)
-    .sort((a, b) => b.sameSide - a.sameSide || b.totalValue - a.totalValue || (b.newestBuy || 0) - (a.newestBuy || 0))
-    .slice(0, CONSENSUS_LIMIT);
+    // Do not truncate the raw groups before checking the weekly 90% filter.
+    // Otherwise a few popular but ineligible markets can crowd out valid ones.
+    .sort((a, b) => b.sameSide - a.sameSide || b.totalValue - a.totalValue || (b.newestBuy || 0) - (a.newestBuy || 0));
 
   lastConsensusDiagnostics = {
     candidateWallets: knownTraders.length,
@@ -751,9 +752,15 @@ function buildConsensus(holderGroups, candidates, records = {}) {
   const candidateMap = new Map(candidates.map(trader => [
     String(trader.wallet || "").toLowerCase(), trader
   ]));
-  return holderGroups.map(group => {
-    // Only count consensus traders with a complete record, at least 20
-    // classifiable closed positions, and a 90%+ profitable-close rate.
+  return holderGroups
+    // Exclude markets with a known end/resolution date within the next 24 hours.
+    // The date is not always available from the positions API, so unknown dates
+    // are retained rather than guessed.
+    .filter(group => !isResolvingSoon(group, Date.now()))
+    .map(group => {
+    // For the weekly file, records are the selected week's closed-position
+    // sample. Only count traders with a complete record, at least 20 classifiable
+    // closed positions, and a 90%+ profitable-close rate.
     // This is a realized-P&L proxy, not verified market-settlement accuracy.
     const traders = group.traders.flatMap(holder => {
       const wallet = String(holder.wallet || "").toLowerCase();
