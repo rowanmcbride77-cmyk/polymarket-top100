@@ -212,14 +212,19 @@ async function getResolvedRecord(wallet, period, nowMs, maxPositions = RANKING_R
   }
 
   const resolvedMarkets = wins + losses;
+  // A capped sample is not a complete record. Never publish its 1,000–0
+  // counts or 100% rate as if they were a trader's true record.
+  const publishableRecord = recordComplete && resolvedMarkets > 0;
   return {
-    wins, losses,
-    sportsWins, sportsLosses,
-    sportsResolvedMarkets: sportsWins + sportsLosses,
-    sportsWinRate: (sportsWins + sportsLosses) ? (sportsWins / (sportsWins + sportsLosses)) * 100 : null,
-    winRate: resolvedMarkets ? (wins / resolvedMarkets) * 100 : null,
-    resolvedMarkets,
-    recordVerified: resolvedMarkets > 0,
+    wins: publishableRecord ? wins : null,
+    losses: publishableRecord ? losses : null,
+    sportsWins: recordComplete ? sportsWins : null,
+    sportsLosses: recordComplete ? sportsLosses : null,
+    sportsResolvedMarkets: recordComplete ? sportsWins + sportsLosses : null,
+    sportsWinRate: recordComplete && (sportsWins + sportsLosses) ? (sportsWins / (sportsWins + sportsLosses)) * 100 : null,
+    winRate: publishableRecord ? (wins / resolvedMarkets) * 100 : null,
+    resolvedMarkets: publishableRecord ? resolvedMarkets : null,
+    recordVerified: publishableRecord,
     scannedPositions,
     recordComplete,
     recordLimit: maxPositions,
@@ -324,13 +329,22 @@ function rankSportsCandidates(candidates, records = {}) {
 function rankCandidates(candidates, records = {}) {
   return [...candidates]
     .map(trader => ({ ...trader, ...(records[trader.wallet] || {}) }))
-    .filter(trader => trader.recordVerified && (trader.resolvedMarkets ?? 0) >= MIN_TRADER_RESOLVED_MARKETS && trader.winRate !== null && trader.winRate >= MIN_CONSENSUS_WIN_RATE)
-    .sort((a, b) =>
-      (b.winRate - a.winRate) ||
-      ((b.resolvedMarkets ?? 0) - (a.resolvedMarkets ?? 0)) ||
-      ((b.pnl ?? -Infinity) - (a.pnl ?? -Infinity)) ||
-      ((b.volume ?? -Infinity) - (a.volume ?? -Infinity))
-    )
+    .sort((a, b) => {
+      // Complete realized-P&L samples may be compared as a clearly labeled
+      // proxy. Incomplete/capped samples never get a fabricated 100% rate;
+      // those rows fall back to Polymarket's actual period P&L and volume.
+      const aComplete = a.recordComplete === true && a.winRate !== null && (a.resolvedMarkets ?? 0) >= MIN_TRADER_RESOLVED_MARKETS;
+      const bComplete = b.recordComplete === true && b.winRate !== null && (b.resolvedMarkets ?? 0) >= MIN_TRADER_RESOLVED_MARKETS;
+      if (aComplete !== bComplete) return aComplete ? -1 : 1;
+      if (aComplete && bComplete) {
+        return (b.winRate - a.winRate) ||
+          ((b.resolvedMarkets ?? 0) - (a.resolvedMarkets ?? 0)) ||
+          ((b.pnl ?? -Infinity) - (a.pnl ?? -Infinity)) ||
+          ((b.volume ?? -Infinity) - (a.volume ?? -Infinity));
+      }
+      return ((b.pnl ?? -Infinity) - (a.pnl ?? -Infinity)) ||
+        ((b.volume ?? -Infinity) - (a.volume ?? -Infinity));
+    })
     .map((trader, index) => ({ ...trader, rank: index + 1 }));
 }
 
@@ -800,8 +814,8 @@ function makeOutput(period, ranked, sportsRanked, activePositions, tradeRows, no
     generatedAt: new Date(nowMs).toISOString(),
     period: period.key,
     rankingBasis:
-      `Ranked by profitable closed-position rate (realized P&L proxy, NOT verified prediction/settlement accuracy) in the selected ${period.key === "week" ? "7-day" : "30-day"} period, then sample size, period P&L, and volume as tie-breakers. Candidate discovery combines up to ${CANDIDATE_COUNT} entries from each Polymarket P&L and volume leaderboard; because Polymarket does not expose a native win/loss leaderboard, this is the top record-ranked set within that discovered candidate universe, not a claim to cover every trader on the platform.`,
-    recordBasis: "IMPORTANT: these are profitable/unprofitable closed-position counts inferred from realized P&L, not verified market prediction wins/losses. A high profitable-close rate can coexist with negative period P&L because position sizes, open positions, and timing differ.",
+      `Complete realized-P&L proxy records (when available) are shown separately from incomplete samples; traders with incomplete/capped samples are ordered by Polymarket period P&L and volume. These are NOT verified prediction/settlement outcomes in the selected ${period.key === "week" ? "7-day" : "30-day"} period. Candidate discovery combines up to ${CANDIDATE_COUNT} entries from each Polymarket P&L and volume leaderboard; because Polymarket does not expose a native win/loss leaderboard, this is the top record-ranked set within that discovered candidate universe, not a claim to cover every trader on the platform.`,
+    recordBasis: "IMPORTANT: complete profitable/unprofitable close counts are inferred from realized P&L, not verified market prediction wins/losses. If a history scan hits its cap, counts and rate are hidden rather than shown as a misleading 1,000–0 sample. Incomplete-record traders fall back to Polymarket period P&L/volume ranking.",
     candidateCount: ranked.length,
     sportsLeaders: sportsRanked.slice(0, LEADER_COUNT),
     minResolvedMarketsForRecordRanking: 10,
