@@ -616,8 +616,11 @@ async function getBroadConsensusMarkets(knownTraders, nowMs, activePositions) {
     }
   });
   const allPositionsByWallet = new Map(consensusPositions);
-  const pageSize = 500;
-  const maxPages = 20;
+  // Gamma currently caps market-list responses at 100 rows per page even
+  // when a larger limit is requested. Asking for 500 caused the loop to stop
+  // after its first 100-market response, missing almost every candidate market.
+  const pageSize = 100;
+  const maxPages = 100;
   const marketsById = new Map();
   for (let page = 0; page < maxPages; page++) {
     const params = new URLSearchParams({
