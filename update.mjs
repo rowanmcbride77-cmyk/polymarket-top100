@@ -13,8 +13,8 @@ const LEADER_COUNT = 100;
 const PAGE_SIZE = 50;
 const POSITION_FETCH_LIMIT = 100;
 const POSITIONS_PER_TRADER = 10;
-const RANKING_RECORD_LIMIT = null;
-const LEADER_RECORD_LIMIT = null;
+const RANKING_RECORD_LIMIT = 1000;
+const LEADER_RECORD_LIMIT = RANKING_RECORD_LIMIT;
 const CONSENSUS_LIMIT = 50;
 const CONSENSUS_MARKET_SCAN_LIMIT = 1000;
 const CONSENSUS_WINDOW_HOURS = 24;
@@ -154,7 +154,8 @@ async function getResolvedRecord(wallet, period, nowMs, maxPositions = RANKING_R
       limit: String(pageLimit),
       status: "CLOSED",
       sort_by: "TIMESTAMP",
-      sort_direction: "DESC"
+      sort_direction: "DESC",
+      start: String(Math.floor(cutoffMs / 1000))
     });
     if (cursor) params.set("cursor", cursor);
 
@@ -220,8 +221,8 @@ async function getResolvedRecord(wallet, period, nowMs, maxPositions = RANKING_R
     recordComplete,
     recordLimit: maxPositions,
     recordBasis: recordComplete
-      ? `Closed positions from the last ${periodDays} days scanned; wins/losses classified by realized P&L, not necessarily market settlement outcome`
-      : `Sample of up to ${maxPositions} closed positions from the last ${periodDays} days; wins/losses classified by realized P&L`
+      ? `Closed-position sample from the last ${periodDays} days scanned; positive/negative realized P&L proxy, not verified market settlement`
+      : `INCOMPLETE sample of up to ${maxPositions} closed positions from the last ${periodDays} days; positive/negative realized P&L proxy, not verified market settlement`
   };
 }
 async function attachRecords(traders, period, nowMs, maxPositions = RANKING_RECORD_LIMIT, cache = null) {
@@ -803,14 +804,14 @@ function makeOutput(period, ranked, sportsRanked, activePositions, tradeRows, no
     generatedAt: new Date(nowMs).toISOString(),
     period: period.key,
     rankingBasis:
-      `Ranked by observed win rate from closed-position outcomes in the selected ${period.key === "week" ? "7-day" : "30-day"} period, then resolved sample size, P&L, and volume as tie-breakers. Candidate discovery combines up to ${CANDIDATE_COUNT} entries from each Polymarket P&L and volume leaderboard; because Polymarket does not expose a native win/loss leaderboard, this is the top record-ranked set within that discovered candidate universe, not a claim to cover every trader on the platform.`,
-    recordBasis: "IMPORTANT: win/loss figures are currently classified from realized P&L on closed positions and are not verified market-settlement outcomes. Treat them as profitable/unprofitable exits, not a verified prediction record.",
+      `Ranked by profitable closed-position rate (realized P&L proxy, NOT verified prediction/settlement accuracy) in the selected ${period.key === "week" ? "7-day" : "30-day"} period, then sample size, period P&L, and volume as tie-breakers. Candidate discovery combines up to ${CANDIDATE_COUNT} entries from each Polymarket P&L and volume leaderboard; because Polymarket does not expose a native win/loss leaderboard, this is the top record-ranked set within that discovered candidate universe, not a claim to cover every trader on the platform.`,
+    recordBasis: "IMPORTANT: these are profitable/unprofitable closed-position counts inferred from realized P&L, not verified market prediction wins/losses. A high profitable-close rate can coexist with negative period P&L because position sizes, open positions, and timing differ.",
     candidateCount: ranked.length,
     sportsLeaders: sportsRanked.slice(0, LEADER_COUNT),
     minResolvedMarketsForRecordRanking: 10,
     recordRankingEnabled: true,
     recordWarning:
-      `Consensus includes same-side open positions in markets with a listed end date within 24 hours. Trader win/loss figures are based on realized P&L on closed positions and are not yet verified against settlement outcomes.`,
+      `Consensus includes same-side open positions in markets with a listed end date within 24 hours. Closed-position profitability figures are P&L-based proxies, not verified settlement records.`,
     leaders,
     traderActiveTrades: Object.fromEntries(tradeRows.filter(Boolean)),
     traderActivePositions: leaderPositions,
@@ -876,8 +877,8 @@ async function buildPeriod(period, candidates, activePositions, nowMs, consensus
   const sportsRanked = rankSportsCandidates(candidates, records);
   const leaders = ranked.slice(0, LEADER_COUNT);
   console.log(`${period.key}: ${leaders.length} traders qualify with at least 10 classifiable closed positions`);
-  console.log(`Loading all available closed-position records for ${leaders.length} ${period.key} leaders...`);
-  const leaderRecords = await attachRecords(leaders, period, nowMs, LEADER_RECORD_LIMIT, fullRecordCache);
+  // Reuse the period-scoped record sample used for ranking; avoid a second history scan.
+  const leaderRecords = records;
 
   const tradeRows = await mapLimit(
     leaders,
@@ -910,7 +911,7 @@ async function buildPeriod(period, candidates, activePositions, nowMs, consensus
     generatedAt: new Date(nowMs).toISOString(),
     pool: period.key,
     candidateCount: Math.min(CANDIDATE_COUNT, ranked.length),
-    candidatePoolBasis: "Consensus is restricted to the top 1,000 record-ranked traders within the discovered candidate pool. Each candidate is ranked using all available closed positions in the selected 7-day/30-day window; candidate discovery combines up to 1,000 P&L-ranked and 1,000 volume-ranked leaderboard entries, so this is not a platform-wide exhaustive universe.",
+    candidatePoolBasis: "Consensus is restricted to the record-ranked candidate pool. Ranking uses up to 1,000 recent closed-position rows per trader (P&L-based profitability proxy, not settlement-verified); candidate discovery combines up to 1,000 P&L-ranked and 1,000 volume-ranked leaderboard entries, so this is not platform-wide exhaustive.",
     resolutionWindowHours: CONSENSUS_WINDOW_HOURS,
     entryActivityWindowHours: CONSENSUS_ENTRY_WINDOW_MINUTES / 60,
     recordBasis: "Win-loss is not settlement-verified; current trader records are based on realized P&L on closed positions.",
