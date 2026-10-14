@@ -167,7 +167,7 @@ dialog::backdrop{background:#000b}
       <section class="panel">
         <div class="panel-heading"><div class="heading-left"><span class="heading-icon">🎯</span><h2>Sports Trader Rankings</h2></div><span class="pill">Sports record</span></div>
         <div class="source-note" style="margin:0 0 12px">Traders from the weekly/monthly candidate pool with at least five closed sports positions. Profitable-close rate uses realized P&amp;L as a proxy, not verified settlement results.</div>
-        <div class="table-wrap"><table><thead><tr><th>#</th><th>Trader</th><th>Sports W–L</th><th>Sports Win Rate</th><th>Sports Sample</th></tr></thead><tbody id="sportsLeadersBody"><tr><td colspan="5" class="loading">Loading sports traders…</td></tr></tbody></table></div>
+        <div class="table-wrap"><table><thead><tr><th>#</th><th>Trader</th><th>Sports Profitable–Unprofitable Closes (proxy)</th><th>Sports Profitable-Close Rate</th><th>Sports Sample</th></tr></thead><tbody id="sportsLeadersBody"><tr><td colspan="5" class="loading">Loading sports traders…</td></tr></tbody></table></div>
       </section>
     </div>
 
@@ -551,7 +551,7 @@ function renderConsensus() {
         const memberTime = member.buyTime ?? member.buyAt ?? member.timestamp ?? member.lastEventAt ?? member.time;
         const memberRecord = recordOf(member);
         const memberPnl = num(member.pnl);
-        const recordLabel = recordOf(member) ? `Win–Loss ${recordText(member)} · ${num(member.winRate) === null ? "" : num(member.winRate).toFixed(1) + "% win rate"}` : "Win-loss record unavailable";
+        const recordLabel = recordOf(member) ? `Profitable–unprofitable closes (P&L proxy): ${recordText(member)} · ${num(member.winRate) === null ? "" : num(member.winRate).toFixed(1) + "% profitable-close rate"}` : "Profitable-close sample unavailable";
         const periodLabel = period === "week" ? "Week" : "Month";
         const pnlLabel = memberPnl === null ? `${periodLabel} P&L N/A` : `${periodLabel} P&L ${cash(memberPnl)}`;
         return `<div class="member">
