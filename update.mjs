@@ -618,6 +618,17 @@ function isResolvingSoon(market, nowMs) {
     endMs <= nowMs + CONSENSUS_WINDOW_HOURS * 60 * 60 * 1000;
 }
 
+function hasExpiredEndDate(market, nowMs) {
+  const rawEndDate = marketEndDate(market);
+  if (rawEndDate === null || rawEndDate === undefined || rawEndDate === "") return false;
+  let endMs = timestampMs(rawEndDate);
+  // Treat date-only values as valid through the end of that UTC calendar day.
+  if (typeof rawEndDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(rawEndDate)) {
+    endMs = Date.parse(rawEndDate + "T23:59:59.999Z");
+  }
+  return endMs !== null && endMs < nowMs;
+}
+
 async function getBroadConsensusMarkets(knownTraders, nowMs, activePositions) {
   // Group positions directly from the Data API. Page beyond the first 100
   // holdings so lower-value active markets are not silently omitted.
@@ -756,7 +767,14 @@ function buildConsensus(holderGroups, candidates, records = {}) {
     // Exclude markets with a known end/resolution date within the next 24 hours.
     // The date is not always available from the positions API, so unknown dates
     // are retained rather than guessed.
-    .filter(group => !isResolvingSoon(group, Date.now()))
+    .filter(group => {
+      const nowMs = Date.now();
+      // Exclude expired markets and zero-value positions so stale/resolved
+      // holdings cannot appear as live consensus opportunities.
+      return !hasExpiredEndDate(group, nowMs) &&
+        !isResolvingSoon(group, nowMs) &&
+        (num(group.totalValue) ?? 0) > 0;
+    })
     .map(group => {
     // For the weekly file, records are the selected week's closed-position
     // sample. Only count traders with a complete record, at least 20 classifiable
