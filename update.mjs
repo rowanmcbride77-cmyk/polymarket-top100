@@ -8,8 +8,8 @@ const PERIODS = [
   { key: "month", api: "MONTH" }
 ];
 
-const CANDIDATE_COUNT = 1000;
-const PROCESS_CANDIDATE_COUNT = 1000;
+const CANDIDATE_COUNT = 2100;
+const PROCESS_CANDIDATE_COUNT = 2100;
 const LEADERBOARD_PAGE_COUNT = 1000;
 const MIN_CONSENSUS_WIN_RATE = 90;
 const LEADER_COUNT = 100;
@@ -279,27 +279,23 @@ async function mapLimit(items, limit, callback) {
 }
 
 async function getCandidates(period) {
-  // Candidate source is Polymarket's own public v2 leaderboard. Fetch the
-  // overall PnL and volume boards with cursor pagination; no third-party board
-  // or guessed offset pagination. The leaderboard is a candidate pool only:
-  // ranking below is based on the closed-position record proxy.
+  // Polymarket's public leaderboard endpoint is v1. It uses timePeriod,
+  // orderBy, limit and offset (not v2 cursor params). The documented offset
+  // ceiling is 1,000; collect the full accessible PnL and volume boards.
   const byWallet = new Map();
-
-  for (const sortBy of ["PNL", "VOLUME"]) {
-    let cursor = null;
-    let page = 0;
-    do {
+  for (const orderBy of ["PNL", "VOL"]) {
+    for (let offset = 0; offset <= LEADERBOARD_PAGE_COUNT; offset += PAGE_SIZE) {
       const params = new URLSearchParams({
-        time_period: period.api.toLowerCase(),
-        category: "overall",
-        sort_by: sortBy,
-        limit: String(Math.min(1000, CANDIDATE_COUNT))
+        category: "OVERALL",
+        timePeriod: period.api,
+        orderBy,
+        limit: String(PAGE_SIZE),
+        offset: String(offset)
       });
-      if (cursor) params.set("cursor", cursor);
-      const response = await getJson(`${API}/v2/leaderboard?${params}`);
-      const rows = asArray(response);
+      const rows = asArray(await getJson(`${API}/v1/leaderboard?${params}`));
+      if (!rows.length) break;
       for (let i = 0; i < rows.length; i++) {
-        const trader = normalizeLeader(rows[i], byWallet.size);
+        const trader = normalizeLeader(rows[i], offset + i + 1);
         if (!trader.wallet) continue;
         const existing = byWallet.get(trader.wallet);
         if (existing) {
@@ -310,15 +306,11 @@ async function getCandidates(period) {
           byWallet.set(trader.wallet, trader);
         }
       }
-      page++;
-      cursor = response?.pagination?.next_cursor || null;
-      if (!rows.length || !cursor || byWallet.size >= CANDIDATE_COUNT || page >= 3) break;
-    } while (true);
-    if (byWallet.size >= CANDIDATE_COUNT) break;
+      if (rows.length < PAGE_SIZE || offset >= LEADERBOARD_PAGE_COUNT) break;
+    }
   }
-
-  const candidates = [...byWallet.values()].slice(0, CANDIDATE_COUNT);
-  console.log(`${period.key}: fetched ${candidates.length} unique traders from Polymarket's official v2 overall PnL/volume leaderboard; ranking uses closed-position record data`);
+  const candidates = [...byWallet.values()];
+  console.log(`${period.key}: fetched ${candidates.length} unique traders from Polymarket's public overall PnL and volume leaderboards (max accessible offset 1,000 per board)`);
   return candidates;
 }
 
@@ -676,7 +668,6 @@ async function getBroadConsensusMarkets(knownTraders, nowMs, activePositions) {
       const market = marketsById.get(conditionId);
       if (!market || market.closed === true || market.active === false) continue;
       positionsMatchedToMarket++;
-      if (!isResolvingSoon(market, nowMs)) continue;
       positionsInWindow++;
 
       const side = String(position.outcome ?? position.outcome_name ?? "").trim();
@@ -737,7 +728,7 @@ async function getBroadConsensusMarkets(knownTraders, nowMs, activePositions) {
     candidateWallets: knownTraders.length,
     openPositionsSeen,
     positionsMatchedToMarket,
-    positionsIn24hWindow: positionsInWindow,
+    positionsInActiveMarkets: positionsInWindow,
     sameSideGroups: holderGroups.length
   }));
   return holderGroups;
@@ -885,8 +876,8 @@ async function writeJsonUnderLimit(filename, output) {
 }
 
 async function buildPeriod(period, discoveredCandidates, activePositions, nowMs, consensusCandidates, fullRecordCache, consensusGroups) {
-  // Enrich the fetched official leaderboard candidate pool. Candidate discovery
-  // is intentionally limited to the first 1,000 unique leaderboard traders.
+  // Enrich the full accessible leaderboard-derived candidate pool. Each endpoint
+  // has a documented offset ceiling, so this can yield around 2,000 unique traders.
   const candidates = discoveredCandidates.slice(0, PROCESS_CANDIDATE_COUNT);
   console.log(`Discovered ${discoveredCandidates.length} ${period.key} candidates; loading closed-position records for bounded sample of ${candidates.length}...`);
   const records = await attachRecords(candidates, period, nowMs, RANKING_RECORD_LIMIT);
@@ -929,9 +920,9 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     pool: period.key,
     candidateCount: ranked.length,
     discoveredCandidateCount: discoveredCandidates.length,
-    candidatePoolBasis: "Up to 1,000 unique traders fetched from Polymarket official Data API v2 overall PnL and volume leaderboards using cursor pagination. This is a leaderboard-derived candidate pool, not every Polymarket trader. Final ranking requires at least 20 classified closed positions and a 90% profitable-close rate proxy.",
-    resolutionWindowHours: CONSENSUS_WINDOW_HOURS,
-    entryActivityWindowHours: CONSENSUS_ENTRY_WINDOW_MINUTES / 60,
+    candidatePoolBasis: "Unique traders collected from Polymarket public Data API v1 overall PnL and volume leaderboards, paginating each board through its supported offset ceiling (0–1,000). This is the largest accessible leaderboard-derived candidate pool from these endpoints, not all platform traders. Records remain a realized-PnL proxy, not verified settlement prediction accuracy.",
+    resolutionWindowHours: null,
+    entryActivityWindowHours: null,
     recordBasis: "90% threshold applies to profitable-close rate based on realized P&L, NOT verified market settlement outcomes. Do not interpret this as a verified prediction win rate.",
     consensus: output.consensus
   });
