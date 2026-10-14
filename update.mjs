@@ -8,7 +8,10 @@ const PERIODS = [
   { key: "month", api: "MONTH" }
 ];
 
-const CANDIDATE_COUNT = 1000;
+const CANDIDATE_COUNT = 10000;
+const LEADERBOARD_PAGE_COUNT = 1000;
+const DISCOVERY_CATEGORIES = ["OVERALL", "SPORTS", "CRYPTO", "POLITICS", "ESPORTS", "CULTURE", "MENTIONS", "WEATHER", "ECONOMICS", "TECH", "FINANCE"];
+const MIN_CONSENSUS_WIN_RATE = 90;
 const LEADER_COUNT = 100;
 const PAGE_SIZE = 50;
 const POSITION_FETCH_LIMIT = 100;
@@ -281,15 +284,16 @@ async function getCandidates(period, category = "OVERALL") {
   const candidates = [];
   const byWallet = new Map();
 
-  for (const orderBy of ["PNL", "VOL"]) {
-    for (let offset = 0; offset < CANDIDATE_COUNT; offset += PAGE_SIZE) {
-      const params = new URLSearchParams({
-        category, timePeriod: period.api, orderBy,
-        limit: String(PAGE_SIZE), offset: String(offset)
-      });
-      const rows = asArray(await getJson(`${API}/v1/leaderboard?${params}`));
-      if (!rows.length) break;
-      for (const row of rows) {
+  for (const discoveryCategory of (category === "OVERALL" ? DISCOVERY_CATEGORIES : [category])) {
+    for (const orderBy of ["PNL", "VOL"]) {
+      for (let offset = 0; offset <= LEADERBOARD_PAGE_COUNT; offset += PAGE_SIZE) {
+        const params = new URLSearchParams({
+          category: discoveryCategory, timePeriod: period.api, orderBy,
+          limit: String(PAGE_SIZE), offset: String(offset)
+        });
+        const rows = asArray(await getJson(`${API}/v1/leaderboard?${params}`));
+        if (!rows.length) break;
+        for (const row of rows) {
         const trader = normalizeLeader(row, candidates.length);
         if (!trader.wallet) continue;
         const existing = byWallet.get(trader.wallet);
@@ -301,11 +305,15 @@ async function getCandidates(period, category = "OVERALL") {
         }
         byWallet.set(trader.wallet, trader);
         candidates.push(trader);
+        if (candidates.length >= CANDIDATE_COUNT) break;
+        }
+        if (candidates.length >= CANDIDATE_COUNT || rows.length < PAGE_SIZE || offset >= LEADERBOARD_PAGE_COUNT) break;
       }
-      if (rows.length < PAGE_SIZE) break;
+      if (candidates.length >= CANDIDATE_COUNT) break;
     }
+    if (candidates.length >= CANDIDATE_COUNT) break;
   }
-  console.log(`${period.key}: discovered ${candidates.length} unique candidates from P&L + volume leaderboards; final rank is record-based`);
+  console.log(`${period.key}: discovered ${candidates.length} unique candidates across ${DISCOVERY_CATEGORIES.length} categories and P&L/volume boards; final rank is record-based`);
   return candidates;
 }
 
@@ -319,7 +327,7 @@ function rankSportsCandidates(candidates, records = {}) {
 function rankCandidates(candidates, records = {}) {
   return [...candidates]
     .map(trader => ({ ...trader, ...(records[trader.wallet] || {}) }))
-    .filter(trader => trader.recordVerified && (trader.resolvedMarkets ?? 0) >= 10 && trader.winRate !== null)
+    .filter(trader => trader.recordVerified && (trader.resolvedMarkets ?? 0) >= MIN_TRADER_RESOLVED_MARKETS && trader.winRate !== null && trader.winRate >= MIN_CONSENSUS_WIN_RATE)
     .sort((a, b) =>
       (b.winRate - a.winRate) ||
       ((b.resolvedMarkets ?? 0) - (a.resolvedMarkets ?? 0)) ||
@@ -747,6 +755,7 @@ function buildConsensus(holderGroups, candidates, records = {}) {
       // high-history traders disappear from consensus almost universally.
       const lifetimeResolved = num(candidate.resolvedMarkets ?? candidate.totalResolvedMarkets ?? candidate.closedMarkets);
       if (lifetimeResolved !== null && lifetimeResolved < MIN_TRADER_RESOLVED_MARKETS) return [];
+      if (record.winRate === null || record.winRate < MIN_CONSENSUS_WIN_RATE || (record.resolvedMarkets ?? 0) < MIN_TRADER_RESOLVED_MARKETS) return [];
       return [{
         ...holder,
         wallet,
@@ -910,11 +919,12 @@ async function buildPeriod(period, candidates, activePositions, nowMs, consensus
   await writeJsonUnderLimit(`consensus-${period.key}.json`, {
     generatedAt: new Date(nowMs).toISOString(),
     pool: period.key,
-    candidateCount: Math.min(CANDIDATE_COUNT, ranked.length),
-    candidatePoolBasis: "Consensus is restricted to the record-ranked candidate pool. Ranking uses up to 1,000 recent closed-position rows per trader (P&L-based profitability proxy, not settlement-verified); candidate discovery combines up to 1,000 P&L-ranked and 1,000 volume-ranked leaderboard entries, so this is not platform-wide exhaustive.",
+    candidateCount: ranked.length,
+    discoveredCandidateCount: CANDIDATE_COUNT,
+    candidatePoolBasis: "Expanded discovery scans up to 10,000 unique traders per period across OVERALL, SPORTS, CRYPTO, POLITICS, ESPORTS, CULTURE, MENTIONS, WEATHER, ECONOMICS, TECH, and FINANCE P&L/volume leaderboards. Each trader still needs at least 20 classified closed positions and a 90% profitable-close rate proxy. This proxy is NOT settlement-verified prediction accuracy; category boards overlap and this is not guaranteed to cover every Polymarket trader.",
     resolutionWindowHours: CONSENSUS_WINDOW_HOURS,
     entryActivityWindowHours: CONSENSUS_ENTRY_WINDOW_MINUTES / 60,
-    recordBasis: "Win-loss is not settlement-verified; current trader records are based on realized P&L on closed positions.",
+    recordBasis: "90% threshold applies to profitable-close rate based on realized P&L, NOT verified market settlement outcomes. Do not interpret this as a verified prediction win rate.",
     consensus: output.consensus
   });
 
