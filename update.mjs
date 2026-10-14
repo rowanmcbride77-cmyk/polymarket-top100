@@ -739,19 +739,15 @@ function buildConsensus(holderGroups, candidates, records = {}) {
     String(trader.wallet || "").toLowerCase(), trader
   ]));
   return holderGroups.map(group => {
+    // Consensus is a market-overlap calculation, not a win-rate contest.
+    // Include every candidate from the Polymarket leaderboard pool who holds
+    // this same active market/outcome; do not hide overlap due to the record
+    // proxy, minimum-history cutoff, or 90% threshold.
     const traders = group.traders.flatMap(holder => {
       const wallet = String(holder.wallet || "").toLowerCase();
       const candidate = candidateMap.get(wallet);
       if (!candidate) return [];
       const record = records[wallet] || records[candidate.wallet] || candidate;
-      // A consensus member must have a usable resolved-position sample in the
-      // same selected period; never label all-time history as recent activity.
-      // The candidate leaderboard already applies its minimum-history rules.
-      // Requiring 20 positions resolved in just the last 7/30 days made valid
-      // high-history traders disappear from consensus almost universally.
-      const lifetimeResolved = num(candidate.resolvedMarkets ?? candidate.totalResolvedMarkets ?? candidate.closedMarkets);
-      if (lifetimeResolved !== null && lifetimeResolved < MIN_TRADER_RESOLVED_MARKETS) return [];
-      if (record.winRate === null || record.winRate < MIN_CONSENSUS_WIN_RATE || (record.resolvedMarkets ?? 0) < MIN_TRADER_RESOLVED_MARKETS) return [];
       return [{
         ...holder,
         wallet,
@@ -764,10 +760,7 @@ function buildConsensus(holderGroups, candidates, records = {}) {
         losses: record.losses ?? null,
         winRate: record.winRate ?? null,
         resolvedMarkets: record.resolvedMarkets ?? null,
-        sportsWins: record.sportsWins ?? null,
-        sportsLosses: record.sportsLosses ?? null,
-        sportsWinRate: record.sportsWinRate ?? null,
-        sportsResolvedMarkets: record.sportsResolvedMarkets ?? null
+        recordBasis: record.recordBasis ?? "No verified settlement record available"
       }];
     });
     const totalValue = traders.reduce((sum, trader) => sum + (num(trader.amount) ?? 0), 0);
@@ -776,6 +769,7 @@ function buildConsensus(holderGroups, candidates, records = {}) {
     .sort((a, b) => b.sameSide - a.sameSide || b.totalValue - a.totalValue || (b.newestBuy || 0) - (a.newestBuy || 0))
     .slice(0, CONSENSUS_LIMIT);
 }
+
 function makeOutput(period, ranked, sportsRanked, activePositions, tradeRows, nowMs, consensusCandidates, records, leaderRecords, consensusGroups) {
   // Preserve the exact period-scoped record used to rank this list.
   // Full-history enrichment must never overwrite weekly/monthly wins, losses,
