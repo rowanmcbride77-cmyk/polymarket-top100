@@ -9,6 +9,7 @@ const PERIODS = [
 ];
 
 const CANDIDATE_COUNT = 10000;
+const PROCESS_CANDIDATE_COUNT = 1000;
 const LEADERBOARD_PAGE_COUNT = 1000;
 const DISCOVERY_CATEGORIES = ["OVERALL", "SPORTS", "CRYPTO", "POLITICS", "ESPORTS", "CULTURE", "MENTIONS", "WEATHER", "ECONOMICS", "TECH", "FINANCE"];
 const MIN_CONSENSUS_WIN_RATE = 90;
@@ -879,8 +880,12 @@ async function writeJsonUnderLimit(filename, output) {
   );
 }
 
-async function buildPeriod(period, candidates, activePositions, nowMs, consensusCandidates, fullRecordCache, consensusGroups) {
-  console.log(`Loading sample closed-position records for ${candidates.length} ${period.key} candidates...`);
+async function buildPeriod(period, discoveredCandidates, activePositions, nowMs, consensusCandidates, fullRecordCache, consensusGroups) {
+  // Discover broadly, but enrich a bounded sample. Each enrichment calls multiple
+  // Polymarket endpoints; running all 10,000 wallets through every stage caused
+  // workflow cancellations before JSON validation and commit.
+  const candidates = discoveredCandidates.slice(0, PROCESS_CANDIDATE_COUNT);
+  console.log(`Discovered ${discoveredCandidates.length} ${period.key} candidates; loading closed-position records for bounded sample of ${candidates.length}...`);
   const records = await attachRecords(candidates, period, nowMs, RANKING_RECORD_LIMIT);
   const ranked = rankCandidates(candidates, records);
   const sportsRanked = rankSportsCandidates(candidates, records);
@@ -920,7 +925,7 @@ async function buildPeriod(period, candidates, activePositions, nowMs, consensus
     generatedAt: new Date(nowMs).toISOString(),
     pool: period.key,
     candidateCount: ranked.length,
-    discoveredCandidateCount: CANDIDATE_COUNT,
+    discoveredCandidateCount: discoveredCandidates.length,
     candidatePoolBasis: "Expanded discovery scans up to 10,000 unique traders per period across OVERALL, SPORTS, CRYPTO, POLITICS, ESPORTS, CULTURE, MENTIONS, WEATHER, ECONOMICS, TECH, and FINANCE P&L/volume leaderboards. Each trader still needs at least 20 classified closed positions and a 90% profitable-close rate proxy. This proxy is NOT settlement-verified prediction accuracy; category boards overlap and this is not guaranteed to cover every Polymarket trader.",
     resolutionWindowHours: CONSENSUS_WINDOW_HOURS,
     entryActivityWindowHours: CONSENSUS_ENTRY_WINDOW_MINUTES / 60,
@@ -946,7 +951,13 @@ async function main() {
 
   const unique = new Map();
 
-  for (const trader of [...weekCandidates, ...monthCandidates]) {
+  // Active-position and consensus-market enrichment is also bounded to the
+  // sampled candidates, instead of querying every discovered wallet.
+  const positionCandidates = [
+    ...weekCandidates.slice(0, PROCESS_CANDIDATE_COUNT),
+    ...monthCandidates.slice(0, PROCESS_CANDIDATE_COUNT)
+  ];
+  for (const trader of positionCandidates) {
     if (!unique.has(trader.wallet)) unique.set(trader.wallet, trader);
   }
 
