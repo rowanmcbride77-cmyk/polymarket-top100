@@ -201,7 +201,7 @@ async function getResolvedRecord(wallet, period, nowMs, maxPositions = RANKING_R
       break;
     }
     if (maxPositions !== null && scannedPositions >= maxPositions) {
-      recordComplete = pagination.has_more !== true && !pagination.next_cursor;
+      recordComplete = false;
       break;
     }
     cursor = pagination.next_cursor || null;
@@ -604,48 +604,68 @@ function isResolvingSoon(market, nowMs) {
 }
 
 async function getBroadConsensusMarkets(knownTraders, nowMs, activePositions) {
-  // Build consensus directly from each candidate's own OPEN positions.
-  // Do not require a match against Gamma's first 2,000 volume-ranked markets:
-  // that market-list cap was silently excluding valid overlaps in long-tail
-  // markets, sports, esports, and short-duration crypto markets.
+  // Group positions directly from the Data API. Page beyond the first 100
+  // holdings so lower-value active markets are not silently omitted.
+  const MAX_POSITION_PAGES_PER_TRADER = 5;
   const consensusPositions = await mapLimit(knownTraders, CONCURRENCY, async trader => {
     const wallet = String(trader.wallet || "").toLowerCase();
     if (!wallet) return [wallet, []];
     try {
-      const params = new URLSearchParams({
-        user: wallet,
-        limit: "100",
-        status: "OPEN",
-        sort_by: "CURRENT_VALUE",
-        sort_direction: "DESC"
-      });
-      const response = await getJson(API + "/v2/positions?" + params);
-      return [wallet, asArray(response).map(compactPosition)];
+      const all = [];
+      const seen = new Set();
+      let cursor = null;
+      let pages = 0;
+      let hasMore = false;
+      while (pages < MAX_POSITION_PAGES_PER_TRADER) {
+        const params = new URLSearchParams({
+          user: wallet,
+          limit: "100",
+          status: "OPEN",
+          sort_by: "CURRENT_VALUE",
+          sort_direction: "DESC"
+        });
+        if (cursor) params.set("cursor", cursor);
+        const response = await getJson(API + "/v2/positions?" + params);
+        const rows = asArray(response);
+        const pagination = response?.pagination ?? {};
+        pages++;
+        for (const row of rows) {
+          const compact = compactPosition(row);
+          const key = String(compact.conditionId || "") + "|" + String(compact.outcome || "").toLowerCase();
+          if (!compact.conditionId || !compact.outcome || seen.has(key)) continue;
+          seen.add(key);
+          all.push(compact);
+        }
+        cursor = pagination.next_cursor || null;
+        hasMore = pagination.has_more === true && Boolean(cursor);
+        if (!hasMore || !rows.length) break;
+      }
+      return [wallet, all, hasMore, pages];
     } catch (error) {
       console.warn("Consensus positions fetch failed for " + wallet + ": " + error.message);
-      return [wallet, Array.isArray(activePositions?.[wallet]) ? activePositions[wallet] : []];
+      return [wallet, Array.isArray(activePositions?.[wallet]) ? activePositions[wallet] : [], false, 0];
     }
   });
 
-  const allPositionsByWallet = new Map(consensusPositions);
+  const allPositionsByWallet = new Map(consensusPositions.map(row => [row[0], row[1]]));
   const groups = new Map();
   let openPositionsSeen = 0;
   let positionsWithConditionAndSide = 0;
+  let walletsWithMorePositions = 0;
+  let positionPagesFetched = 0;
 
-  for (const trader of knownTraders) {
-    const wallet = String(trader.wallet || "").toLowerCase();
-    if (!wallet) continue;
-    const positions = allPositionsByWallet.get(wallet) || activePositions?.[wallet] || [];
+  for (const [wallet, positions, hasMore, pages] of consensusPositions) {
+    positionPagesFetched += pages || 0;
+    if (hasMore) walletsWithMorePositions++;
+    const trader = knownTraders.find(row => String(row.wallet || "").toLowerCase() === wallet);
+    if (!trader) continue;
     for (const position of positions) {
       openPositionsSeen++;
       const conditionId = String(position.conditionId ?? position.condition_id ?? "").toLowerCase();
       const side = String(position.outcome ?? position.outcome_name ?? "").trim();
       if (!conditionId || !side) continue;
-
       const currentValue = num(position.currentValue ?? position.current_value) ?? 0;
       const size = num(position.size ?? position.current_size ?? position.currentSize) ?? 0;
-      // Ignore stale/empty rows returned by an API edge case; only live,
-      // non-zero holdings can contribute to shared-position consensus.
       if (currentValue <= 0 && size <= 0) continue;
 
       positionsWithConditionAndSide++;
@@ -665,11 +685,9 @@ async function getBroadConsensusMarkets(knownTraders, nowMs, activePositions) {
           walletsSeen: new Set()
         });
       }
-
       const group = groups.get(key);
       if (group.walletsSeen.has(wallet)) continue;
       group.walletsSeen.add(wallet);
-
       const invested = num(position.initialValue ?? position.initial_value) ?? currentValue;
       const lastEventAt = timestampMs(position.lastEventAt ?? position.last_event_at ?? position.firstEntryAt ?? position.first_entry_at);
       group.sameSide++;
@@ -679,19 +697,17 @@ async function getBroadConsensusMarkets(knownTraders, nowMs, activePositions) {
         group.newestBuy = group.newestBuy === null ? lastEventAt : Math.max(group.newestBuy, lastEventAt);
         group.oldestBuy = group.oldestBuy === null ? lastEventAt : Math.min(group.oldestBuy, lastEventAt);
       }
-      if (group.traders.length < TRADERS_PER_MARKET) {
-        group.traders.push({
-          wallet,
-          name: trader.name || null,
-          rank: trader.rank ?? null,
-          pnl: trader.pnl ?? null,
-          volume: trader.volume ?? null,
-          side,
-          amount: invested,
-          currentValue,
-          buyTime: lastEventAt
-        });
-      }
+      group.traders.push({
+        wallet,
+        name: trader.name || null,
+        rank: trader.rank ?? null,
+        pnl: trader.pnl ?? null,
+        volume: trader.volume ?? null,
+        side,
+        amount: invested,
+        currentValue,
+        buyTime: lastEventAt
+      });
     }
   }
 
@@ -701,12 +717,15 @@ async function getBroadConsensusMarkets(knownTraders, nowMs, activePositions) {
     .sort((a, b) => b.sameSide - a.sameSide || b.totalValue - a.totalValue || (b.newestBuy || 0) - (a.newestBuy || 0))
     .slice(0, CONSENSUS_LIMIT);
 
-  console.log("Consensus position matching: " + JSON.stringify({
+  console.log("Consensus scan diagnostics: " + JSON.stringify({
     candidateWallets: knownTraders.length,
+    positionPagesFetched,
     openPositionsSeen,
     positionsWithConditionAndSide,
+    walletsWithMorePositions,
     sameSideGroups: holderGroups.length,
-    method: "direct OPEN positions grouped by condition ID and exact outcome; no Gamma market-list gate"
+    pageCapPerWallet: MAX_POSITION_PAGES_PER_TRADER,
+    note: "walletsWithMorePositions indicates candidate wallets whose open positions exceed the scanned pages"
   }));
   return holderGroups;
 }
@@ -787,11 +806,11 @@ function makeOutput(period, ranked, sportsRanked, activePositions, tradeRows, no
     minResolvedMarketsForRecordRanking: 10,
     recordRankingEnabled: true,
     recordWarning:
-      `Consensus includes same-side open positions in markets with a listed end date within 24 hours. Closed-position profitability figures are P&L-based proxies, not verified settlement records.`,
+      `Consensus groups open positions by exact market condition ID and exact outcome. Candidate coverage is limited to the discovered public leaderboard pool and the paginated position rows scanned. Closed-position profitability figures are P&L-based proxies, not verified settlement records.`,
     leaders,
     traderActiveTrades: Object.fromEntries(tradeRows.filter(Boolean)),
     traderActivePositions: leaderPositions,
-    consensus: buildConsensus(consensusGroups, (consensusCandidates || ranked).slice(0, CANDIDATE_COUNT), records)
+    consensus: buildConsensus(consensusGroups, consensusCandidates || ranked, records)
   };
 }
 
