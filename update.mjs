@@ -13,7 +13,7 @@ const LEADER_COUNT = 100;
 const PAGE_SIZE = 50;
 const POSITION_FETCH_LIMIT = 100;
 const POSITIONS_PER_TRADER = 10;
-const RANKING_RECORD_LIMIT = 250;
+const RANKING_RECORD_LIMIT = null;
 const LEADER_RECORD_LIMIT = null;
 const CONSENSUS_LIMIT = 50;
 const CONSENSUS_MARKET_SCAN_LIMIT = 1000;
@@ -814,7 +814,7 @@ function makeOutput(period, ranked, sportsRanked, activePositions, tradeRows, no
     leaders,
     traderActiveTrades: Object.fromEntries(tradeRows.filter(Boolean)),
     traderActivePositions: leaderPositions,
-    consensus: buildConsensus(consensusGroups, consensusCandidates || ranked, records)
+    consensus: buildConsensus(consensusGroups, (consensusCandidates || ranked).slice(0, CANDIDATE_COUNT), records)
   };
 }
 
@@ -910,7 +910,7 @@ async function buildPeriod(period, candidates, activePositions, nowMs, consensus
     generatedAt: new Date(nowMs).toISOString(),
     pool: period.key,
     candidateCount: Math.min(CANDIDATE_COUNT, ranked.length),
-    candidatePoolBasis: "Consensus candidates are selected by measured win rate and resolved sample size from the record-ranked period list. Candidate discovery combines up to 1,000 P&L-ranked and 1,000 volume-ranked leaderboard entries; this is not a platform-wide exhaustive universe.",
+    candidatePoolBasis: "Consensus is restricted to the top 1,000 record-ranked traders within the discovered candidate pool. Each candidate is ranked using all available closed positions in the selected 7-day/30-day window; candidate discovery combines up to 1,000 P&L-ranked and 1,000 volume-ranked leaderboard entries, so this is not a platform-wide exhaustive universe.",
     resolutionWindowHours: CONSENSUS_WINDOW_HOURS,
     entryActivityWindowHours: CONSENSUS_ENTRY_WINDOW_MINUTES / 60,
     recordBasis: "Win-loss is not settlement-verified; current trader records are based on realized P&L on closed positions.",
