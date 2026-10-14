@@ -664,17 +664,6 @@ function openProfile(wallet) {
       <div class="profile-stat"><small>${period === "week" ? "Weekly" : "Monthly"} P&amp;L</small><strong class="${pnl !== null && pnl < 0 ? "negative" : "positive"}">${cash(pnl)}</strong></div>
       <div class="profile-stat"><small>Volume</small><strong>${cash(volume)}</strong></div>
     </div>
-    <div class="profile-trades"><h3>Active positions</h3>
-      ${positions.length ? positions.map(position => `
-        <div class="profile-trade">
-          <strong>${esc(position.title || position.market || position.question || "Untitled market")}</strong><br>
-          <span class="side-tag ${String(position.outcome || position.side).toLowerCase() === "no" ? "no" : ""}">${esc(position.outcome || position.side || "Position")}</span>
-          &nbsp; Invested: ${cash(position.initialValue ?? position.initial_value)}
-          &nbsp; Current value: ${cash(position.currentValue ?? position.current_value)}
-          <br><small class="subtitle">Last activity: ${esc(relative(position.lastEventAt ?? position.timestamp ?? position.updatedAt))}</small>
-        </div>`).join("") : `<div class="empty">No active positions supplied for this trader.</div>`}
-    </div>
-    <div class="profile-trades"><h3>Closed markets / positions</h3><div id="closedPositionsContent" class="empty">Loading full closed-position history…</div></div>
     <div class="profile-trades"><h3>Recent buys</h3>
       ${recentTrades.length ? recentTrades.map(trade => `
         <div class="profile-trade">
@@ -683,7 +672,8 @@ function openProfile(wallet) {
           &nbsp; Buy amount: ${cash(trade.amount)}
           <br><small class="subtitle">Bought: ${esc(dateText(trade.buyTime ?? trade.timestamp ?? trade.createdAt))}</small>
         </div>`).join("") : `<div class="empty">No recent buy history supplied for this trader.</div>`}
-    </div>`;
+    </div>
+    <div class="profile-trades"><h3>Closed markets / positions</h3><div id="closedPositionsContent" class="empty">Loading full closed-position history…</div></div>
 
   $("profileDialog").showModal();
   loadClosedPositionHistory(traderWallet);
