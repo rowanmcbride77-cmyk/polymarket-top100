@@ -275,36 +275,37 @@ async function mapLimit(items, limit, callback) {
 }
 
 async function getCandidates(period, category = "OVERALL") {
+  // P&L and volume leaderboards discover candidates only; final rank is record-based.
+  // Polymarket does not provide a native win/loss leaderboard.
   const candidates = [];
-  const seen = new Set();
+  const byWallet = new Map();
 
-  for (let offset = 0; offset < CANDIDATE_COUNT; offset += PAGE_SIZE) {
-    const params = new URLSearchParams({
-      category,
-      timePeriod: period.api,
-      orderBy: "PNL",
-      limit: String(PAGE_SIZE),
-      offset: String(offset)
-    });
-
-    const rows = asArray(
-      await getJson(`${API}/v1/leaderboard?${params}`)
-    );
-
-    if (!rows.length) break;
-
-    for (const row of rows) {
-      const trader = normalizeLeader(row, candidates.length);
-      if (!trader.wallet || seen.has(trader.wallet)) continue;
-
-      seen.add(trader.wallet);
-      candidates.push(trader);
+  for (const orderBy of ["PNL", "VOL"]) {
+    for (let offset = 0; offset < CANDIDATE_COUNT; offset += PAGE_SIZE) {
+      const params = new URLSearchParams({
+        category, timePeriod: period.api, orderBy,
+        limit: String(PAGE_SIZE), offset: String(offset)
+      });
+      const rows = asArray(await getJson(`${API}/v1/leaderboard?${params}`));
+      if (!rows.length) break;
+      for (const row of rows) {
+        const trader = normalizeLeader(row, candidates.length);
+        if (!trader.wallet) continue;
+        const existing = byWallet.get(trader.wallet);
+        if (existing) {
+          existing.pnl = trader.pnl ?? existing.pnl;
+          existing.volume = trader.volume ?? existing.volume;
+          if (!existing.name || existing.name === "Unknown") existing.name = trader.name;
+          continue;
+        }
+        byWallet.set(trader.wallet, trader);
+        candidates.push(trader);
+      }
+      if (rows.length < PAGE_SIZE) break;
     }
-
-    if (rows.length < PAGE_SIZE) break;
   }
-
-  return candidates.slice(0, CANDIDATE_COUNT);
+  console.log(`${period.key}: discovered ${candidates.length} unique candidates from P&L + volume leaderboards; final rank is record-based`);
+  return candidates;
 }
 
 function rankSportsCandidates(candidates, records = {}) {
@@ -786,7 +787,7 @@ function makeOutput(period, ranked, sportsRanked, activePositions, tradeRows, no
     generatedAt: new Date(nowMs).toISOString(),
     period: period.key,
     rankingBasis:
-      `Candidate universe is the Polymarket ${period.key.toUpperCase()} P&L leaderboard (up to ${CANDIDATE_COUNT} wallets). Within that limited universe, ranked by observed positive/negative realized-P&L outcomes from closed positions in the selected ${period.key === "week" ? "7-day" : "30-day"} period; ties broken by sample size, period P&L, then volume. This is not a platform-wide win-rate ranking.`,
+      `Ranked by observed win rate from closed-position outcomes in the selected ${period.key === "week" ? "7-day" : "30-day"} period, then resolved sample size, P&L, and volume as tie-breakers. Candidate discovery combines up to ${CANDIDATE_COUNT} entries from each Polymarket P&L and volume leaderboard; because Polymarket does not expose a native win/loss leaderboard, this is the top record-ranked set within that discovered candidate universe, not a claim to cover every trader on the platform.`,
     recordBasis: "IMPORTANT: win/loss figures are currently classified from realized P&L on closed positions and are not verified market-settlement outcomes. Treat them as profitable/unprofitable exits, not a verified prediction record.",
     candidateCount: ranked.length,
     sportsLeaders: sportsRanked.slice(0, LEADER_COUNT),
@@ -892,8 +893,8 @@ async function buildPeriod(period, candidates, activePositions, nowMs, consensus
   await writeJsonUnderLimit(`consensus-${period.key}.json`, {
     generatedAt: new Date(nowMs).toISOString(),
     pool: period.key,
-    candidateCount: (consensusCandidates || ranked).length,
-    candidatePoolBasis: "Record-ranked qualifying traders within the selected period's top-P&L candidate universe; not a platform-wide top-1000 win-rate ranking.",
+    candidateCount: Math.min(CANDIDATE_COUNT, ranked.length),
+    candidatePoolBasis: "Consensus candidates are selected by measured win rate and resolved sample size from the record-ranked period list. Candidate discovery combines up to 1,000 P&L-ranked and 1,000 volume-ranked leaderboard entries; this is not a platform-wide exhaustive universe.",
     resolutionWindowHours: CONSENSUS_WINDOW_HOURS,
     entryActivityWindowHours: CONSENSUS_ENTRY_WINDOW_MINUTES / 60,
     recordBasis: "Win-loss is not settlement-verified; current trader records are based on realized P&L on closed positions.",
