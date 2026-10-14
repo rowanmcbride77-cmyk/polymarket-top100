@@ -620,7 +620,8 @@ async function getBroadConsensusMarkets(knownTraders, nowMs, activePositions) {
   // when a larger limit is requested. Asking for 500 caused the loop to stop
   // after its first 100-market response, missing almost every candidate market.
   const pageSize = 100;
-  const maxPages = 100;
+  // Gamma offset pagination rejects offsets beyond 2000; stay within its supported range.
+  const maxPages = 20;
   const marketsById = new Map();
   for (let page = 0; page < maxPages; page++) {
     const params = new URLSearchParams({
