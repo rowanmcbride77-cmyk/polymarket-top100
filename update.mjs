@@ -367,7 +367,7 @@ function compactPosition(position) {
     outcome: position.outcome ?? position.outcome_name ?? null,
     size: num(position.size ?? position.current_size ?? position.currentSize),
     currentValue: num(position.currentValue ?? position.current_value),
-    initialValue: num(position.entry_cost_usdc ?? position.total_cost_usdc ?? position.initialValue ?? position.initial_value ?? position.initial_value_usd),
+    initialValue: num(position.entry_cost_usdc ?? position.total_cost_usdc ?? position.initialValue ?? position.initial_value ?? position.initial_value_usd) ?? (() => { const avg = num(position.avgPrice ?? position.avg_price ?? position.averagePrice ?? position.average_price); const size = num(position.size ?? position.current_size ?? position.currentSize); return avg !== null && size !== null && avg >= 0 && size > 0 ? avg * size : null; })(),
     realizedPnl: num(position.realizedPnl ?? position.realized_pnl ?? position.cashPnl ?? position.cash_pnl ?? position.total_pnl ?? position.totalPnl),
     lastEventAt: timestampMs(
       position.lastEventAt ?? position.last_event_at
