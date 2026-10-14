@@ -752,15 +752,23 @@ function buildConsensus(holderGroups, candidates, records = {}) {
     String(trader.wallet || "").toLowerCase(), trader
   ]));
   return holderGroups.map(group => {
-    // Consensus is a market-overlap calculation, not a win-rate contest.
-    // Include every candidate from the Polymarket leaderboard pool who holds
-    // this same active market/outcome; do not hide overlap due to the record
-    // proxy, minimum-history cutoff, or 90% threshold.
+    // Only count consensus traders with a complete record, at least 20
+    // classifiable closed positions, and a 90%+ profitable-close rate.
+    // This is a realized-P&L proxy, not verified market-settlement accuracy.
     const traders = group.traders.flatMap(holder => {
       const wallet = String(holder.wallet || "").toLowerCase();
       const candidate = candidateMap.get(wallet);
       if (!candidate) return [];
       const record = records[wallet] || records[candidate.wallet] || candidate;
+      const winRate = num(record.winRate);
+      const resolvedMarkets = num(record.resolvedMarkets);
+      if (
+        record.recordComplete !== true ||
+        winRate === null ||
+        winRate < MIN_CONSENSUS_WIN_RATE ||
+        resolvedMarkets === null ||
+        resolvedMarkets < MIN_TRADER_RESOLVED_MARKETS
+      ) return [];
       return [{
         ...holder,
         wallet,
@@ -771,9 +779,9 @@ function buildConsensus(holderGroups, candidates, records = {}) {
         volume: candidate.volume ?? holder.volume ?? null,
         wins: record.wins ?? null,
         losses: record.losses ?? null,
-        winRate: record.winRate ?? null,
-        resolvedMarkets: record.resolvedMarkets ?? null,
-        recordBasis: record.recordBasis ?? "No verified settlement record available"
+        winRate,
+        resolvedMarkets,
+        recordBasis: record.recordBasis ?? "Realized-P&L proxy; not verified settlement accuracy"
       }];
     });
     const totalValue = traders.reduce((sum, trader) => sum + (num(trader.amount) ?? 0), 0);
