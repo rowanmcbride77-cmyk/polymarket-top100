@@ -879,6 +879,19 @@ async function buildPeriod(period, candidates, activePositions, nowMs, consensus
 
   await writeJsonUnderLimit(`${period.key}.json`, output);
 
+  // Keep consensus data independent from the Top 100 period tabs. These
+  // files reflect the actual fetched candidate pool; do not label them as
+  // 10,000-trader pools until 10,000 candidates are fetched and validated.
+  await writeJsonUnderLimit(`consensus-${period.key}.json`, {
+    generatedAt: new Date(nowMs).toISOString(),
+    pool: period.key,
+    candidateCount: consensusCandidates.length,
+    resolutionWindowHours: CONSENSUS_WINDOW_HOURS,
+    entryActivityWindowHours: CONSENSUS_ENTRY_WINDOW_MINUTES / 60,
+    recordBasis: "Win-loss is not settlement-verified; current trader records are based on realized P&L on closed positions.",
+    consensus: output.consensus
+  });
+
   console.log(
     `${period.key}: ${leaders.length} leaders, ${output.consensus.length} consensus markets`
   );
@@ -911,8 +924,8 @@ async function main() {
   const consensusCandidatePool = [...unique.values()];
   const consensusGroups = await getBroadConsensusMarkets(consensusCandidatePool, nowMs, activePositions);
   console.log("Broad consensus groups: " + consensusGroups.length);
-  await buildPeriod(PERIODS[0], weekCandidates, activePositions, nowMs, [...unique.values()], fullRecordCache, consensusGroups);
-  await buildPeriod(PERIODS[1], monthCandidates, activePositions, nowMs, [...unique.values()], fullRecordCache, consensusGroups);
+  await buildPeriod(PERIODS[0], weekCandidates, activePositions, nowMs, weekCandidates, fullRecordCache, consensusGroups);
+  await buildPeriod(PERIODS[1], monthCandidates, activePositions, nowMs, monthCandidates, fullRecordCache, consensusGroups);
 
   console.log("Polymarket tracker update completed.");
 }
