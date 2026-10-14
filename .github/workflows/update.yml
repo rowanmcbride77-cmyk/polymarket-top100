@@ -40,7 +40,7 @@ jobs:
           node --input-type=module <<'NODE'
           import fs from "node:fs/promises";
 
-          for (const file of ["week.json", "month.json"]) {
+          for (const file of ["week.json", "month.json", "consensus-week.json", "consensus-month.json"]) {
             const stat = await fs.stat(file);
             if (stat.size > 5 * 1024 * 1024) {
               throw new Error(`${file} exceeds 5 MB`);
@@ -60,12 +60,16 @@ jobs:
           # apply only the generated data files on top of the current branch.
           cp week.json /tmp/scanner-week.json
           cp month.json /tmp/scanner-month.json
+          cp consensus-week.json /tmp/scanner-consensus-week.json
+          cp consensus-month.json /tmp/scanner-consensus-month.json
           git fetch origin main
           git reset --hard origin/main
           cp /tmp/scanner-week.json week.json
           cp /tmp/scanner-month.json month.json
+          cp /tmp/scanner-consensus-week.json consensus-week.json
+          cp /tmp/scanner-consensus-month.json consensus-month.json
 
-          git add week.json month.json
+          git add week.json month.json consensus-week.json consensus-month.json
           if ! git diff --cached --quiet; then
             git commit -m "Update Polymarket scanner data"
             git push origin HEAD:main
