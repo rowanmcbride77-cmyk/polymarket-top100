@@ -30,6 +30,7 @@ const TRADE_LIMIT = 10;
 const MAX_JSON_BYTES = 5 * 1024 * 1024;
 const CONCURRENCY = 6;
 const DELAY_MS = 150;
+let lastConsensusDiagnostics = null;
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -732,7 +733,7 @@ async function getBroadConsensusMarkets(knownTraders, nowMs, activePositions) {
     .sort((a, b) => b.sameSide - a.sameSide || b.totalValue - a.totalValue || (b.newestBuy || 0) - (a.newestBuy || 0))
     .slice(0, CONSENSUS_LIMIT);
 
-  console.log("Consensus scan diagnostics: " + JSON.stringify({
+  lastConsensusDiagnostics = {
     candidateWallets: knownTraders.length,
     positionPagesFetched,
     openPositionsSeen,
@@ -741,7 +742,8 @@ async function getBroadConsensusMarkets(knownTraders, nowMs, activePositions) {
     sameSideGroups: holderGroups.length,
     pageCapPerWallet: MAX_POSITION_PAGES_PER_TRADER,
     note: "walletsWithMorePositions indicates candidate wallets whose open positions exceed the scanned pages"
-  }));
+  };
+  console.log("Consensus scan diagnostics: " + JSON.stringify(lastConsensusDiagnostics));
   return holderGroups;
 }
 
@@ -925,6 +927,7 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     pool: period.key,
     candidateCount: ranked.length,
     discoveredCandidateCount: discoveredCandidates.length,
+    scanDiagnostics: lastConsensusDiagnostics,
     candidatePoolBasis: "Unique traders collected from Polymarket public Data API v1 overall PnL and volume leaderboards, paginating each board through its supported offset ceiling (0–1,000). This is the largest accessible leaderboard-derived candidate pool from these endpoints, not all platform traders. Records remain a realized-PnL proxy, not verified settlement prediction accuracy.",
     resolutionWindowHours: null,
     entryActivityWindowHours: null,
