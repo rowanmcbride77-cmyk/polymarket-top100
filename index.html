@@ -175,10 +175,16 @@ dialog::backdrop{background:#000b}
       <section class="panel">
         <div class="panel-heading">
           <div class="heading-left"><span class="heading-icon">👥</span><h2>Top Consensus Markets</h2></div>
-          <span class="pill" id="consensusPeriod">All categories · 24h</span>
+          <span class="pill" id="consensusPeriod">Weekly pool · 24h</span>
         </div>
         <div class="source-note" style="margin:0 0 12px">Consensus is built by matching the same open positions shown in trader profiles. It requires at least two traders holding the same exact outcome in a market with an end date within the selected window. Recent position activity is currently filtered to 24 hours. Trader W–L figures are based on realized P&L on closed positions and are not verified settlement records.</div>
         <div class="filters">
+          <label>Trader pool
+            <select id="consensusPool" onchange="loadConsensusData()">
+              <option value="week" selected>Top 10,000 weekly</option>
+              <option value="month">Top 10,000 monthly</option>
+            </select>
+          </label>
           <label>Min. traders
             <select id="minTraders" onchange="renderConsensus()">
               <option value="2" selected>2+</option>
@@ -239,8 +245,10 @@ dialog::backdrop{background:#000b}
 "use strict";
 
 const FILES = { week: "week.json", month: "month.json" };
+const CONSENSUS_FILES = { week: "consensus-week.json", month: "consensus-month.json" };
 let period = "week";
 let data = null;
+let consensusData = null;
 let allLeaders = false;
 let allMarkets = false;
 let allRecent = false;
@@ -383,8 +391,33 @@ function trades() {
 }
 
 function consensus() {
-  return Array.isArray(data?.consensus) ? data.consensus :
-    Array.isArray(data?.consensusMarkets) ? data.consensusMarkets : [];
+  return Array.isArray(consensusData?.consensus) ? consensusData.consensus :
+    Array.isArray(consensusData?.consensusMarkets) ? consensusData.consensusMarkets : [];
+}
+
+async function loadConsensusData() {
+  const pool = $("consensusPool").value;
+  $("consensusBody").innerHTML = `<tr><td colspan="6" class="loading">Loading ${esc(pool)} consensus pool…</td></tr>`;
+  $("consensusPeriod").textContent = (pool === "week" ? "Weekly pool" : "Monthly pool") + " · " + $("recency").value + "h";
+  const filename = CONSENSUS_FILES[pool];
+  try {
+    let result = null;
+    for (const url of [filename + "?t=" + Date.now(), "https://raw.githubusercontent.com/rowanmcbride77-cmyk/polymarket-top100/main/" + filename + "?t=" + Date.now()]) {
+      try {
+        const response = await fetch(url, {cache:"no-store"});
+        if (!response.ok) throw new Error("HTTP " + response.status);
+        const parsed = await response.json();
+        if (!parsed || !Array.isArray(parsed.consensus)) throw new Error("Invalid consensus file");
+        result = parsed; break;
+      } catch (_) {}
+    }
+    if (!result) throw new Error(filename + " is not available yet. Run the repository updater after the new generator is deployed.");
+    consensusData = result;
+    renderConsensus();
+  } catch (error) {
+    consensusData = {consensus:[]};
+    $("consensusBody").innerHTML = `<tr><td colspan="6" class="empty">${esc(error.message)}</td></tr>`;
+  }
 }
 
 function traderCount(market) {
@@ -605,7 +638,6 @@ function selectPeriod(nextPeriod) {
   $("weekTab").classList.toggle("active", period === "week");
   $("monthTab").classList.toggle("active", period === "month");
   $("leaderPeriod").textContent = period === "week" ? "Week" : "Month";
-  $("consensusPeriod").textContent = "All categories · 24h";
   loadData();
 }
 
@@ -762,8 +794,8 @@ async function loadData(forceReload = false) {
 
     renderLeaders();
     renderSportsLeaders();
-    renderConsensus();
     renderRecent();
+    loadConsensusData();
   } catch (error) {
     data = null;
     $("updatedAt").textContent = "Unavailable";
@@ -780,6 +812,7 @@ async function loadData(forceReload = false) {
 }
 
 loadData();
+loadConsensusData();
 </script>
 </body>
 </html>
