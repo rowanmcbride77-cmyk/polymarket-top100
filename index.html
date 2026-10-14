@@ -705,13 +705,16 @@ function renderClosedPositionHistory(wallet) {
   output += visible.map(position => {
     const pnl = num(position.realized_pnl ?? position.realizedPnl ?? position.cashPnl ?? position.cash_pnl ?? position.total_pnl ?? position.totalPnl);
     const rawInvested = num(position.entry_cost_usdc ?? position.total_cost_usdc ?? position.initialValue ?? position.initial_value ?? position.initial_value_usd ?? position.costBasis ?? position.cost_basis);
-    // Zero/missing cost basis is not evidence that the position cost nothing.
-    const invested = rawInvested !== null && rawInvested > 0 ? rawInvested : null;
+    const avgPrice = num(position.avgPrice ?? position.avg_price ?? position.averagePrice ?? position.average_price);
+    const size = num(position.size ?? position.current_size ?? position.currentSize);
+    // Polymarket may omit initialValue on some rows. avgPrice × size is an estimate, not an exact historical cash-flow total.
+    const invested = rawInvested !== null && rawInvested > 0 ? rawInvested : (avgPrice !== null && size !== null && avgPrice >= 0 && size > 0 ? avgPrice * size : null);
+    const investedLabel = rawInvested !== null && rawInvested > 0 ? "Amount invested" : "Est. invested";
     const outcome = position.outcome || "Position";
     const time = position.last_event_at ?? position.lastEventAt;
     const condition = position.condition_id ?? position.conditionId ?? "";
     const sideClass = String(outcome).toLowerCase() === "no" ? "no" : "";
-    return '<div class="member"><div><strong>' + esc(position.title || position.name || "Untitled market") + '</strong><small><span class="side-tag ' + sideClass + '">' + esc(outcome) + '</span> · ' + esc(condition ? condition.slice(0, 12) + "…" : "Market ID unavailable") + '</small></div><div>' + (invested === null ? "N/A" : cash(invested)) + '<small>Amount invested</small></div><div class="' + (pnl !== null && pnl < 0 ? "negative" : "positive") + '">' + (pnl === null ? "P&amp;L N/A" : cash(pnl)) + '<small>Realized P&amp;L</small></div><div class="member-time"><strong>' + esc(relative(time)) + '</strong><small>' + esc(dateText(time)) + '</small></div></div>';
+    return '<div class="member"><div><strong>' + esc(position.title || position.name || "Untitled market") + '</strong><small><span class="side-tag ' + sideClass + '">' + esc(outcome) + '</span> · ' + esc(condition ? condition.slice(0, 12) + "…" : "Market ID unavailable") + '</small></div><div>' + (invested === null ? "N/A" : cash(invested)) + '<small>' + investedLabel + '</small></div><div class="' + (pnl !== null && pnl < 0 ? "negative" : "positive") + '">' + (pnl === null ? "P&amp;L N/A" : cash(pnl)) + '<small>Realized P&amp;L</small></div><div class="member-time"><strong>' + esc(relative(time)) + '</strong><small>' + esc(dateText(time)) + '</small></div></div>';
   }).join("");
   output += "</div>";
   if (rows.length > 100) output += '<button class="link-button" data-wallet="' + esc(wallet) + '" onclick="toggleClosedMarkets(this.dataset.wallet)">' + (showAll ? "Show first 100 ↑" : "View all " + rows.length.toLocaleString() + " closed positions →") + "</button>";
