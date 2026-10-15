@@ -10,6 +10,9 @@ const PERIODS = [
 
 const CANDIDATE_COUNT = 5000;
 const PROCESS_CANDIDATE_COUNT = 5000;
+// Full closed-position history lookups are much more expensive than wallet discovery.
+// Keep the 5,000-wallet position/consensus pool, but bound per-period history enrichment.
+const RECORD_SCAN_CANDIDATE_COUNT = 1000;
 const LEADERBOARD_PAGE_COUNT = 1000;
 const MIN_CONSENSUS_WIN_RATE = 90;
 const LEADER_COUNT = 100;
@@ -950,11 +953,12 @@ async function writeJsonUnderLimit(filename, output) {
 }
 
 async function buildPeriod(period, discoveredCandidates, activePositions, nowMs, consensusCandidates, fullRecordCache, consensusGroups) {
-  // Enrich the full accessible leaderboard-derived candidate pool. Each endpoint
-  // has a documented offset ceiling, so this can yield around 2,000 unique traders.
+  // Keep the full discovered candidate pool for ranking and consensus, while bounding
+  // expensive closed-position history enrichment to RECORD_SCAN_CANDIDATE_COUNT wallets.
   const candidates = discoveredCandidates.slice(0, PROCESS_CANDIDATE_COUNT);
-  console.log(`Discovered ${discoveredCandidates.length} ${period.key} candidates; loading closed-position records for bounded sample of ${candidates.length}...`);
-  const records = await attachRecords(candidates, period, nowMs, RANKING_RECORD_LIMIT);
+  const recordCandidates = candidates.slice(0, RECORD_SCAN_CANDIDATE_COUNT);
+  console.log(`Discovered ${discoveredCandidates.length} ${period.key} candidates; loading closed-position records for ${recordCandidates.length} of ${candidates.length} wallets to keep the workflow within runtime limits...`);
+  const records = await attachRecords(recordCandidates, period, nowMs, RANKING_RECORD_LIMIT);
   const ranked = rankCandidates(candidates, records);
   const sportsRanked = rankSportsCandidates(candidates, records);
   const leaders = ranked.slice(0, LEADER_COUNT);
