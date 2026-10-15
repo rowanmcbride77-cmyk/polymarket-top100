@@ -763,55 +763,70 @@ function buildConsensus(holderGroups, candidates, records = {}) {
   const candidateMap = new Map(candidates.map(trader => [
     String(trader.wallet || "").toLowerCase(), trader
   ]));
-  return holderGroups
-    // Exclude markets with a known end/resolution date within the next 24 hours.
-    // The date is not always available from the positions API, so unknown dates
-    // are retained rather than guessed.
+
+  // First qualify each side independently. Never combine different outcomes
+  // for the same condition/market into one consensus count.
+  const qualifiedGroups = holderGroups
     .filter(group => {
       const nowMs = Date.now();
-      // Exclude expired markets and zero-value positions so stale/resolved
-      // holdings cannot appear as live consensus opportunities.
       return !hasExpiredEndDate(group, nowMs) &&
         !isResolvingSoon(group, nowMs) &&
         (num(group.totalValue) ?? 0) > 0;
     })
     .map(group => {
-    // For the weekly file, records are the selected week's closed-position
-    // sample. Only count traders with a complete record, at least 20 classifiable
-    // closed positions, and a 90%+ profitable-close rate.
-    // This is a realized-P&L proxy, not verified market-settlement accuracy.
-    const traders = group.traders.flatMap(holder => {
-      const wallet = String(holder.wallet || "").toLowerCase();
-      const candidate = candidateMap.get(wallet);
-      if (!candidate) return [];
-      const record = records[wallet] || records[candidate.wallet] || candidate;
-      const winRate = num(record.winRate);
-      const resolvedMarkets = num(record.resolvedMarkets);
-      if (
-        record.recordComplete !== true ||
-        winRate === null ||
-        winRate < MIN_CONSENSUS_WIN_RATE ||
-        resolvedMarkets === null ||
-        resolvedMarkets < MIN_TRADER_RESOLVED_MARKETS
-      ) return [];
-      return [{
-        ...holder,
-        wallet,
-        name: holder.name || candidate.name || "Trader",
-        rank: candidate.sportsRank ?? candidate.rank ?? null,
-        overallRank: candidate.rank ?? null,
-        pnl: candidate.pnl ?? holder.pnl ?? null,
-        volume: candidate.volume ?? holder.volume ?? null,
-        wins: record.wins ?? null,
-        losses: record.losses ?? null,
-        winRate,
-        resolvedMarkets,
-        recordBasis: record.recordBasis ?? "Realized-P&L proxy; not verified settlement accuracy"
-      }];
-    });
-    const totalValue = traders.reduce((sum, trader) => sum + (num(trader.amount) ?? 0), 0);
-    return { ...group, traders, sameSide: traders.length, totalValue };
-  }).filter(group => group.sameSide >= 2)
+      const traders = group.traders.flatMap(holder => {
+        const wallet = String(holder.wallet || "").toLowerCase();
+        const candidate = candidateMap.get(wallet);
+        if (!candidate) return [];
+        const record = records[wallet] || records[candidate.wallet] || candidate;
+        const winRate = num(record.winRate);
+        const resolvedMarkets = num(record.resolvedMarkets);
+        if (
+          record.recordComplete !== true ||
+          winRate === null ||
+          winRate < MIN_CONSENSUS_WIN_RATE ||
+          resolvedMarkets === null ||
+          resolvedMarkets < MIN_TRADER_RESOLVED_MARKETS
+        ) return [];
+        return [{
+          ...holder,
+          wallet,
+          name: holder.name || candidate.name || "Trader",
+          rank: candidate.sportsRank ?? candidate.rank ?? null,
+          overallRank: candidate.rank ?? null,
+          pnl: candidate.pnl ?? holder.pnl ?? null,
+          volume: candidate.volume ?? holder.volume ?? null,
+          wins: record.wins ?? null,
+          losses: record.losses ?? null,
+          winRate,
+          resolvedMarkets,
+          recordBasis: record.recordBasis ?? "Realized-P&L proxy; not verified settlement accuracy"
+        }];
+      });
+      const totalValue = traders.reduce((sum, trader) => sum + (num(trader.amount) ?? 0), 0);
+      return { ...group, traders, sameSide: traders.length, totalValue };
+    })
+    .filter(group => group.sameSide >= 2);
+
+  // Strict one-sided consensus: if qualified traders hold more than one
+  // outcome in the same condition/market, suppress the entire market. This
+  // prevents a 9-vs-1 split (or a 3-vs-3 sports split) from appearing as a
+  // one-sided signal. A market is shown only when exactly one outcome has
+  // at least two qualified traders in the scanned candidate pool.
+  const outcomesByCondition = new Map();
+  for (const group of qualifiedGroups) {
+    const conditionId = String(group.conditionId || "").toLowerCase();
+    if (!conditionId) continue;
+    if (!outcomesByCondition.has(conditionId)) outcomesByCondition.set(conditionId, new Set());
+    outcomesByCondition.get(conditionId).add(String(group.side || "").trim().toLowerCase());
+  }
+
+  return qualifiedGroups
+    .filter(group => {
+      const conditionId = String(group.conditionId || "").toLowerCase();
+      const outcomes = outcomesByCondition.get(conditionId);
+      return outcomes?.size === 1;
+    })
     .sort((a, b) => b.sameSide - a.sameSide || b.totalValue - a.totalValue || (b.newestBuy || 0) - (a.newestBuy || 0))
     .slice(0, CONSENSUS_LIMIT);
 }
