@@ -285,39 +285,58 @@ async function mapLimit(items, limit, callback) {
 }
 
 async function getCandidates(period) {
-  // Polymarket's public leaderboard endpoint is v1. It uses timePeriod,
-  // orderBy, limit and offset (not v2 cursor params). The documented offset
-  // ceiling is 1,000; collect the full accessible PnL and volume boards.
+  // Build a broader discovery pool from public trader leaderboards across
+  // categories and time windows. Each individual leaderboard is capped at
+  // offset 1,000, so no single board can provide 5,000 wallets.
   const byWallet = new Map();
-  for (const orderBy of ["PNL", "VOL"]) {
-    for (let offset = 0; offset <= LEADERBOARD_PAGE_COUNT; offset += PAGE_SIZE) {
-      const params = new URLSearchParams({
-        category: "OVERALL",
-        timePeriod: period.api,
-        orderBy,
-        limit: String(PAGE_SIZE),
-        offset: String(offset)
-      });
-      const rows = asArray(await getJson(`${API}/v1/leaderboard?${params}`));
-      if (!rows.length) break;
-      for (let i = 0; i < rows.length; i++) {
-        const trader = normalizeLeader(rows[i], offset + i + 1);
-        if (!trader.wallet) continue;
-        const existing = byWallet.get(trader.wallet);
-        if (existing) {
-          existing.pnl = trader.pnl ?? existing.pnl;
-          existing.volume = trader.volume ?? existing.volume;
-          if ((!existing.name || existing.name === "Unknown") && trader.name) existing.name = trader.name;
-        } else {
-          byWallet.set(trader.wallet, trader);
+  const categories = [
+    "OVERALL", "SPORTS", "POLITICS", "CRYPTO", "ESPORTS", "CULTURE",
+    "MENTIONS", "WEATHER", "ECONOMICS", "TECH", "FINANCE"
+  ];
+  const timePeriods = [...new Set([period.api, "DAY", "WEEK", "MONTH", "ALL"])];
+  const target = PROCESS_CANDIDATE_COUNT;
+
+  discovery:
+  for (const timePeriod of timePeriods) {
+    for (const category of categories) {
+      for (const orderBy of ["PNL", "VOL"]) {
+        for (let offset = 0; offset <= LEADERBOARD_PAGE_COUNT; offset += PAGE_SIZE) {
+          const params = new URLSearchParams({
+            category,
+            timePeriod,
+            orderBy,
+            limit: String(PAGE_SIZE),
+            offset: String(offset)
+          });
+          const rows = asArray(await getJson(`${API}/v1/leaderboard?${params}`));
+          if (!rows.length) break;
+          for (let i = 0; i < rows.length; i++) {
+            const trader = normalizeLeader(rows[i], offset + i + 1);
+            if (!trader.wallet) continue;
+            const existing = byWallet.get(trader.wallet);
+            if (existing) {
+              existing.pnl = trader.pnl ?? existing.pnl;
+              existing.volume = trader.volume ?? existing.volume;
+              if ((!existing.name || existing.name === "Unknown") && trader.name) existing.name = trader.name;
+            } else {
+              byWallet.set(trader.wallet, trader);
+            }
+          }
+          if (byWallet.size >= target) break discovery;
+          if (rows.length < PAGE_SIZE || offset >= LEADERBOARD_PAGE_COUNT) break;
         }
       }
-      if (rows.length < PAGE_SIZE || offset >= LEADERBOARD_PAGE_COUNT) break;
     }
   }
+
   const candidates = [...byWallet.values()];
-  console.log(`${period.key}: fetched ${candidates.length} unique traders from Polymarket's public overall PnL and volume leaderboards (max accessible offset 1,000 per board)`);
-  return candidates;
+  console.log(`${period.key}: discovered ${candidates.length} unique traders across public leaderboard categories and periods (target ${target})`);
+  if (candidates.length < target) {
+    throw new Error(
+      `${period.key}: only discovered ${candidates.length} unique trader wallets; required ${target}. Refusing to publish a successful update with an undersized candidate pool.`
+    );
+  }
+  return candidates.slice(0, target);
 }
 
 function rankSportsCandidates(candidates, records = {}) {
