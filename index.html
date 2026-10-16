@@ -219,7 +219,7 @@ dialog::backdrop{background:#000b}
         <div class="filters">
           <label>Minimum entry <select id="minComboEntry" onchange="renderCombos()"><option value="0">Any amount</option><option value="100">$100+</option><option value="500">$500+</option><option value="1000">$1,000+</option><option value="5000">$5,000+</option></select></label>
           <label>Position <select id="comboStatus" onchange="renderCombos()"><option value="held">Open only</option><option value="all">Open + resolved</option></select></label>
-          <label>Event timing <select id="comboTiming" onchange="renderCombos()"><option value="all">Any timing</option><option value="upcoming">Not started only</option></select></label>
+          <label>Event timing <select id="comboTiming" onchange="renderCombos()"><option value="all">Any timing</option><option value="upcoming">Confirmed upcoming</option><option value="unknown">Timing unknown</option><option value="started">Already started</option></select></label>
         </div>
         <div id="comboList" class="recent-list"><div class="loading">Loading actual combo positions…</div></div>
         <button class="link-button" id="comboMore" onclick="toggleCombos()">View more combos →</button>
@@ -587,15 +587,15 @@ async function loadComboPositions() {
     seenWallets.add(wallet);
     if (!qualified.length) {
       const record = recordOf(t);
-      return record && record.total >= 20 && record.rate >= 90;
+      return record && record.total >= 15 && record.rate >= 80;
     }
-    return t.recordComplete === true && (num(t.resolvedMarkets) ?? 0) >= 20 && (num(t.winRate) ?? 0) >= 90;
+    return t.recordComplete === true && (num(t.resolvedMarkets) ?? 0) >= 15 && (num(t.winRate) ?? 0) >= 80;
   });
   traderAliases.clear();
   candidates.forEach((t, i) => traderAliases.set(walletOf(t).toLowerCase(), "Trader " + (i + 1)));
   comboRows = []; comboLoadFinished = false;
   if (!candidates.length) { $("comboList").innerHTML = '<div class="empty">No valid trader wallets were found in the loaded leaderboard.</div>'; return; }
-  $("comboList").innerHTML = '<div class="loading">Checking combo positions for ' + candidates.length + ' qualified 90%+ traders (20+ closes)…</div>';
+  $("comboList").innerHTML = '<div class="loading">Checking combo positions for ' + candidates.length + ' qualified 80%+ traders (15+ closes)…</div>';
   let next = 0, completed = 0;
   const worker = async () => {
     while (next < candidates.length) {
@@ -652,7 +652,7 @@ function renderCombos() {
     const status = String(combo.status || "").toUpperCase(), entry = num(combo.entry_cost_usdc ?? combo.gross_entry_cost_usdc) ?? 0;
     const held = ["OPEN","REDEEMABLE","PARTIAL"].includes(status) || (!status && (num(combo.current_size) ?? 0) > 0);
     const timing = comboTimingState(combo);
-    return entry >= minimum && (allStatuses || held) && (timingFilter !== "upcoming" || timing.key === "upcoming");
+    return entry >= minimum && (allStatuses || held) && (timingFilter === "all" || timing.key === timingFilter);
   }).sort((a,b) => (num(b.entry_cost_usdc ?? b.gross_entry_cost_usdc) ?? 0) - (num(a.entry_cost_usdc ?? a.gross_entry_cost_usdc) ?? 0));
   const visible = allCombos ? rows : rows.slice(0,12);
   if (!visible.length) container.innerHTML = comboLoadFinished ? '<div class="empty">No combos matched among the qualified traders whose positions were checked. Coverage depends on available complete records; this is not a platform-wide scan.</div>' : '<div class="loading">Checking combo positions…</div>';
