@@ -148,6 +148,7 @@ async function getResolvedRecord(wallet, period, nowMs, maxPositions = RANKING_R
   const seen = new Set();
   let wins = 0;
   let losses = 0;
+  let realizedPnlTotal = 0;
   let sportsWins = 0;
   let sportsLosses = 0;
   let scannedPositions = 0;
@@ -194,6 +195,7 @@ async function getResolvedRecord(wallet, period, nowMs, maxPositions = RANKING_R
       const key = asset || `${condition}|${outcome}`;
       if (!key || seen.has(key)) continue;
       seen.add(key);
+      realizedPnlTotal += pnl;
       if (pnl > 0) wins++; else losses++;
       if (isSportsMarket(row)) {
         if (pnl > 0) sportsWins++; else sportsLosses++;
@@ -222,6 +224,7 @@ async function getResolvedRecord(wallet, period, nowMs, maxPositions = RANKING_R
   return {
     wins: publishableRecord ? wins : null,
     losses: publishableRecord ? losses : null,
+    realizedPnlTotal: publishableRecord ? realizedPnlTotal : null,
     sportsWins: recordComplete ? sportsWins : null,
     sportsLosses: recordComplete ? sportsLosses : null,
     sportsResolvedMarkets: recordComplete ? sportsWins + sportsLosses : null,
@@ -351,7 +354,20 @@ function rankSportsCandidates(candidates, records = {}) {
 
 function rankCandidates(candidates, records = {}) {
   return [...candidates]
-    .map(trader => ({ ...trader, ...(records[trader.wallet] || {}) }))
+    .map(trader => {
+      const record = records[trader.wallet] || {};
+      const merged = { ...trader, ...record };
+      // When the closed-position scan is complete, use the sum of those same
+      // period-scoped realized P&L rows so the displayed dollars agree with W-L.
+      // Keep Polymarket leaderboard P&L only when the history sample is incomplete.
+      if (record.recordComplete === true && Number.isFinite(record.realizedPnlTotal)) {
+        merged.pnl = record.realizedPnlTotal;
+        merged.pnlBasis = "Sum of unique closed-position realized P&L in selected period";
+      } else {
+        merged.pnlBasis = "Polymarket leaderboard period P&L; closed-position history incomplete";
+      }
+      return merged;
+    })
     .sort((a, b) => {
       // Complete realized-P&L samples may be compared as a clearly labeled
       // proxy. Incomplete/capped samples never get a fabricated 100% rate;
