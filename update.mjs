@@ -26,8 +26,8 @@ const CONSENSUS_MARKET_SCAN_LIMIT = 1000;
 const CONSENSUS_WINDOW_HOURS = 24;
 const CONSENSUS_HOLDERS_PER_MARKET = 1000;
 const MIN_CONSENSUS_POSITION_VALUE = 5;
-const CONSENSUS_ENTRY_WINDOW_MINUTES = 24 * 60;
-const MIN_TRADER_RESOLVED_MARKETS = 20;
+const CONSENSUS_ENTRY_WINDOW_MINUTES = 60;
+const MIN_TRADER_RESOLVED_MARKETS = 15;
 const TRADERS_PER_MARKET = 100;
 const TRADE_LIMIT = 10;
 const MAX_JSON_BYTES = 5 * 1024 * 1024;
@@ -1028,6 +1028,11 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
   await writeJsonUnderLimit(`consensus-${period.key}.json`, {
     generatedAt: new Date(nowMs).toISOString(),
     pool: period.key,
+    qualificationWindowDays: period.key === "month" ? 30 : 7,
+    minimumWinRate: MIN_CONSENSUS_WIN_RATE,
+    minimumResolvedMarkets: MIN_TRADER_RESOLVED_MARKETS,
+    minimumSameSideTraders: 2,
+    entryWindowMinutes: CONSENSUS_ENTRY_WINDOW_MINUTES,
     candidateCount: ranked.length,
     discoveredCandidateCount: discoveredCandidates.length,
     scanDiagnostics: lastConsensusDiagnostics,
