@@ -706,7 +706,9 @@ function selectPeriod(nextPeriod) {
 
 function openProfile(wallet) {
   const normalizedWallet = String(wallet).toLowerCase();
-  const trader = rankedLeaders().find(item => walletOf(item) === normalizedWallet) || consensusMemberCache.get(normalizedWallet);
+  const trader = rankedLeaders().find(item => walletOf(item) === normalizedWallet)
+    || consensusMemberCache.get(normalizedWallet)
+    || comboRows.find(combo => String(combo._wallet || walletOf(combo._trader || {})).toLowerCase() === normalizedWallet)?._trader;
   if (!trader) return;
 
   const pnl = num(trader.pnl ?? trader.profit);
