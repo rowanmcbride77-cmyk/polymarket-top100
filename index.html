@@ -576,12 +576,25 @@ function renderConsensus() {
 }
 
 async function loadComboPositions() {
-  const candidates = rankedLeaders().filter(t => /^0x[a-f0-9]{40}$/i.test(walletOf(t))).slice(0, 100);
+  // Use all exported qualified traders, not only the visible Top 100.
+  const qualified = Array.isArray(data?.comboCandidates) ? data.comboCandidates : [];
+  const source = qualified.length ? qualified : rankedLeaders();
+  const seenWallets = new Set();
+  const candidates = source.filter(t => {
+    const wallet = walletOf(t);
+    if (!/^0x[a-f0-9]{40}$/i.test(wallet) || seenWallets.has(wallet)) return false;
+    seenWallets.add(wallet);
+    if (!qualified.length) {
+      const record = recordOf(t);
+      return record && record.total >= 20 && record.rate >= 90;
+    }
+    return t.recordComplete === true && (num(t.resolvedMarkets) ?? 0) >= 20 && (num(t.winRate) ?? 0) >= 90;
+  });
   traderAliases.clear();
   candidates.forEach((t, i) => traderAliases.set(walletOf(t).toLowerCase(), "Trader " + (i + 1)));
   comboRows = []; comboLoadFinished = false;
   if (!candidates.length) { $("comboList").innerHTML = '<div class="empty">No valid trader wallets were found in the loaded leaderboard.</div>'; return; }
-  $("comboList").innerHTML = '<div class="loading">Checking combo positions for ' + candidates.length + ' leaderboard traders…</div>';
+  $("comboList").innerHTML = '<div class="loading">Checking combo positions for ' + candidates.length + ' qualified 90%+ traders (20+ closes)…</div>';
   let next = 0, completed = 0;
   const worker = async () => {
     while (next < candidates.length) {
@@ -610,7 +623,7 @@ function renderCombos() {
     return entry >= minimum && (allStatuses || held);
   }).sort((a,b) => (num(b.entry_cost_usdc ?? b.gross_entry_cost_usdc) ?? 0) - (num(a.entry_cost_usdc ?? a.gross_entry_cost_usdc) ?? 0));
   const visible = allCombos ? rows : rows.slice(0,12);
-  if (!visible.length) container.innerHTML = comboLoadFinished ? '<div class="empty">No combos matched among the checked top 100 traders. This is not a platform-wide scan.</div>' : '<div class="loading">Checking combo positions…</div>';
+  if (!visible.length) container.innerHTML = comboLoadFinished ? '<div class="empty">No combos matched among the qualified traders whose positions were checked. Coverage depends on available complete records; this is not a platform-wide scan.</div>' : '<div class="loading">Checking combo positions…</div>';
   else container.innerHTML = visible.map((combo,index) => {
     const trader = combo._trader || {}, id = String(combo.combo_position_id || combo.combo_condition_id || combo._wallet + "-" + index);
     const expanded = expandedCombos.has(id), status = String(combo.status || "UNKNOWN").replaceAll("_"," ");
