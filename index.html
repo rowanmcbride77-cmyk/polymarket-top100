@@ -182,8 +182,8 @@ dialog::backdrop{background:#000b}
         <div class="filters">
           <label>Trader pool
             <select id="consensusPool" onchange="loadConsensusData()">
-              <option value="week" selected>Weekly candidate pool (up to 1,000)</option>
-              <option value="month">Monthly candidate pool (up to 1,000)</option>
+              <option value="week">Weekly candidate pool (up to 1,000)</option>
+              <option value="month" selected>Rolling 30-day candidate pool (up to 1,000)</option>
             </select>
           </label>
           <label>Min. traders
@@ -405,7 +405,7 @@ function consensus() {
 async function loadConsensusData() {
   const pool = $("consensusPool").value;
   $("consensusBody").innerHTML = `<tr><td colspan="6" class="loading">Loading ${esc(pool)} consensus pool…</td></tr>`;
-  $("consensusPeriod").textContent = (pool === "week" ? "Weekly pool" : "Monthly pool") + " · " + $("recency").value + "h";
+  $("consensusPeriod").textContent = (pool === "week" ? "Weekly pool" : "Rolling 30-day pool") + " · " + $("recency").value + "h";
   const filename = CONSENSUS_FILES[pool];
   try {
     let result = null;
