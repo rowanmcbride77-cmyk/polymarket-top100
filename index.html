@@ -214,11 +214,12 @@ dialog::backdrop{background:#000b}
 
     <div class="column right-column">
       <section class="panel">
-        <div class="panel-heading"><div class="heading-left"><span class="heading-icon">🧩</span><h2>Active Combos</h2></div><span class="pill">Top traders · live API</span></div>
-        <div class="source-note" style="margin:0 0 12px">Actual multi-market combo positions returned by Polymarket's public API. Expand a combo to inspect its individual legs. This scans the current top 100 leaderboard traders, not every account on Polymarket.</div>
+        <div class="panel-heading"><div class="heading-left"><span class="heading-icon">🧩</span><h2>Open Combos</h2></div><span class="pill">Live API</span></div>
+        <div class="source-note" style="margin:0 0 12px">“Open” means the trader still has a combo position; it does NOT mean every event has not started. Use Event timing to filter for combos where every leg has a known future start time. “Estimated payout” assumes the combo settles successfully; “estimated profit” subtracts the original entry cost and is not guaranteed. Combos are scanned only among qualified traders returned by the data file, not every Polymarket account.</div>
         <div class="filters">
           <label>Minimum entry <select id="minComboEntry" onchange="renderCombos()"><option value="0">Any amount</option><option value="100">$100+</option><option value="500">$500+</option><option value="1000">$1,000+</option><option value="5000">$5,000+</option></select></label>
-          <label>Show <select id="comboStatus" onchange="renderCombos()"><option value="held">Active only</option><option value="all">Active + resolved</option></select></label>
+          <label>Position <select id="comboStatus" onchange="renderCombos()"><option value="held">Open only</option><option value="all">Open + resolved</option></select></label>
+          <label>Event timing <select id="comboTiming" onchange="renderCombos()"><option value="all">Any timing</option><option value="upcoming">Not started only</option></select></label>
         </div>
         <div id="comboList" class="recent-list"><div class="loading">Loading actual combo positions…</div></div>
         <button class="link-button" id="comboMore" onclick="toggleCombos()">View more combos →</button>
@@ -613,21 +614,47 @@ async function loadComboPositions() {
   comboLoadFinished = true; renderCombos();
 }
 
+function comboLegStartMs(leg) {
+  const market = leg?.market || {}, event = market?.event || {};
+  const candidates = [
+    market.game_start_time, market.gameStartTime, market.start_time, market.startTime,
+    market.event_start_time, market.eventStartTime, market.start_date, market.startDate,
+    event.game_start_time, event.gameStartTime, event.start_time, event.startTime,
+    event.start_date, event.startDate, event.date
+  ];
+  for (const value of candidates) {
+    const parsed = timestampMs(value);
+    if (parsed !== null && Number.isFinite(parsed)) return parsed;
+  }
+  return null;
+}
+function comboTimingState(combo) {
+  const legs = Array.isArray(combo.legs) ? combo.legs : [];
+  if (!legs.length) return {key:"unknown", label:"Start time unknown"};
+  const starts = legs.map(comboLegStartMs);
+  if (starts.some(value => value === null)) return {key:"unknown", label:"Start time unknown"};
+  const now = Date.now();
+  if (starts.some(value => value <= now)) return {key:"started", label:"At least one event started"};
+  return {key:"upcoming", label:"All events not started"};
+}
+
 function renderCombos() {
   const container = $("comboList"); if (!container) return;
   if (!comboLoadFinished && !comboRows.length) { if (!container.innerHTML.includes("Checking combo positions")) container.innerHTML = '<div class="loading">Loading actual combo positions…</div>'; return; }
   const minimum = Number($("minComboEntry")?.value || 0), allStatuses = $("comboStatus")?.value === "all";
+  const timingFilter = $("comboTiming")?.value || "all";
   const rows = comboRows.filter(combo => {
     const status = String(combo.status || "").toUpperCase(), entry = num(combo.entry_cost_usdc ?? combo.gross_entry_cost_usdc) ?? 0;
     const held = ["OPEN","REDEEMABLE","PARTIAL"].includes(status) || (!status && (num(combo.current_size) ?? 0) > 0);
-    return entry >= minimum && (allStatuses || held);
+    const timing = comboTimingState(combo);
+    return entry >= minimum && (allStatuses || held) && (timingFilter !== "upcoming" || timing.key === "upcoming");
   }).sort((a,b) => (num(b.entry_cost_usdc ?? b.gross_entry_cost_usdc) ?? 0) - (num(a.entry_cost_usdc ?? a.gross_entry_cost_usdc) ?? 0));
   const visible = allCombos ? rows : rows.slice(0,12);
   if (!visible.length) container.innerHTML = comboLoadFinished ? '<div class="empty">No combos matched among the qualified traders whose positions were checked. Coverage depends on available complete records; this is not a platform-wide scan.</div>' : '<div class="loading">Checking combo positions…</div>';
   else container.innerHTML = visible.map((combo,index) => {
     const trader = combo._trader || {}, id = String(combo.combo_position_id || combo.combo_condition_id || combo._wallet + "-" + index);
     const expanded = expandedCombos.has(id), status = String(combo.status || "UNKNOWN").replaceAll("_"," ");
-    const entry = combo.entry_cost_usdc ?? combo.gross_entry_cost_usdc, realizedPayout = num(combo.realized_payout_usdc), potentialPayout = num(combo.current_size), payout = realizedPayout !== null && realizedPayout > 0 ? realizedPayout : (potentialPayout !== null && potentialPayout > 0 ? potentialPayout : null), potentialProfit = payout !== null && num(entry) !== null ? payout - num(entry) : null, legs = Array.isArray(combo.legs) ? combo.legs : [];
+    const entry = combo.entry_cost_usdc ?? combo.gross_entry_cost_usdc, realizedPayout = num(combo.realized_payout_usdc), potentialPayout = num(combo.current_size), payout = realizedPayout !== null && realizedPayout > 0 ? realizedPayout : (potentialPayout !== null && potentialPayout > 0 ? potentialPayout : null), potentialProfit = realizedPayout !== null && realizedPayout > 0 ? null : (payout !== null && num(entry) !== null ? payout - num(entry) : null), legs = Array.isArray(combo.legs) ? combo.legs : [], timing = comboTimingState(combo);
     const summary = legs.slice(0,3).map(leg => leg.market?.question || leg.market?.title || leg.market?.event?.event_title || "Market leg").join(" · ");
     const detail = expanded ? '<div class="combo-legs">' + (legs.length ? legs.map((leg,i) => {
       const market = leg.market || {}, event = market.event || {}, label = leg.leg_outcome_label || market.outcome || (leg.leg_outcome_index ?? "Unknown outcome");
