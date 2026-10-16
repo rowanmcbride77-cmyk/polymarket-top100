@@ -578,24 +578,21 @@ function renderConsensus() {
 
 async function loadComboPositions() {
   // Use all exported qualified traders, not only the visible Top 100.
-  const qualified = Array.isArray(data?.comboCandidates) ? data.comboCandidates : [];
-  const source = qualified.length ? qualified : rankedLeaders();
+  const source = Array.isArray(data?.comboCandidates) && data.comboCandidates.length
+    ? data.comboCandidates
+    : rankedLeaders();
   const seenWallets = new Set();
   const candidates = source.filter(t => {
     const wallet = walletOf(t);
     if (!/^0x[a-f0-9]{40}$/i.test(wallet) || seenWallets.has(wallet)) return false;
     seenWallets.add(wallet);
-    if (!qualified.length) {
-      const record = recordOf(t);
-      return record && record.total >= 15 && record.rate >= 80;
-    }
-    return t.recordComplete === true && (num(t.resolvedMarkets) ?? 0) >= 15 && (num(t.winRate) ?? 0) >= 80;
+    return true;
   });
   traderAliases.clear();
   candidates.forEach((t, i) => traderAliases.set(walletOf(t).toLowerCase(), "Trader " + (i + 1)));
   comboRows = []; comboLoadFinished = false;
   if (!candidates.length) { $("comboList").innerHTML = '<div class="empty">No valid trader wallets were found in the loaded leaderboard.</div>'; return; }
-  $("comboList").innerHTML = '<div class="loading">Checking combo positions for ' + candidates.length + ' qualified 80%+ traders (15+ closes)…</div>';
+  $("comboList").innerHTML = '<div class="loading">Checking combo positions for ' + candidates.length + ' traders, with no win-rate or trade-count cutoff…</div>';
   let next = 0, completed = 0;
   const worker = async () => {
     while (next < candidates.length) {
