@@ -247,6 +247,8 @@ let allCombos = false;
 let comboRows = [];
 let comboLoadFinished = false;
 const expandedCombos = new Set();
+const comboActivityCache = new Map();
+const traderAliases = new Map();
 let loading = false;
 const expandedMarkets = new Set();
 const consensusMemberCache = new Map();
@@ -566,6 +568,8 @@ function renderConsensus() {
 
 async function loadComboPositions() {
   const candidates = rankedLeaders().filter(t => /^0x[a-f0-9]{40}$/i.test(walletOf(t))).slice(0, 100);
+  traderAliases.clear();
+  candidates.forEach((t, i) => traderAliases.set(walletOf(t).toLowerCase(), "Trader " + (i + 1)));
   comboRows = []; comboLoadFinished = false;
   if (!candidates.length) { $("comboList").innerHTML = '<div class="empty">No valid trader wallets were found in the loaded leaderboard.</div>'; return; }
   $("comboList").innerHTML = '<div class="loading">Checking combo positions for ' + candidates.length + ' leaderboard traders…</div>';
@@ -607,7 +611,7 @@ function renderCombos() {
       const market = leg.market || {}, event = market.event || {}, label = leg.leg_outcome_label || market.outcome || (leg.leg_outcome_index ?? "Unknown outcome");
       return '<div class="combo-leg"><strong>Leg ' + (num(leg.leg_index) ?? i+1) + ': ' + esc(market.question || market.title || event.event_title || "Untitled market") + '</strong><br><span class="side-tag ' + (String(label).toLowerCase()==="no"?"no":"") + '">' + esc(label) + '</span> <small class="subtitle">· ' + esc(String(leg.leg_status || "UNKNOWN").replaceAll("_"," ")) + '</small>' + (event.event_slug ? '<br><a href="https://polymarket.com/event/' + encodeURIComponent(event.event_slug) + '" target="_blank" rel="noopener noreferrer">Open market ↗</a>' : '') + '</div>';
     }).join("") : '<div class="empty">No leg details were returned.</div>') + '</div>' : '';
-    return '<div class="combo-card"><div><div class="combo-title">' + esc(nameOf(trader)) + ' · ' + legs.length + '-leg combo</div><div>' + esc(summary || "Combo market details unavailable") + '</div><div class="combo-meta"><span class="side-tag">' + esc(status) + '</span><span>' + cash(entry) + ' entry</span><span>' + (payout === null ? 'Payout N/A' : cash(payout) + ' payout') + '</span><span>' + (num(combo.legs_resolved) ?? 0) + '/' + (num(combo.legs_total) ?? legs.length) + ' legs resolved</span></div><button class="link-button" onclick="toggleCombo(&quot;' + esc(id) + '&quot;)">' + (expanded ? 'Hide legs ↑' : 'Show legs ↓') + '</button></div>' + detail + '<div class="trade-user">' + profileButton(trader, nameOf(trader)) + '</div></div>';
+    return '<div class="combo-card"><div><div class="combo-title">' + esc(traderAliases.get(walletOf(trader).toLowerCase()) || nameOf(trader)) + ' · ' + legs.length + '-leg combo</div><div>' + esc(summary || "Combo market details unavailable") + '</div><div class="combo-meta"><span class="side-tag">' + esc(status) + '</span><span>' + cash(entry) + ' entry</span><span>' + (payout === null ? 'Payout N/A' : cash(payout) + ' payout') + '</span><span>' + (num(combo.legs_resolved) ?? 0) + '/' + (num(combo.legs_total) ?? legs.length) + ' legs resolved</span></div><button class="link-button" onclick="toggleCombo(&quot;' + esc(id) + '&quot;)">' + (expanded ? 'Hide legs ↑' : 'Show legs ↓') + '</button></div>' + detail + '<div class="trade-user">' + profileButton(trader, nameOf(trader)) + '</div></div>';
   }).join("");
   $("comboMore").textContent = allCombos ? "Show fewer ↑" : "View more combos →";
   $("comboMore").style.display = rows.length > 12 ? "inline-block" : "none";
@@ -669,6 +673,7 @@ function openProfile(wallet) {
       <div class="profile-stat"><small>${period === "week" ? "Weekly" : "Monthly"} P&amp;L</small><strong class="${pnl !== null && pnl < 0 ? "negative" : "positive"}">${cash(pnl)}</strong></div>
       <div class="profile-stat"><small>Volume</small><strong>${cash(volume)}</strong></div>
     </div>
+    <div class="profile-trades"><h3>Active combos</h3><div id="profileActiveCombos" class="empty">Loading active combos…</div></div>
     <div class="profile-trades"><h3>Recent buys</h3>
       ${recentTrades.length ? recentTrades.map(trade => `
         <div class="profile-trade">
@@ -678,11 +683,51 @@ function openProfile(wallet) {
           <br><small class="subtitle">Bought: ${esc(dateText(trade.buyTime ?? trade.timestamp ?? trade.createdAt))}</small>
         </div>`).join("") : `<div class="empty">No recent buy history supplied for this trader.</div>`}
     </div>
+    <div class="profile-trades"><h3>Closed combos</h3><div id="profileClosedCombos" class="empty">Loading combo history…</div></div>
     <div class="profile-trades"><h3>Closed markets / positions</h3><div id="closedPositionsContent" class="empty">Loading full closed-position history…</div></div>
   `;
 
   $("profileDialog").showModal();
+  loadTraderCombos(traderWallet);
   loadClosedPositionHistory(traderWallet);
+}
+
+async function loadTraderCombos(wallet) {
+  const activeBox = $("profileActiveCombos"), closedBox = $("profileClosedCombos");
+  if (!activeBox || !closedBox) return;
+  activeBox.textContent = "Loading active combos…";
+  closedBox.textContent = "Loading combo history…";
+  try {
+    const [positionsResponse, activityResponse] = await Promise.all([
+      fetch("https://data-api.polymarket.com/v2/positions/combos?user=" + encodeURIComponent(wallet) + "&limit=100", {cache:"no-store"}),
+      fetch("https://data-api.polymarket.com/v2/activity/combos?user=" + encodeURIComponent(wallet) + "&limit=100", {cache:"no-store"})
+    ]);
+    if (!positionsResponse.ok) throw new Error("Combo positions API HTTP " + positionsResponse.status);
+    const positionsJson = await positionsResponse.json();
+    const positions = Array.isArray(positionsJson) ? positionsJson : (Array.isArray(positionsJson?.data) ? positionsJson.data : []);
+    const active = positions.filter(c => ["OPEN","REDEEMABLE","PARTIAL"].includes(String(c.status || "").toUpperCase()) || (!c.status && (num(c.current_size) ?? 0) > 0));
+    activeBox.innerHTML = active.length ? active.map(c => renderProfileCombo(c, false)).join("") : '<div class="empty">No active combo positions returned.</div>';
+    if (!activityResponse.ok) throw new Error("Combo activity API HTTP " + activityResponse.status);
+    const activityJson = await activityResponse.json();
+    const activities = Array.isArray(activityJson) ? activityJson : (Array.isArray(activityJson?.data) ? activityJson.data : []);
+    const closed = activities.filter(c => /CLOSE|REDEEM|RESOLV|SETTLE|CLAIM|PAYOUT|WIN|LOSS/i.test(String(c.status || c.activity_type || c.type || c.event_type || "")) || (num(c.legs_resolved) > 0 && num(c.legs_total) > 0 && num(c.legs_resolved) >= num(c.legs_total)));
+    closedBox.innerHTML = closed.length ? closed.map(c => renderProfileCombo(c, true)).join("") : '<div class="empty">No closed combo activity returned for this trader. The public API may expose only lifecycle events for some accounts.</div>';
+  } catch (error) {
+    activeBox.innerHTML = '<div class="error">Could not load combo positions: ' + esc(error.message) + '</div>';
+    closedBox.innerHTML = '<div class="error">Could not load closed combos: ' + esc(error.message) + '</div>';
+  }
+}
+
+function renderProfileCombo(combo, isClosed) {
+  const legs = Array.isArray(combo.legs) ? combo.legs : [];
+  const title = legs.map((leg,i) => {
+    const m = leg.market || {};
+    return 'Leg ' + (num(leg.leg_index) ?? i+1) + ': ' + esc(m.question || m.title || m.event?.event_title || "Market details unavailable") + ' — ' + esc(leg.leg_outcome_label || m.outcome || "Outcome unavailable");
+  }).join("<br>");
+  const entry = combo.entry_cost_usdc ?? combo.gross_entry_cost_usdc ?? combo.amount_usdc ?? combo.amount;
+  const payout = num(combo.realized_payout_usdc ?? combo.payout_usdc ?? combo.payout);
+  const status = String(combo.status || combo.activity_type || combo.type || (isClosed ? "CLOSED ACTIVITY" : "OPEN")).replaceAll("_"," ");
+  return '<div class="profile-trade"><strong>' + esc(status) + '</strong><br>' + (title || '<span class="subtitle">Combo leg details unavailable in this API record.</span>') + '<br><small class="subtitle">Entry: ' + cash(entry) + ' · Payout: ' + (payout === null ? "N/A" : cash(payout)) + '</small></div>';
 }
 
 function closeProfile() {
