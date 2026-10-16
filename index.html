@@ -281,9 +281,18 @@ function cash(value) {
 }
 
 function nameOf(trader) {
-  return trader?.name || trader?.username || trader?.userName || "Trader";
+  const raw = String(trader?.name || trader?.username || trader?.userName || "").trim();
+  if (!raw) return "Unknown Trader";
+  // Only replace wallet/code-like IDs; preserve normal usernames.
+  const compact = raw.replace(/^@/, "").replace(/[^a-z0-9]/gi, "");
+  const codeLike = /^0x[a-f0-9]{40}$/i.test(raw) ||
+    (/^[a-f0-9]{18,}$/i.test(compact) && /[0-9]/.test(compact) && /[a-f]/i.test(compact)) ||
+    (/^[a-z0-9_-]{20,}$/i.test(raw) && /[0-9]/.test(raw) && /[a-z]/i.test(raw));
+  if (!codeLike) return raw;
+  const wallet = walletOf(trader);
+  const index = rankedLeaders().findIndex(item => wallet && walletOf(item) === wallet);
+  return index >= 0 ? "Trader " + (index + 1) : "Trader";
 }
-
 function walletOf(trader) {
   return String(trader?.wallet || trader?.proxyWallet || "").toLowerCase();
 }
@@ -611,7 +620,7 @@ function renderCombos() {
       const market = leg.market || {}, event = market.event || {}, label = leg.leg_outcome_label || market.outcome || (leg.leg_outcome_index ?? "Unknown outcome");
       return '<div class="combo-leg"><strong>Leg ' + (num(leg.leg_index) ?? i+1) + ': ' + esc(market.question || market.title || event.event_title || "Untitled market") + '</strong><br><span class="side-tag ' + (String(label).toLowerCase()==="no"?"no":"") + '">' + esc(label) + '</span> <small class="subtitle">· ' + esc(String(leg.leg_status || "UNKNOWN").replaceAll("_"," ")) + '</small>' + (event.event_slug ? '<br><a href="https://polymarket.com/event/' + encodeURIComponent(event.event_slug) + '" target="_blank" rel="noopener noreferrer">Open market ↗</a>' : '') + '</div>';
     }).join("") : '<div class="empty">No leg details were returned.</div>') + '</div>' : '';
-    return '<div class="combo-card"><div><div class="combo-title">' + esc(traderAliases.get(walletOf(trader).toLowerCase()) || nameOf(trader)) + ' · ' + legs.length + '-leg combo</div><div>' + esc(summary || "Combo market details unavailable") + '</div><div class="combo-meta"><span class="side-tag">' + esc(status) + '</span><span>' + cash(entry) + ' entry</span><span>' + (payout === null ? 'Payout N/A' : cash(payout) + ' payout') + '</span><span>' + (num(combo.legs_resolved) ?? 0) + '/' + (num(combo.legs_total) ?? legs.length) + ' legs resolved</span></div><button class="link-button" onclick="toggleCombo(&quot;' + esc(id) + '&quot;)">' + (expanded ? 'Hide legs ↑' : 'Show legs ↓') + '</button></div>' + detail + '<div class="trade-user">' + profileButton(trader, nameOf(trader)) + '</div></div>';
+    return '<div class="combo-card"><div><div class="combo-title">' + esc(nameOf(trader)) + ' · ' + legs.length + '-leg combo</div><div>' + esc(summary || "Combo market details unavailable") + '</div><div class="combo-meta"><span class="side-tag">' + esc(status) + '</span><span>' + cash(entry) + ' entry</span><span>' + (payout === null ? 'Payout N/A' : cash(payout) + ' payout') + '</span><span>' + (num(combo.legs_resolved) ?? 0) + '/' + (num(combo.legs_total) ?? legs.length) + ' legs resolved</span></div><button class="link-button" onclick="toggleCombo(&quot;' + esc(id) + '&quot;)">' + (expanded ? 'Hide legs ↑' : 'Show legs ↓') + '</button></div>' + detail + '<div class="trade-user">' + profileButton(trader, nameOf(trader)) + '</div></div>';
   }).join("");
   $("comboMore").textContent = allCombos ? "Show fewer ↑" : "View more combos →";
   $("comboMore").style.display = rows.length > 12 ? "inline-block" : "none";
