@@ -911,6 +911,23 @@ function makeOutput(period, ranked, sportsRanked, activePositions, tradeRows, no
     recordWarning:
       `Consensus groups open positions by exact market condition ID and exact outcome. Candidate coverage is limited to the discovered public leaderboard pool and the paginated position rows scanned. Closed-position profitability figures are P&L-based proxies, not verified settlement records.`,
     leaders,
+    // Broader combo discovery pool: only traders with a complete weekly/monthly
+    // realized-P&L proxy record, at least 20 classified closes, and >=90% profitable closes.
+    // This is still limited to wallets whose closed history was actually scanned.
+    comboCandidates: ranked.filter(trader =>
+      trader.recordComplete === true &&
+      (num(trader.resolvedMarkets) ?? 0) >= 20 &&
+      (num(trader.winRate) ?? 0) >= 90
+    ).map(trader => ({
+      wallet: trader.wallet,
+      name: trader.name || trader.username || "",
+      wins: trader.wins,
+      losses: trader.losses,
+      winRate: trader.winRate,
+      resolvedMarkets: trader.resolvedMarkets,
+      recordComplete: trader.recordComplete,
+      recordBasis: trader.recordBasis
+    })),
     traderActiveTrades: Object.fromEntries(tradeRows.filter(Boolean)),
     traderActivePositions: leaderPositions,
     consensus: buildConsensus(consensusGroups, consensusCandidates || ranked, records)
