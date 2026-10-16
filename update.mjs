@@ -911,13 +911,12 @@ function makeOutput(period, ranked, sportsRanked, activePositions, tradeRows, no
     recordWarning:
       `Consensus groups open positions by exact market condition ID and exact outcome. Candidate coverage is limited to the discovered public leaderboard pool and the paginated position rows scanned. Closed-position profitability figures are P&L-based proxies, not verified settlement records.`,
     leaders,
-    // Broader combo discovery pool: only traders with a complete weekly/monthly
-    // realized-P&L proxy record, at least 20 classified closes, and >=90% profitable closes.
+    // Combo discovery pool: complete record, at least 15 classified closes, and >=80% profitable closes.
     // This is still limited to wallets whose closed history was actually scanned.
     comboCandidates: ranked.filter(trader =>
       trader.recordComplete === true &&
-      (num(trader.resolvedMarkets) ?? 0) >= 20 &&
-      (num(trader.winRate) ?? 0) >= 90
+      (num(trader.resolvedMarkets) ?? 0) >= 15 &&
+      (num(trader.winRate) ?? 0) >= 80
     ).map(trader => ({
       wallet: trader.wallet,
       name: trader.name || trader.username || "",
