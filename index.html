@@ -85,6 +85,7 @@ select{max-width:155px}
 .trade-amount{font-size:15px;font-weight:750}
 .trade-user{color:var(--muted);font-size:12px;margin-top:5px}
 .trade-time{color:var(--muted);font-size:11px}
+.combo-card{padding:12px 0;border-bottom:1px solid #142433;cursor:pointer}.combo-card:last-child{border-bottom:0}.combo-title{font-weight:700;line-height:1.4;margin-bottom:6px;overflow-wrap:anywhere}.combo-meta{display:flex;flex-wrap:wrap;gap:7px;align-items:center;margin-top:7px}.combo-legs{margin-top:10px;padding:10px;background:#0b1825;border-radius:8px}.combo-leg{padding:8px 0;border-bottom:1px solid #203346;line-height:1.45}.combo-leg:last-child{border-bottom:0}
 .empty,.loading{text-align:center;color:var(--muted);padding:22px 5px;line-height:1.6}
 .error{color:#ffb4c1;background:#321a24;border:1px solid #663344;padding:12px;border-radius:8px;margin-bottom:16px;line-height:1.5}
 footer{text-align:center;color:#71869b;font-size:12px;padding:25px}
@@ -213,23 +214,14 @@ dialog::backdrop{background:#000b}
 
     <div class="column right-column">
       <section class="panel">
-        <div class="panel-heading">
-          <div class="heading-left"><span class="heading-icon">ϟ</span><h2>Recent Buys</h2></div>
-          <span class="pill">Leaderboard traders</span>
-        </div>
+        <div class="panel-heading"><div class="heading-left"><span class="heading-icon">🧩</span><h2>Active Combos</h2></div><span class="pill">Top traders · live API</span></div>
+        <div class="source-note" style="margin:0 0 12px">Actual multi-market combo positions returned by Polymarket's public API. Expand a combo to inspect its individual legs. This scans the current top 100 leaderboard traders, not every account on Polymarket.</div>
         <div class="filters">
-          <label>Min. amount
-            <select id="minBuyAmount" onchange="renderRecent()">
-              <option value="0">Any amount</option>
-              <option value="100">$100+</option>
-              <option value="500">$500+</option>
-              <option value="1000">$1,000+</option>
-              <option value="5000">$5,000+</option>
-            </select>
-          </label>
+          <label>Minimum entry <select id="minComboEntry" onchange="renderCombos()"><option value="0">Any amount</option><option value="100">$100+</option><option value="500">$500+</option><option value="1000">$1,000+</option><option value="5000">$5,000+</option></select></label>
+          <label>Show <select id="comboStatus" onchange="renderCombos()"><option value="held">Active only</option><option value="all">Active + resolved</option></select></label>
         </div>
-        <div id="recentList" class="recent-list"><div class="loading">Loading recent buys…</div></div>
-        <button class="link-button" id="recentMore" onclick="toggleRecent()">View all recent buys →</button>
+        <div id="comboList" class="recent-list"><div class="loading">Loading actual combo positions…</div></div>
+        <button class="link-button" id="comboMore" onclick="toggleCombos()">View more combos →</button>
       </section>
     </div>
   </div>
@@ -251,7 +243,10 @@ let data = null;
 let consensusData = null;
 let allLeaders = false;
 let allMarkets = false;
-let allRecent = false;
+let allCombos = false;
+let comboRows = [];
+let comboLoadFinished = false;
+const expandedCombos = new Set();
 let loading = false;
 const expandedMarkets = new Set();
 const consensusMemberCache = new Map();
@@ -569,47 +564,57 @@ function renderConsensus() {
   $("consensusMore").style.display = filtered.length > 15 ? "inline-block" : "none";
 }
 
-function renderRecent() {
-  const minimum = Number($("minBuyAmount").value || 0);
-  const filtered = trades().filter(trade => {
-    const amount = num(trade.amount ?? trade.usdAmount ?? trade.value ?? trade.size) ?? 0;
-    return amount >= minimum;
-  }).sort((a, b) => {
-    return (timestamp(b.timestamp ?? b.time ?? b.createdAt) ?? 0) -
-           (timestamp(a.timestamp ?? a.time ?? a.createdAt) ?? 0);
-  });
-
-  const visible = allRecent ? filtered : filtered.slice(0, 12);
-
-  $("recentList").innerHTML = visible.length ? visible.map(trade => {
-    const side = String(trade.side || trade.outcome || "BUY");
-    const sideClass = side.toLowerCase() === "no" ? "side-tag no" : "side-tag";
-    const amount = num(trade.amount ?? trade.usdAmount ?? trade.value ?? trade.size);
-    const traderName = trade.traderName || trade.name || trade.username || "Top trader";
-    const time = trade.timestamp ?? trade.time ?? trade.createdAt ?? trade.buyAt;
-    const market = trade.title || trade.market || trade.question || "Untitled market";
-    const trader = {
-      name:traderName,
-      wallet:trade.wallet || trade.proxyWallet || ""
-    };
-
-    return `<div class="trade">
-      ${avatar(trader)}
-      <div>
-        <div class="trade-title">${esc(market)}</div>
-        <div class="trade-details">
-          <span class="${sideClass}">${esc(side)}</span>
-          <span class="trade-amount">${cash(amount)}</span>
-        </div>
-        <div class="trade-user">${profileButton(trader, traderName)}</div>
-        <div class="trade-time" title="${esc(dateText(time))}">${esc(relative(time))}</div>
-      </div>
-    </div>`;
-  }).join("") : `<div class="empty">No recent buys match this filter.</div>`;
-
-  $("recentMore").textContent = allRecent ? "Show fewer ↑" : "View all recent buys →";
-  $("recentMore").style.display = filtered.length > 12 ? "inline-block" : "none";
+async function loadComboPositions() {
+  const candidates = rankedLeaders().filter(t => /^0x[a-f0-9]{40}$/i.test(walletOf(t))).slice(0, 100);
+  comboRows = []; comboLoadFinished = false;
+  if (!candidates.length) { $("comboList").innerHTML = '<div class="empty">No valid trader wallets were found in the loaded leaderboard.</div>'; return; }
+  $("comboList").innerHTML = '<div class="loading">Checking combo positions for ' + candidates.length + ' leaderboard traders…</div>';
+  let next = 0, completed = 0;
+  const worker = async () => {
+    while (next < candidates.length) {
+      const trader = candidates[next++], wallet = walletOf(trader);
+      try {
+        const response = await fetch("https://data-api.polymarket.com/v2/positions/combos?user=" + encodeURIComponent(wallet) + "&limit=100", {cache:"no-store"});
+        if (!response.ok) throw new Error("HTTP " + response.status);
+        const json = await response.json(), rows = Array.isArray(json?.data) ? json.data : [];
+        for (const combo of rows) comboRows.push({...combo, _trader:trader, _wallet:wallet});
+      } catch (error) { console.warn("Combo lookup failed for " + wallet + ": " + error.message); }
+      completed++;
+      if (completed % 10 === 0) $("comboList").innerHTML = '<div class="loading">Checked ' + completed + ' of ' + candidates.length + ' traders…</div>';
+    }
+  };
+  await Promise.all(Array.from({length:5}, () => worker()));
+  comboLoadFinished = true; renderCombos();
 }
+
+function renderCombos() {
+  const container = $("comboList"); if (!container) return;
+  if (!comboLoadFinished && !comboRows.length) { if (!container.innerHTML.includes("Checking combo positions")) container.innerHTML = '<div class="loading">Loading actual combo positions…</div>'; return; }
+  const minimum = Number($("minComboEntry")?.value || 0), allStatuses = $("comboStatus")?.value === "all";
+  const rows = comboRows.filter(combo => {
+    const status = String(combo.status || "").toUpperCase(), entry = num(combo.entry_cost_usdc ?? combo.gross_entry_cost_usdc) ?? 0;
+    const held = ["OPEN","REDEEMABLE","PARTIAL"].includes(status) || (!status && (num(combo.current_size) ?? 0) > 0);
+    return entry >= minimum && (allStatuses || held);
+  }).sort((a,b) => (num(b.entry_cost_usdc ?? b.gross_entry_cost_usdc) ?? 0) - (num(a.entry_cost_usdc ?? a.gross_entry_cost_usdc) ?? 0));
+  const visible = allCombos ? rows : rows.slice(0,12);
+  if (!visible.length) container.innerHTML = comboLoadFinished ? '<div class="empty">No combos matched among the checked top 100 traders. This is not a platform-wide scan.</div>' : '<div class="loading">Checking combo positions…</div>';
+  else container.innerHTML = visible.map((combo,index) => {
+    const trader = combo._trader || {}, id = String(combo.combo_position_id || combo.combo_condition_id || combo._wallet + "-" + index);
+    const expanded = expandedCombos.has(id), status = String(combo.status || "UNKNOWN").replaceAll("_"," ");
+    const entry = combo.entry_cost_usdc ?? combo.gross_entry_cost_usdc, payout = num(combo.realized_payout_usdc), legs = Array.isArray(combo.legs) ? combo.legs : [];
+    const summary = legs.slice(0,3).map(leg => leg.market?.question || leg.market?.title || leg.market?.event?.event_title || "Market leg").join(" · ");
+    const detail = expanded ? '<div class="combo-legs">' + (legs.length ? legs.map((leg,i) => {
+      const market = leg.market || {}, event = market.event || {}, label = leg.leg_outcome_label || market.outcome || (leg.leg_outcome_index ?? "Unknown outcome");
+      return '<div class="combo-leg"><strong>Leg ' + (num(leg.leg_index) ?? i+1) + ': ' + esc(market.question || market.title || event.event_title || "Untitled market") + '</strong><br><span class="side-tag ' + (String(label).toLowerCase()==="no"?"no":"") + '">' + esc(label) + '</span> <small class="subtitle">· ' + esc(String(leg.leg_status || "UNKNOWN").replaceAll("_"," ")) + '</small>' + (event.event_slug ? '<br><a href="https://polymarket.com/event/' + encodeURIComponent(event.event_slug) + '" target="_blank" rel="noopener noreferrer">Open market ↗</a>' : '') + '</div>';
+    }).join("") : '<div class="empty">No leg details were returned.</div>') + '</div>' : '';
+    return '<div class="combo-card"><div onclick="toggleCombo(\'' + esc(id).replace(/'/g,"&#39;") + '\')"><div class="combo-title">' + esc(nameOf(trader)) + ' · ' + legs.length + '-leg combo</div><div>' + esc(summary || "Combo market details unavailable") + '</div><div class="combo-meta"><span class="side-tag">' + esc(status) + '</span><span>' + cash(entry) + ' entry</span><span>' + (payout === null ? 'Payout N/A' : cash(payout) + ' payout') + '</span><span>' + (num(combo.legs_resolved) ?? 0) + '/' + (num(combo.legs_total) ?? legs.length) + ' legs resolved</span></div></div>' + detail + '<div class="trade-user">' + profileButton(trader, nameOf(trader)) + '</div></div>';
+  }).join("");
+  $("comboMore").textContent = allCombos ? "Show fewer ↑" : "View more combos →";
+  $("comboMore").style.display = rows.length > 12 ? "inline-block" : "none";
+}
+
+function toggleCombos() { allCombos = !allCombos; renderCombos(); }
+function toggleCombo(id) { if (expandedCombos.has(id)) expandedCombos.delete(id); else expandedCombos.add(id); renderCombos(); }
 
 function toggleLeaders() {
   allLeaders = !allLeaders;
@@ -755,7 +760,7 @@ async function loadData(forceReload = false) {
   $("errorBox").innerHTML = "";
   $("leadersBody").innerHTML = `<tr><td colspan="6" class="loading">Loading traders…</td></tr>`;
   $("consensusBody").innerHTML = `<tr><td colspan="6" class="loading">Loading consensus…</td></tr>`;
-  $("recentList").innerHTML = `<div class="loading">Loading recent buys…</div>`;
+  $("comboList").innerHTML = `<div class="loading">Loading actual combo positions…</div>`;
 
   try {
     const filename = FILES[period];
@@ -790,14 +795,14 @@ async function loadData(forceReload = false) {
 
     renderLeaders();
     renderSportsLeaders();
-    renderRecent();
+    loadComboPositions();
     loadConsensusData();
   } catch (error) {
     data = null;
     $("updatedAt").textContent = "Unavailable";
     $("leadersBody").innerHTML = `<tr><td colspan="4" class="empty">Could not load ${esc(FILES[period])}.</td></tr>`;
     $("consensusBody").innerHTML = `<tr><td colspan="6" class="empty">Consensus data unavailable.</td></tr>`;
-    $("recentList").innerHTML = `<div class="empty">Recent-buy data unavailable.</div>`;
+    $("comboList").innerHTML = `<div class="empty">Trader data unavailable, so combos cannot be loaded.</div>`;
     $("totalPnl").textContent = "—";
     $("totalVolume").textContent = "—";
     $("avgWinRate").textContent = "N/A";
