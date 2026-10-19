@@ -355,11 +355,26 @@ function rankSportsCandidates(candidates, records = {}) {
 function rankCandidates(candidates, records = {}) {
   return [...candidates]
     .map(trader => {
-      const record = records[trader.wallet] || {};
+      // Wallets are addresses, so join records case-insensitively to avoid
+      // accidentally treating a scanned trader as unscanned due to casing.
+      const walletKey = String(trader.wallet || "").toLowerCase();
+      const recordKey = Object.keys(records).find(key => String(key).toLowerCase() === walletKey);
+      const record = (recordKey ? records[recordKey] : null) || {};
       const merged = { ...trader, ...record };
+      const wins = Number(record.wins);
+      const losses = Number(record.losses);
+      const resolved = Number(record.resolvedMarkets);
+      const validCounts = Number.isFinite(wins) && wins >= 0 &&
+        Number.isFinite(losses) && losses >= 0 && wins + losses > 0 &&
+        Number.isFinite(resolved) && resolved === wins + losses;
+      // Recompute the displayed/ranked rate from the exact W-L counts instead
+      // of trusting a potentially stale or inconsistent cached winRate field.
+      if (record.recordComplete === true && validCounts) {
+        merged.winRate = (wins / (wins + losses)) * 100;
+        merged.resolvedMarkets = wins + losses;
+      }
       // When the closed-position scan is complete, use the sum of those same
       // period-scoped realized P&L rows so the displayed dollars agree with W-L.
-      // Keep Polymarket leaderboard P&L only when the history sample is incomplete.
       if (record.recordComplete === true && Number.isFinite(record.realizedPnlTotal)) {
         merged.pnl = record.realizedPnlTotal;
         merged.pnlBasis = "Sum of unique closed-position realized P&L in selected period";
@@ -369,20 +384,31 @@ function rankCandidates(candidates, records = {}) {
       return merged;
     })
     .sort((a, b) => {
-      // Complete realized-P&L samples may be compared as a clearly labeled
-      // proxy. Incomplete/capped samples never get a fabricated 100% rate;
-      // those rows fall back to Polymarket's actual period P&L and volume.
-      const aComplete = a.recordComplete === true && a.winRate !== null && (a.resolvedMarkets ?? 0) >= MIN_TRADER_RESOLVED_MARKETS;
-      const bComplete = b.recordComplete === true && b.winRate !== null && (b.resolvedMarkets ?? 0) >= MIN_TRADER_RESOLVED_MARKETS;
+      // A trader is eligible for record ranking only with a complete sample,
+      // consistent W-L counts, and the minimum number of classifiable closes.
+      const aCountsValid = Number.isFinite(Number(a.wins)) && Number(a.wins) >= 0 &&
+        Number.isFinite(Number(a.losses)) && Number(a.losses) >= 0 &&
+        Number(a.resolvedMarkets) === Number(a.wins) + Number(a.losses) &&
+        Number(a.resolvedMarkets) > 0;
+      const bCountsValid = Number.isFinite(Number(b.wins)) && Number(b.wins) >= 0 &&
+        Number.isFinite(Number(b.losses)) && Number(b.losses) >= 0 &&
+        Number(b.resolvedMarkets) === Number(b.wins) + Number(b.losses) &&
+        Number(b.resolvedMarkets) > 0;
+      const aComplete = a.recordComplete === true && aCountsValid &&
+        Number(a.resolvedMarkets) >= MIN_TRADER_RESOLVED_MARKETS;
+      const bComplete = b.recordComplete === true && bCountsValid &&
+        Number(b.resolvedMarkets) >= MIN_TRADER_RESOLVED_MARKETS;
       if (aComplete !== bComplete) return aComplete ? -1 : 1;
       if (aComplete && bComplete) {
-        return (b.winRate - a.winRate) ||
-          ((b.resolvedMarkets ?? 0) - (a.resolvedMarkets ?? 0)) ||
-          ((b.pnl ?? -Infinity) - (a.pnl ?? -Infinity)) ||
-          ((b.volume ?? -Infinity) - (a.volume ?? -Infinity));
+        const aRate = Number(a.wins) / (Number(a.wins) + Number(a.losses));
+        const bRate = Number(b.wins) / (Number(b.wins) + Number(b.losses));
+        return (bRate - aRate) ||
+          (Number(b.resolvedMarkets) - Number(a.resolvedMarkets)) ||
+          ((Number(b.pnl) || 0) - (Number(a.pnl) || 0)) ||
+          ((Number(b.volume) || 0) - (Number(a.volume) || 0));
       }
-      return ((b.pnl ?? -Infinity) - (a.pnl ?? -Infinity)) ||
-        ((b.volume ?? -Infinity) - (a.volume ?? -Infinity));
+      return ((Number(b.pnl) || 0) - (Number(a.pnl) || 0)) ||
+        ((Number(b.volume) || 0) - (Number(a.volume) || 0));
     })
     .map((trader, index) => ({ ...trader, rank: index + 1 }));
 }
