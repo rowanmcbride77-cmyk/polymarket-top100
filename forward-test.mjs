@@ -35,7 +35,7 @@ for (const file of ["consensus-week.json","consensus-month.json"]) {
   try { const d=await readJson(file,null); for (const g of arr(d?.consensus)) sources.push({...g,pool:file.includes("week")?"week":"month"}); } catch {}
 }
 const seen = new Set();
-for (const g of sources) {
+for (const g of sources.slice(0,50)) {
   const condition = String(g.conditionId||g.condition_id||"").toLowerCase();
   const side = String(g.side||"").trim();
   const wallets = [...new Set(arr(g.traders).map(t=>String(t.wallet||"").toLowerCase()).filter(Boolean))];
@@ -69,7 +69,7 @@ for (const g of sources) {
       }
     }
     // Track current observable positions and recent buy/sell activity for the consensus wallets.
-    for (const wallet of wallets.slice(0,12)) {
+    for (const wallet of wallets.slice(0,4)) {
       try {
         const u=await get(API+"/trades?user="+encodeURIComponent(wallet)+"&limit=100");
         const trades=arr(u).filter(t=>String(t.conditionId||t.condition_id||"").toLowerCase()===condition).slice(0,100);
@@ -82,6 +82,25 @@ for (const g of sources) {
     }
     row.exitObservations=row.exitObservations.slice(-300);
   } catch(e) { console.warn("market snapshot failed",condition,e.message); }
+}
+// Continue checking every pending signal even after it falls off the current consensus list.
+for (const row of signals.filter(s=>s.status==="PENDING" && s.firstSignalPriceAvailable)) {
+  try {
+    const m=await marketFor(row.conditionId);
+    if (!m) continue;
+    const outcomes=arr(m.outcomes).map(String);
+    const index=outcomes.findIndex(o=>o.toLowerCase()===String(row.side).toLowerCase());
+    const prices=arr(m.outcomePrices).map(num);
+    const price=index>=0?prices[index]:null;
+    const closed=m.closed===true || m.active===false || m.resolved===true || String(m.status||"").toLowerCase()==="resolved";
+    if (!closed || price===null) continue;
+    if (price>=0.99 || price<=0.01) {
+      const won=price>=0.99;
+      row.status="RESOLVED"; row.settlement=won?"WIN":"LOSS"; row.resolvedAt=iso(now);
+      row.finalOutcomePrice=price;
+      row.paperPnl=won?(Number(row.shares)*1-Number(row.stake)):-Number(row.stake);
+    }
+  } catch(e) { console.warn("pending signal check failed",row.conditionId,e.message); }
 }
 const resolved=signals.filter(s=>s.status==="RESOLVED");
 const wins=resolved.filter(s=>s.settlement==="WIN").length;
