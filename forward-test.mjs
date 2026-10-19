@@ -57,6 +57,10 @@ for (const g of sources.slice(0,50)) {
       row.lastSeenAt=iso(now); row.latestConsensusCount=wallets.length;
       row.traderWallets=[...new Set([...(row.traderWallets||[]),...wallets])];
     }
+    row.currentPrice = index >= 0 ? prices[index] : null;
+    row.currentValue = row.shares != null && row.currentPrice != null ? row.shares * row.currentPrice : null;
+    row.unrealizedPaperPnl = row.currentValue != null ? row.currentValue - row.stake : null;
+    row.lastPriceCheckAt = iso(now);
     const isClosed=m.closed===true || m.active===false;
     const isResolved=m.resolved===true || String(m.status||"").toLowerCase()==="resolved";
     if ((isClosed||isResolved) && row.status==="PENDING" && row.firstSignalPriceAvailable) {
@@ -93,6 +97,10 @@ for (const row of signals.filter(s=>s.status==="PENDING" && s.firstSignalPriceAv
     const prices=arr(m.outcomePrices).map(num);
     const price=index>=0?prices[index]:null;
     const closed=m.closed===true || m.active===false || m.resolved===true || String(m.status||"").toLowerCase()==="resolved";
+    row.currentPrice = price;
+    row.currentValue = row.shares != null && price != null ? row.shares * price : null;
+    row.unrealizedPaperPnl = row.currentValue != null ? row.currentValue - row.stake : null;
+    row.lastPriceCheckAt = iso(now);
     if (!closed || price===null) continue;
     if (price>=0.99 || price<=0.01) {
       const won=price>=0.99;
@@ -112,6 +120,9 @@ const pending=valid.filter(s=>s.status==="PENDING").length;
 const pnl=resolved.reduce((n,s)=>n+(num(s.paperPnl)||0),0);
 const byCategory={};
 for(const c of ["sports","crypto","politics","other"]) { const rows=resolved.filter(s=>s.category===c); byCategory[c]={resolved:rows.length,wins:rows.filter(s=>s.settlement==="WIN").length,losses:rows.filter(s=>s.settlement==="LOSS").length,paperPnl:rows.reduce((n,s)=>n+(num(s.paperPnl)||0),0)}; }
-const output={generatedAt:iso(now),methodology:"Forward paper test at the first observed Gamma outcome price; hypothetical $10 stake per unique condition+outcome; settlement from final outcome price near 1/0; ignores fees, slippage, partial fills and precise intrarun exits. Historical entry price is never backfilled. SELL observations are raw trade prints, not proof of full position exit.",metrics:{signals:signals.length,entryPriced:valid.length,pending,resolved:resolved.length,wins,losses,winRate:resolved.length?wins/resolved.length*100:null,paperPnl:pnl,worstConsecutiveLosses:worst,byCategory},signals:signals.sort((a,b)=>Date.parse(b.firstSeenAt)-Date.parse(a.firstSeenAt)).slice(0,1500)};
+const marked=valid.filter(s=>s.unrealizedPaperPnl!=null);
+const markedPnl=marked.reduce((n,s)=>n+(num(s.unrealizedPaperPnl)||0),0);
+const sellObservations=signals.reduce((n,s)=>n+(s.exitObservations||[]).filter(t=>t.side==="SELL").length,0);
+const output={generatedAt:iso(now),methodology:"Forward paper test at the first observed Gamma outcome price; hypothetical $10 stake per unique condition+outcome; current mark-to-market P&L is not realized profit and can change. Settlement requires a resolved market. Ignores fees, slippage, partial fills and precise intrarun exits. Historical entry price is never backfilled. SELL observations are raw trade prints, not proof of full position exit.",metrics:{signals:signals.length,entryPriced:valid.length,pending,resolved:resolved.length,wins,losses,markedSignals:marked.length,unrealizedPaperPnl:markedPnl,sellObservations,winRate:resolved.length?wins/resolved.length*100:null,paperPnl:pnl,worstConsecutiveLosses:worst,byCategory},signals:signals.sort((a,b)=>Date.parse(b.firstSeenAt)-Date.parse(a.firstSeenAt)).slice(0,1500)};
 await fs.writeFile(FILE,JSON.stringify(output,null,2)+"\n");
 console.log("Forward test: "+valid.length+" entry-priced signals; "+resolved.length+" resolved; "+wins+" wins / "+losses+" losses; paper P&L $"+pnl.toFixed(2));
