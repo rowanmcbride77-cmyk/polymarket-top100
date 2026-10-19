@@ -1,0 +1,43 @@
+name: Forward-test consensus signals
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+  push:
+    paths:
+      - "forward-test.mjs"
+      - ".github/workflows/forward-test.yml"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: polymarket-forward-test
+  cancel-in-progress: false
+
+jobs:
+  paper-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: true
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: Run forward test
+        run: node forward-test.mjs
+      - name: Validate and commit tracker
+        run: |
+          node -e 'const d=require("./forward-test.json"); if(!d.generatedAt||!Array.isArray(d.signals)||!d.metrics) process.exit(1); console.log(JSON.stringify(d.metrics))'
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add forward-test.json
+          if ! git diff --cached --quiet; then
+            git commit -m "Update consensus forward paper test"
+            git push origin HEAD:main
+          else
+            echo "No forward-test changes."
+          fi
