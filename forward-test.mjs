@@ -7,6 +7,7 @@ const now = Date.now();
 const iso = n => n ? new Date(n).toISOString() : null;
 const num = x => x == null || x === "" || !Number.isFinite(Number(x)) ? null : Number(x);
 const arr = x => Array.isArray(x) ? x : [];
+const truthy = x => x === true || x === 1 || String(x).toLowerCase() === "true" || String(x).toLowerCase() === "1";
 async function get(url) {
   const r = await fetch(url, {headers:{Accept:"application/json","User-Agent":"PolymarketForwardTest/1.0"},signal:AbortSignal.timeout(20000)});
   if (!r.ok) throw new Error("HTTP "+r.status+" for "+url);
@@ -61,8 +62,8 @@ for (const g of sources.slice(0,50)) {
     row.currentValue = row.shares != null && row.currentPrice != null ? row.shares * row.currentPrice : null;
     row.unrealizedPaperPnl = row.currentValue != null ? row.currentValue - row.stake : null;
     row.lastPriceCheckAt = iso(now);
-    const isClosed=m.closed===true || m.active===false;
-    const isResolved=m.resolved===true || String(m.status||"").toLowerCase()==="resolved";
+    const isClosed=truthy(m.closed) || m.active === false || String(m.active).toLowerCase() === "false";
+    const isResolved=truthy(m.resolved) || ["resolved","finalized"].includes(String(m.status||"").toLowerCase()) || String(m.umaResolutionStatus||"").toLowerCase()==="resolved";
     if ((isClosed||isResolved) && row.status==="PENDING" && row.firstSignalPriceAvailable) {
       const pricesNow=arr(m.outcomePrices).map(num);
       const win=index>=0 && pricesNow[index]!==null && pricesNow[index]>=0.99;
@@ -96,7 +97,7 @@ for (const row of signals.filter(s=>s.status==="PENDING" && s.firstSignalPriceAv
     const index=outcomes.findIndex(o=>o.toLowerCase()===String(row.side).toLowerCase());
     const prices=arr(m.outcomePrices).map(num);
     const price=index>=0?prices[index]:null;
-    const closed=m.closed===true || m.active===false || m.resolved===true || String(m.status||"").toLowerCase()==="resolved";
+    const closed=truthy(m.closed) || m.active===false || String(m.active).toLowerCase()==="false" || truthy(m.resolved) || ["resolved","finalized"].includes(String(m.status||"").toLowerCase()) || String(m.umaResolutionStatus||"").toLowerCase()==="resolved";
     row.currentPrice = price;
     row.currentValue = row.shares != null && price != null ? row.shares * price : null;
     row.unrealizedPaperPnl = row.currentValue != null ? row.currentValue - row.stake : null;
@@ -123,6 +124,6 @@ for(const c of ["sports","crypto","politics","other"]) { const rows=resolved.fil
 const marked=valid.filter(s=>s.unrealizedPaperPnl!=null);
 const markedPnl=marked.reduce((n,s)=>n+(num(s.unrealizedPaperPnl)||0),0);
 const sellObservations=signals.reduce((n,s)=>n+(s.exitObservations||[]).filter(t=>t.side==="SELL").length,0);
-const output={generatedAt:iso(now),methodology:"Forward paper test at the first observed Gamma outcome price; hypothetical $10 stake per unique condition+outcome; current mark-to-market P&L is not realized profit and can change. Settlement requires a resolved market. Ignores fees, slippage, partial fills and precise intrarun exits. Historical entry price is never backfilled. SELL observations are raw trade prints, not proof of full position exit.",metrics:{signals:signals.length,entryPriced:valid.length,pending,resolved:resolved.length,wins,losses,markedSignals:marked.length,unrealizedPaperPnl:markedPnl,sellObservations,winRate:resolved.length?wins/resolved.length*100:null,paperPnl:pnl,worstConsecutiveLosses:worst,byCategory},signals:signals.sort((a,b)=>Date.parse(b.firstSeenAt)-Date.parse(a.firstSeenAt)).slice(0,1500)};
+const output={generatedAt:iso(now),methodology:"Forward paper test at the first observed Gamma outcome price; hypothetical $10 stake per unique condition+outcome; current mark-to-market P&L is not realized profit and can change. Settlement requires a market explicitly marked closed/resolved by Gamma and a terminal outcome price. Current P&L is marked to market and does not count as a win. Ignores fees, slippage, partial fills and precise intrarun exits. Historical entry price is never backfilled. SELL observations are raw trade prints, not proof of full position exit.",metrics:{signals:signals.length,entryPriced:valid.length,pending,resolved:resolved.length,wins,losses,markedSignals:marked.length,unrealizedPaperPnl:markedPnl,sellObservations,winRate:resolved.length?wins/resolved.length*100:null,paperPnl:pnl,worstConsecutiveLosses:worst,byCategory},signals:signals.sort((a,b)=>Date.parse(b.firstSeenAt)-Date.parse(a.firstSeenAt)).slice(0,1500)};
 await fs.writeFile(FILE,JSON.stringify(output,null,2)+"\n");
 console.log("Forward test: "+valid.length+" entry-priced signals; "+resolved.length+" resolved; "+wins+" wins / "+losses+" losses; paper P&L $"+pnl.toFixed(2));
