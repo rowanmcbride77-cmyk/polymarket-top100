@@ -227,8 +227,8 @@ dialog::backdrop{background:#000b}
       <div><div class="metric-label">Observed SELL prints</div><div class="metric-value" id="ftSells">—</div></div>
     </div>
     <div class="source-note" id="ftStatus">Only new signals with at least two qualified traders showing recent position activity are added. Historical profitable-close rates are not verified prediction win rates.</div>
-    <div class="table-wrap"><table><thead><tr><th>First seen</th><th>Market</th><th>Outcome</th><th>Signal price</th><th>Current price</th><th>Qualified traders</th><th>Status</th></tr></thead><tbody id="ftSignals"><tr><td colspan="7" class="empty">Waiting for the first tracker run.</td></tr></tbody></table></div>
-    <div class="source-note"><strong>How to read this:</strong> Signal price is the market price when this tracker first observed the signal; current price is the latest market price. These are not each trader’s personal execution prices. The trader links show the wallets in the consensus group. SELL observations can be partial exits, so they do not prove a full exit.</div>
+    <div class="table-wrap"><table><thead><tr><th>Trader</th><th>Market / outcome</th><th>Buy time</th><th>Buy price</th><th>Amount bought</th><th>Price now</th><th>Value now</th><th>Open P&amp;L*</th></tr></thead><tbody id="ftSignals"><tr><td colspan="8" class="empty">Waiting for the first tracker run.</td></tr></tbody></table></div>
+    <div class="source-note"><strong>How this differs from Top Consensus Markets:</strong> Consensus Markets is the live shortlist of outcomes multiple qualified traders currently share. This table is the trade-level watchlist: it shows observed buys by those traders, when they traded, what they paid, and what those shares are worth at the latest market price. Amount bought is estimated as trade price × shares; *open P&amp;L excludes fees and does not prove the trader still holds every share.</div>
   </section>
     </div>
 
@@ -493,9 +493,8 @@ function comboProfitRows() {
     const entry = num(combo.entry_cost_usdc ?? combo.gross_entry_cost_usdc);
     const payout = num(combo.realized_payout_usdc);
     const status = String(combo.status || "").toUpperCase();
-    // Open combo positions do not contain realized profit. Only count terminal states.
     if (!wallet || entry === null || payout === null || !["RESOLVED_WIN","RESOLVED_LOSS","RESOLVED_PARTIAL"].includes(status)) continue;
-    const timeValue = combo.resolved_at ?? combo.resolvedAt;
+    const timeValue = combo.resolved_at ?? combo.resolvedAt ?? combo.updated_at ?? combo.updatedAt;
     const ts = timeValue == null ? null : (Number.isFinite(Number(timeValue)) ? (Number(timeValue) < 1e12 ? Number(timeValue)*1000 : Number(timeValue)) : Date.parse(timeValue));
     if (ts === null || !Number.isFinite(ts) || ts < weekAgo || ts > now) continue;
     const profit = payout - entry;
@@ -512,7 +511,7 @@ function renderLeaders() {
   const list = comboMode ? comboProfitRows() : rankedLeaders();
   const visible = allLeaders ? list : list.slice(0, 10);
   $("leaderModeNote").textContent = comboMode
-    ? "Combo leaderboard ranks reported realized profit for combo positions in a terminal resolved state during the last 7 days. It checks resolved combo positions as well as open positions; bets are not ranked by size. Results are limited to the discovered candidate-wallet pool and rows with a recorded resolution timestamp."
+    ? "Ranks net realized profit on resolved combo positions in the last 7 days (payout minus entry cost), not stake size. Resolution time is used when available; otherwise the position’s last update time is used. Coverage is limited to wallets discovered by the scanner."
     : "All-trader leaderboard. Closed-position profitability is not proof of settlement accuracy or a no-early-exit strategy.";
   $("leaderHeader").innerHTML = comboMode
     ? "<th>#</th><th>Trader</th><th>Profitable combos</th><th>Unprofitable combos</th><th>Weekly combo profit</th><th>Combo entry total</th>"
@@ -521,7 +520,7 @@ function renderLeaders() {
     if (comboMode) return `<tr><td class="rank">${index+1}</td><td><div class="trader-name">${avatar(trader.trader)}<span class="name-text">${profileButton(trader.trader, nameOf(trader.trader))}</span></div></td><td class="record">${trader.wins}</td><td class="record">${trader.losses}</td><td class="positive">+${cash(trader.profit)}</td><td class="money">${cash(trader.volume)}</td></tr>`;
     const pnl = num(trader.pnl ?? trader.profit), volume = num(trader.volume ?? trader.vol), pnlClass = pnl !== null && pnl < 0 ? "negative" : "positive";
     return `<tr><td class="rank">${trader.displayRank}</td><td><div class="trader-name">${avatar(trader)}<span class="name-text">${profileButton(trader)}</span></div></td><td class="record">${recordText(trader)}</td><td class="record">${num(trader.winRate) === null ? "N/A" : num(trader.winRate).toFixed(1) + "%"}</td><td class="${pnlClass}">${pnl === null ? "N/A" : (pnl > 0 ? "+" : "") + cash(pnl)}</td><td class="money">${cash(volume)}</td></tr>`;
-  }).join("") : `<tr><td colspan="6" class="empty">${comboMode ? "No verified profitable combo settlements in the last 7 days among the wallets currently checked. This may mean data coverage is incomplete, not that no profitable combo traders exist." : "No leaderboard data available. Check that the updater has created " + esc(FILES[period]) + "."}</td></tr>`;
+  }).join("") : `<tr><td colspan="6" class="empty">${comboMode ? "Still scanning combo positions (" + comboRows.length + " rows found so far). Results will populate as the scan runs." : "No leaderboard data available. Check that the updater has created " + esc(FILES[period]) + "."}</td></tr>`;
   $("leadersMore").textContent = allLeaders ? "Show fewer ↑" : "View all traders →";
   $("leadersMore").style.display = list.length > 10 ? "inline-block" : "none";
   const pnlTotal = comboMode ? list.reduce((sum,row)=>sum+row.profit,0) : list.reduce((sum,trader)=>sum+(num(trader.pnl ?? trader.profit)??0),0);
@@ -971,13 +970,30 @@ async function loadForwardTest() {
     $("ftSells").textContent = m.sellObservations ?? 0;
     const sourceAgeMinutes = d.sourceDataUpdatedAt ? Math.max(0, Math.round((Date.now()-Date.parse(d.sourceDataUpdatedAt))/60000)) : null;
     $("ftStatus").textContent = "Consensus source data: " + (d.sourceDataUpdatedAt ? dateText(d.sourceDataUpdatedAt) + " (" + sourceAgeMinutes + " min old)" : "timestamp unavailable") + ". Signals tracked: " + (m.signals ?? rows.length) + "; still open: " + (m.openMarkets ?? "not checked") + "; closed but no terminal price: " + (m.closedAwaitingPrice ?? "not checked") + "; closed with terminal price awaiting settlement: " + (m.terminalAwaitingSettlement ?? 0) + "; could not be checked: " + (m.notChecked ?? 0) + ". Settled by category: " + Object.entries(m.byCategory || {}).map(([k,v]) => k + " " + v.resolved + " settled").join(" · ");
-    const visible = rows.slice(0,50);
-    $("ftSignals").innerHTML = visible.length ? visible.map(s => {
-      const wallets = Array.isArray(s.recentTraderWallets) && s.recentTraderWallets.length ? s.recentTraderWallets : (Array.isArray(s.traderWallets) ? s.traderWallets : []);
-      const traderLinks = wallets.length ? wallets.slice(0, 6).map(w => '<a href="https://polymarket.com/profile/' + encodeURIComponent(w) + '" target="_blank" rel="noopener noreferrer">' + esc(String(w).slice(0, 6) + "…" + String(w).slice(-4)) + '</a>').join(", ") + (wallets.length > 6 ? " +" + (wallets.length - 6) : "") : esc(s.consensusCount ?? "—") + " traders";
-      const status = s.status === "PENDING" && s.resolutionCheckReason === "market_not_closed_or_resolved" ? "OPEN" : s.status === "PENDING" && s.resolutionCheckReason === "closed_but_price_not_terminal" ? "CLOSED — CHECKING" : s.status || "—";
-      return '<tr><td>' + esc(dateText(s.firstSeenAt)) + '</td><td>' + esc(s.title || "Unknown market") + '<br><small class="subtitle">' + esc(s.category || "other") + '</small></td><td>' + esc(s.side || "—") + '</td><td>' + (s.entryPrice == null ? "N/A" : (Number(s.entryPrice)*100).toFixed(1) + "¢") + '</td><td>' + (s.currentPrice == null ? "N/A" : (Number(s.currentPrice)*100).toFixed(1) + "¢") + '</td><td>' + traderLinks + '</td><td>' + esc(status) + (s.settlement ? " · " + esc(s.settlement) : "") + '</td></tr>';
-    }).join("") : '<tr><td colspan="7" class="empty">No signals recorded yet. The first scheduled run will start the forward test.</td></tr>';
+    const trades = [];
+    for (const signal of rows) {
+      const observations = Array.isArray(signal.exitObservations) ? signal.exitObservations : [];
+      const currentPrice = num(signal.currentPrice);
+      for (const t of observations) {
+        if (String(t.side || "").toUpperCase() !== "BUY") continue;
+        if (String(t.outcome || "").toLowerCase() !== String(signal.side || "").toLowerCase()) continue;
+        const price = num(t.price), shares = num(t.size), bought = price !== null && shares !== null ? price * shares : null;
+        const currentValue = currentPrice !== null && shares !== null ? currentPrice * shares : null;
+        const pnl = bought !== null && currentValue !== null ? currentValue - bought : null;
+        trades.push({signal,t,price,shares,bought,currentValue,pnl});
+      }
+    }
+    trades.sort((a,b)=>(timestamp(b.t.timestamp)||0)-(timestamp(a.t.timestamp)||0));
+    const visible = trades.slice(0,100);
+    $("ftSignals").innerHTML = visible.length ? visible.map(({signal:s,t,price,shares,bought,currentValue,pnl}) => {
+      const wallet = String(t.wallet || "");
+      const trader = wallet ? '<a href="https://polymarket.com/profile/' + encodeURIComponent(wallet) + '" target="_blank" rel="noopener noreferrer">' + esc(wallet.slice(0,6) + "…" + wallet.slice(-4)) + '</a>' : "Trader unavailable";
+      const amountText = bought === null ? "N/A" : cash(bought);
+      const valueText = currentValue === null ? "N/A" : cash(currentValue);
+      const pnlText = pnl === null ? "N/A" : (pnl > 0 ? "+" : "") + cash(pnl);
+      const pnlClass = pnl !== null && pnl < 0 ? "negative" : "positive";
+      return '<tr><td>' + trader + '</td><td>' + esc(s.title || "Unknown market") + '<br><small class="subtitle">' + esc(s.side || "—") + '</small></td><td>' + esc(dateText(t.timestamp)) + '</td><td>' + (price === null ? "N/A" : (price*100).toFixed(1) + "¢") + '</td><td>' + amountText + (shares !== null ? '<br><small class="subtitle">' + shares.toFixed(2) + ' shares</small>' : '') + '</td><td>' + (num(s.currentPrice) === null ? "N/A" : (Number(s.currentPrice)*100).toFixed(1) + "¢") + '</td><td>' + valueText + '</td><td class="' + pnlClass + '">' + pnlText + '</td></tr>';
+    }).join("") : '<tr><td colspan="8" class="empty">No matching BUY trades have been recorded yet. The scanner is limited to recent trade history returned by Polymarket for consensus wallets; a scheduled refresh may be needed.</td></tr>';
   } catch (e) {
     $("forwardUpdated").textContent = "Unavailable";
     $("ftStatus").textContent = "Could not load forward-test.json: " + e.message + ". Check the Forward-test GitHub Actions workflow.";
