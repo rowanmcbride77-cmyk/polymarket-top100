@@ -138,7 +138,7 @@ dialog::backdrop{background:#000b}
   <div id="errorBox"></div>
   <section class="panel" id="forwardTestPanel" style="margin-bottom:18px">
     <div class="panel-heading"><div class="heading-left"><span class="heading-icon">🧪</span><h2>Forward Copy-Trading Test</h2></div><span class="pill" id="forwardUpdated">Loading test…</span></div>
-    <div class="source-note" style="margin:0 0 12px">Different from Top Consensus Markets: that panel finds shared open positions; this panel records the first observed price and tracks what happens afterward. Current unrealized P&amp;L changes with market prices and is not settled profit. Hypothetical $10 stake; fees and slippage are excluded. SELL prints do not prove a full exit.</div>
+    <div class="source-note" style="margin:0 0 12px">This forward test records new consensus signals and follows the outcome price to settlement. OPEN means the market is still open; it is not a win or loss. A settlement-only result is different from a trader selling early. Trader-level entry prices and position values are shown in each expanded consensus market when the public API provides enough data.</div>
     <div class="overview-grid">
       <div><div class="metric-label">Signals tracked</div><div class="metric-value" id="ftResolved">—</div></div>
       <div><div class="metric-label">Verified settled wins</div><div class="metric-value" id="ftWinRate">Not enough data</div></div>
@@ -570,9 +570,18 @@ function renderConsensus() {
         const memberWallet = walletOf(member);
         if (memberWallet) consensusMemberCache.set(memberWallet, member);
         const memberAmount = num(member.currentValue ?? member.amount ?? member.value);
-        const memberEntryValue = num(member.entryValue ?? member.entryAmount);
         const memberAvgPrice = num(member.avgPrice ?? member.avg_price);
+        const memberShares = num(member.shares ?? member.size);
+        const memberEntryValue = memberAvgPrice !== null && memberShares !== null
+          ? memberAvgPrice * memberShares
+          : null;
         const memberCurrentPrice = num(member.currentPrice ?? member.curPrice ?? member.outcomePrice);
+        const memberPnl = memberAvgPrice !== null && memberCurrentPrice !== null && memberShares !== null
+          ? (memberCurrentPrice - memberAvgPrice) * memberShares
+          : null;
+        const memberReturnPct = memberEntryValue !== null && memberEntryValue > 0 && memberPnl !== null
+          ? memberPnl / memberEntryValue * 100
+          : null;
         const memberStillHolding = member.isStillHolding === true || String(member.positionStatus || "").toUpperCase() === "OPEN";
         const memberTime = member.buyTime ?? member.buyAt ?? member.timestamp ?? member.lastEventAt ?? member.time;
         const memberRecord = recordOf(member);
@@ -581,9 +590,9 @@ function renderConsensus() {
         const periodLabel = period === "week" ? "Week" : "Month";
         const pnlLabel = memberPnl === null ? `${periodLabel} P&L N/A` : `${periodLabel} P&L ${cash(memberPnl)}`;
         return `<div class="member">
-          <div>${profileButton(member, memberName)}<small>${memberStillHolding ? "Still holding · OPEN" : "Position status unavailable"} · ${esc(relative(memberTime))}</small></div>
+          <div>${profileButton(member, memberName)}<small>${memberStillHolding ? "OPEN · currently in public open-position snapshot" : "Position status unavailable"} · ${esc(relative(memberTime))}</small></div>
           <div><strong>${memberAvgPrice === null ? "N/A" : (memberAvgPrice * 100).toFixed(1) + "¢"}</strong><small>Avg. entry price</small><small>${memberEntryValue === null ? "Entry value N/A" : "Bought for " + cash(memberEntryValue)}</small></div>
-          <div><strong>${memberCurrentPrice === null ? "N/A" : (memberCurrentPrice * 100).toFixed(1) + "¢"}</strong><small>Current price</small><small>${memberAmount === null ? "Holding value N/A" : "Now worth " + cash(memberAmount)}</small></div>
+          <div><strong>${memberCurrentPrice === null ? "N/A" : (memberCurrentPrice * 100).toFixed(1) + "¢"}</strong><small>Current price</small><small>${memberAmount === null ? "Holding value N/A" : "Now worth " + cash(memberAmount)}</small><small class="${memberPnl === null ? "" : memberPnl >= 0 ? "positive" : "negative"}">${memberPnl === null ? "P&L N/A" : (memberPnl >= 0 ? "+" : "") + cash(memberPnl) + (memberReturnPct === null ? "" : " · " + (memberReturnPct >= 0 ? "+" : "") + memberReturnPct.toFixed(1) + "%")}</small></div>
           <div class="member-time"><strong>${esc(dateText(memberTime))}</strong><small>${recordLabel} · ${pnlLabel}</small></div>
         </div>`;
       }).join("")}</div>` : `<div class="empty">Individual trader details are not included in this data file yet.</div>`}
@@ -945,7 +954,7 @@ async function loadForwardTest() {
     const sourceAgeMinutes = d.sourceDataUpdatedAt ? Math.max(0, Math.round((Date.now()-Date.parse(d.sourceDataUpdatedAt))/60000)) : null;
     $("ftStatus").textContent = "Consensus source data: " + (d.sourceDataUpdatedAt ? dateText(d.sourceDataUpdatedAt) + " (" + sourceAgeMinutes + " min old)" : "timestamp unavailable") + ". Signals tracked: " + (m.signals ?? rows.length) + "; still open: " + (m.openMarkets ?? "not checked") + "; closed but no terminal price: " + (m.closedAwaitingPrice ?? "not checked") + "; closed with terminal price awaiting settlement: " + (m.terminalAwaitingSettlement ?? 0) + "; could not be checked: " + (m.notChecked ?? 0) + ". Settled by category: " + Object.entries(m.byCategory || {}).map(([k,v]) => k + " " + v.resolved + " settled").join(" · ");
     const visible = rows.slice(0,50);
-    $("ftSignals").innerHTML = visible.length ? visible.map(s => '<tr><td>' + esc(dateText(s.firstSeenAt)) + '</td><td>' + esc(s.title || "Unknown market") + '<br><small class="subtitle">' + esc(s.category || "other") + '</small></td><td>' + esc(s.side || "—") + '</td><td>' + (s.entryPrice == null ? "N/A" : (Number(s.entryPrice)*100).toFixed(1) + "¢") + '</td><td>' + (s.currentPrice == null ? "N/A" : (Number(s.currentPrice)*100).toFixed(1) + "¢") + '</td><td>' + esc(s.consensusCount ?? "—") + '</td><td>' + (s.consensusEntryValue == null ? "N/A" : cash(s.consensusEntryValue)) + '</td><td>' + (s.consensusCurrentValue == null ? "N/A" : cash(s.consensusCurrentValue)) + '</td><td>' + esc(s.status === "PENDING" && s.resolutionCheckReason === "market_not_closed_or_resolved" ? "OPEN — NOT SETTLED" : s.status === "PENDING" && s.resolutionCheckReason === "closed_but_price_not_terminal" ? "CLOSED — CHECKING RESULT" : s.status || "—") + (s.settlement ? " · " + esc(s.settlement) : "") + '</td></tr>').join("") : '<tr><td colspan="9" class="empty">No signals recorded yet. The first scheduled run will start the forward test.</td></tr>';
+    $("ftSignals").innerHTML = visible.length ? visible.map(s => '<tr><td>' + esc(dateText(s.firstSeenAt)) + '</td><td>' + esc(s.title || "Unknown market") + '<br><small class="subtitle">' + esc(s.category || "other") + '</small></td><td>' + esc(s.side || "—") + '</td><td>' + (s.entryPrice == null ? "N/A" : (Number(s.entryPrice)*100).toFixed(1) + "¢") + '</td><td>' + (s.currentPrice == null ? "N/A" : (Number(s.currentPrice)*100).toFixed(1) + "¢") + '</td><td>' + esc(s.consensusCount ?? "—") + '</td><td>' + (s.consensusEntryValue == null ? "N/A" : cash(s.consensusEntryValue)) + '</td><td>' + (s.consensusCurrentValue == null ? "N/A" : cash(s.consensusCurrentValue)) + '</td><td>' + esc(s.status === "PENDING" && s.resolutionCheckReason === "market_not_closed_or_resolved" ? "OPEN" : s.status === "PENDING" && s.resolutionCheckReason === "closed_but_price_not_terminal" ? "CLOSED — CHECKING" : s.status || "—") + (s.settlement ? " · " + esc(s.settlement) : "") + '</td></tr>').join("") : '<tr><td colspan="9" class="empty">No signals recorded yet. The first scheduled run will start the forward test.</td></tr>';
   } catch (e) {
     $("forwardUpdated").textContent = "Unavailable";
     $("ftStatus").textContent = "Could not load forward-test.json: " + e.message + ". Check the Forward-test GitHub Actions workflow.";
