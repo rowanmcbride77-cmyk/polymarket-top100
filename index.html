@@ -74,7 +74,7 @@ select{max-width:155px}
 .expand-row td{background:#0b1825;padding:14px}
 .expand-title{font-weight:700;margin-bottom:12px}
 .member-list{display:flex;flex-direction:column;gap:0}
-.member{display:grid;grid-template-columns:minmax(120px,1fr) auto auto;gap:14px;align-items:center;padding:10px 0;border-bottom:1px solid #203346}
+.member{display:grid;grid-template-columns:minmax(150px,1.6fr) minmax(90px,1fr) minmax(90px,1fr) minmax(100px,1fr);gap:14px;align-items:center;padding:10px 0;border-bottom:1px solid #203346}
 .member:last-child{border-bottom:0}
 .member small{display:block;color:var(--muted);margin-top:4px}
 .recent-list{display:flex;flex-direction:column}
@@ -569,7 +569,11 @@ function renderConsensus() {
         const memberName = member.name || member.username || member.userName || "Trader";
         const memberWallet = walletOf(member);
         if (memberWallet) consensusMemberCache.set(memberWallet, member);
-        const memberAmount = num(member.amount ?? member.entryAmount ?? member.value ?? member.size);
+        const memberAmount = num(member.currentValue ?? member.amount ?? member.value);
+        const memberEntryValue = num(member.entryValue ?? member.entryAmount);
+        const memberAvgPrice = num(member.avgPrice ?? member.avg_price);
+        const memberCurrentPrice = num(member.currentPrice ?? member.curPrice ?? member.outcomePrice);
+        const memberStillHolding = member.isStillHolding === true || String(member.positionStatus || "").toUpperCase() === "OPEN";
         const memberTime = member.buyTime ?? member.buyAt ?? member.timestamp ?? member.lastEventAt ?? member.time;
         const memberRecord = recordOf(member);
         const memberPnl = num(member.pnl);
@@ -577,9 +581,10 @@ function renderConsensus() {
         const periodLabel = period === "week" ? "Week" : "Month";
         const pnlLabel = memberPnl === null ? `${periodLabel} P&L N/A` : `${periodLabel} P&L ${cash(memberPnl)}`;
         return `<div class="member">
-          <div>${profileButton(member, memberName)}<small>${recordLabel} · ${pnlLabel}</small></div>
-          <div><strong>${cash(memberAmount)}</strong><small>Current value</small></div>
-          <div class="member-time"><strong>${esc(relative(memberTime))}</strong><small>${esc(dateText(memberTime))}</small></div>
+          <div>${profileButton(member, memberName)}<small>${memberStillHolding ? "Still holding · OPEN" : "Position status unavailable"} · ${esc(relative(memberTime))}</small></div>
+          <div><strong>${memberAvgPrice === null ? "N/A" : (memberAvgPrice * 100).toFixed(1) + "¢"}</strong><small>Avg. entry price</small><small>${memberEntryValue === null ? "Entry value N/A" : "Bought for " + cash(memberEntryValue)}</small></div>
+          <div><strong>${memberCurrentPrice === null ? "N/A" : (memberCurrentPrice * 100).toFixed(1) + "¢"}</strong><small>Current price</small><small>${memberAmount === null ? "Holding value N/A" : "Now worth " + cash(memberAmount)}</small></div>
+          <div class="member-time"><strong>${esc(dateText(memberTime))}</strong><small>${recordLabel} · ${pnlLabel}</small></div>
         </div>`;
       }).join("")}</div>` : `<div class="empty">Individual trader details are not included in this data file yet.</div>`}
     </td></tr>` : "";
