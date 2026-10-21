@@ -59,12 +59,12 @@ for (const g of orderedSources) {
     const prices=arr(m.outcomePrices).map(num);
     const entryPrice=index>=0?prices[index]:null;
     if (!row) {
-      row={key,conditionId:condition,title:g.title||m.question||m.title||"Untitled market",side,category:category({...m,title:g.title||m.question}),firstSeenAt:iso(now),entryPrice,entryPriceSource:"Market outcome price when at least two qualified traders had recent position activity",stake:10,shares:entryPrice>0&&entryPrice<1?10/entryPrice:null,consensusCount:recentWallets.length,traderWallets:wallets,pool:g.pool,consensusEntryValue:num(g.totalEntry),consensusCurrentValue:num(g.totalValue),recentTraderEntryCount:recentWallets.length,firstSignalPriceAvailable:entryPrice>0&&entryPrice<1,status:entryPrice>0&&entryPrice<1?"PENDING":"ENTRY_UNAVAILABLE",resolvedAt:null,settlement:null,paperPnl:null,exitObservations:[]};
+      row={key,conditionId:condition,title:g.title||m.question||m.title||"Untitled market",side,category:category({...m,title:g.title||m.question}),firstSeenAt:iso(now),entryPrice,entryPriceSource:"Market outcome price when at least two qualified traders had recent position activity",stake:10,shares:entryPrice>0&&entryPrice<1?10/entryPrice:null,consensusCount:recentWallets.length,traderWallets:wallets,recentTraderWallets:recentWallets,pool:g.pool,consensusEntryValue:num(g.totalEntry),consensusCurrentValue:num(g.totalValue),recentTraderEntryCount:recentWallets.length,firstSignalPriceAvailable:entryPrice>0&&entryPrice<1,status:entryPrice>0&&entryPrice<1?"PENDING":"ENTRY_UNAVAILABLE",resolvedAt:null,settlement:null,paperPnl:null,exitObservations:[]};
       signals.push(row); byKey.set(key,row);
     } else {
       row.lastSeenAt=iso(now); row.latestConsensusCount=recentWallets.length;
       row.consensusEntryValue=num(g.totalEntry); row.consensusCurrentValue=num(g.totalValue); row.recentTraderEntryCount=recentWallets.length;
-      row.traderWallets=[...new Set([...(row.traderWallets||[]),...wallets])];
+      row.traderWallets=[...new Set([...(row.traderWallets||[]),...wallets])]; row.recentTraderWallets=recentWallets;
     }
     row.currentPrice = index >= 0 ? prices[index] : null;
     row.currentValue = row.shares != null && row.currentPrice != null ? row.shares * row.currentPrice : null;
