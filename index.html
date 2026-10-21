@@ -554,7 +554,7 @@ function renderLeaders() {
       ? "<th>#</th><th>Trader</th><th>Combo</th><th>Entry</th><th>Payout</th><th>Net profit</th><th>Return</th>"
       : "<th>#</th><th>Trader</th><th>Profitable–unprofitable closes</th><th>Close rate</th><th>Period P&amp;L</th><th>Volume</th>";
   $("leadersBody").innerHTML = visible.length ? visible.map((trader,index) => {
-    if (comboMode) return `<tr><td class="rank">${index+1}</td><td><div class="trader-name">${avatar(trader.trader)}<span class="name-text">${profileButton(trader.trader, nameOf(trader.trader))}</span></div></td><td class="record">${trader.wins}</td><td class="record">${trader.losses}</td><td class="record">${trader.partial}</td><td class="${trader.pnlKnown && trader.profit < 0 ? "negative" : "positive"}">${trader.pnlKnown ? (trader.profit > 0 ? "+" : "") + cash(trader.profit) : "N/A"}</td><td class="record">${trader.pnlKnown}/${trader.combos} combos</td></tr>`;
+    if (comboMode) return `<tr><td class="rank">${index+1}</td><td><div class="trader-name">${avatar(trader.trader)}<span class="name-text">${profileButton(trader.trader, nameOf(trader.trader))}</span></div></td><td class="record">${trader.wins}</td><td class="record">${trader.losses}</td><td class="record">${trader.partial}</td><td class="${trader.pnlKnown && trader.profit < 0 ? "negative" : "positive"}">${trader.pnlKnown ? (trader.pnlMissing ? "Partial: " : "") + (trader.profit > 0 ? "+" : "") + cash(trader.profit) : "N/A"}</td><td class="record">${trader.pnlKnown}/${trader.combos} combos</td></tr>`;
     if (efficiencyMode) return `<tr><td class="rank">${index+1}</td><td><div class="trader-name">${avatar(trader.trader)}<span class="name-text">${profileButton(trader.trader, nameOf(trader.trader))}</span></div></td><td class="combo-title" title="${esc(trader.title || "Combo details unavailable")}">${esc(trader.title || "Combo details unavailable")}</td><td class="money">${cash(trader.entry)}</td><td class="money">${cash(trader.payout)}</td><td class="positive">+${cash(trader.profit)}</td><td class="record">${trader.multiple.toFixed(1)}×</td></tr>`;
     const pnl = num(trader.pnl ?? trader.profit), volume = num(trader.volume ?? trader.vol), pnlClass = pnl !== null && pnl < 0 ? "negative" : "positive";
     return `<tr><td class="rank">${trader.displayRank}</td><td><div class="trader-name">${avatar(trader)}<span class="name-text">${profileButton(trader)}</span></div></td><td class="record">${recordText(trader)}</td><td class="record">${num(trader.winRate) === null ? "N/A" : num(trader.winRate).toFixed(1) + "%"}</td><td class="${pnlClass}">${pnl === null ? "N/A" : (pnl > 0 ? "+" : "") + cash(pnl)}</td><td class="money">${cash(volume)}</td></tr>`;
@@ -840,9 +840,9 @@ function openProfile(wallet) {
     <div class="profile-top">${avatar(trader)}<div><h2>${esc(nameOf(trader))}</h2><div class="subtitle">Trader profile</div></div></div>
     <div class="profile-grid">
       <div class="profile-stat"><small>Leaderboard rank</small><strong>#${esc(trader.rank ?? trader.displayRank ?? "—")}</strong></div>
-      <div class="profile-stat"><small>Profitable–unprofitable closes (realized P&amp;L proxy)</small><strong>${record ? recordText(trader) : "N/A"}</strong></div>
-      <div class="profile-stat"><small>Profitable close rate (proxy)</small><strong>${num(trader.winRate) === null ? "N/A" : num(trader.winRate).toFixed(1) + "%"}</strong></div>
-      <div class="profile-stat"><small>${period === "week" ? "Weekly" : "Monthly"} P&amp;L</small><strong class="${pnl !== null && pnl < 0 ? "negative" : "positive"}">${cash(pnl)}</strong></div>
+      <div class="profile-stat"><small>Market positions: profitable / unprofitable</small><strong>${record ? recordText(trader) : "N/A"}</strong></div>
+      <div class="profile-stat"><small>Market-position close rate</small><strong>${num(trader.winRate) === null ? "N/A" : num(trader.winRate).toFixed(1) + "%"}</strong></div>
+      <div class="profile-stat"><small>${period === "week" ? "Weekly" : "Monthly"} market P&amp;L</small><strong class="${pnl !== null && pnl < 0 ? "negative" : "positive"}">${cash(pnl)}</strong></div>
       <div class="profile-stat"><small>Volume</small><strong>${cash(volume)}</strong></div>
     </div>
     <div class="profile-trades"><h3>Combo results · last 7 days</h3><div id="profileComboSummary" class="empty">Loading resolved combo results…</div></div>
@@ -873,7 +873,7 @@ async function loadTraderCombos(wallet) {
   try {
     const base = "https://data-api.polymarket.com/v2/positions/combos?user=" + encodeURIComponent(wallet);
     const [positionsResponse, activityResponse] = await Promise.all([
-      fetch(base + "&status=OPEN,PARTIAL,RESOLVED_WIN,RESOLVED_LOSS,RESOLVED_PARTIAL&limit=1000", {cache:"no-store"}),
+      fetch(base + "&status=OPEN,PARTIAL,RESOLVED_WIN,RESOLVED_LOSS,RESOLVED_PARTIAL&sort_by=UPDATED&sort_direction=DESC&limit=1000", {cache:"no-store"}),
       fetch("https://data-api.polymarket.com/v2/activity/combos?user=" + encodeURIComponent(wallet) + "&limit=1000", {cache:"no-store"})
     ]);
     if (!positionsResponse.ok) throw new Error("Combo positions API HTTP " + positionsResponse.status);
