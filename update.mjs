@@ -608,8 +608,11 @@ async function getMarketConsensus(market, knownNames) {
     const currentValue = num(position.currentValue ?? position.current_value ?? value) ?? value;
     const avgPrice = num(position.avgPrice ?? position.avg_price ?? position.averagePrice ?? position.average_price);
     const shares = num(position.size ?? position.shares ?? position.balance);
-    const entryValue = num(position.initialValue ?? position.initial_value ?? position.entryValue ?? position.entry_value) ??
-      (avgPrice !== null && shares !== null ? avgPrice * shares : null);
+    // Derive cost basis from average entry price × shares first. Some API
+    // initialValue fields have incompatible semantics and can inflate totals.
+    const entryValue = (avgPrice !== null && shares !== null && avgPrice >= 0 && shares >= 0)
+      ? avgPrice * shares
+      : num(position.entry_cost_usdc ?? position.total_cost_usdc ?? position.initialValue ?? position.initial_value ?? position.entryValue ?? position.entry_value);
     group.totalValue += currentValue;
     if (entryValue !== null) group.totalEntry += entryValue;
     if (lastEventAt !== null) {
@@ -912,7 +915,12 @@ function makeOutput(period, ranked, sportsRanked, activePositions, tradeRows, no
   // Full-history enrichment must never overwrite weekly/monthly wins, losses,
   // win rate, or resolved-market count, otherwise the displayed numbers no
   // longer match the sort order.
-  const leaders = ranked.slice(0, LEADER_COUNT).map(trader => {
+  const qualifiedLeaders = ranked.filter(trader =>
+    trader.recordComplete === true &&
+    num(trader.winRate) === 100 &&
+    num(trader.resolvedMarkets) >= MIN_TRADER_RESOLVED_MARKETS
+  );
+  const leaders = qualifiedLeaders.slice(0, LEADER_COUNT).map(trader => {
     const lifetime = leaderRecords[trader.wallet] || {};
     return {
       ...lifetime,
@@ -940,9 +948,9 @@ function makeOutput(period, ranked, sportsRanked, activePositions, tradeRows, no
     generatedAt: new Date(nowMs).toISOString(),
     period: period.key,
     rankingBasis:
-      `Complete realized-P&L proxy records (when available) are shown separately from incomplete samples; traders with incomplete/capped samples are ordered by Polymarket period P&L and volume. These are NOT verified prediction/settlement outcomes in the selected ${period.key === "week" ? "7-day" : "30-day"} period. Candidate discovery combines up to ${CANDIDATE_COUNT} entries from each Polymarket P&L and volume leaderboard; because Polymarket does not expose a native win/loss leaderboard, this is the top record-ranked set within that discovered candidate universe, not a claim to cover every trader on the platform.`,
+      `Top 100 requires a complete closed-position sample with a 100% positive-realized-P&L close rate and at least ${MIN_TRADER_RESOLVED_MARKETS} classifiable closes. This is a profitable-close proxy, NOT verified 100% market settlement wins and does not prove the trader never exits early. Candidate discovery is limited to the discovered public leaderboard universe.`,
     recordBasis: "IMPORTANT: complete profitable/unprofitable close counts are inferred from realized P&L, not verified market prediction wins/losses. If a history scan hits its cap, counts and rate are hidden rather than shown as a misleading 1,000–0 sample. Incomplete-record traders fall back to Polymarket period P&L/volume ranking.",
-    candidateCount: ranked.length,
+    candidateCount: ranked.length,\n    qualified100PercentProfitableClosers: qualifiedLeaders.length,\n    leaderboardQualification: "Top 100 shows only traders with a complete sampled closed-position record, 100% positive-realized-P&L close rate, and at least 15 classifiable closes. This is NOT proof of 100% market settlement wins or that they never exit early.",
     sportsLeaders: sportsRanked.slice(0, LEADER_COUNT),
     minResolvedMarketsForRecordRanking: 10,
     recordRankingEnabled: true,
