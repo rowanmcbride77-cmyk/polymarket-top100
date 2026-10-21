@@ -487,38 +487,46 @@ function comboProfitRows() {
   const byWallet = new Map(), seenCombos = new Set();
   for (const combo of comboRows) {
     const wallet = String(combo._wallet || walletOf(combo._trader || {})).toLowerCase();
-    const entry = num(combo.entry_cost_usdc ?? combo.gross_entry_cost_usdc ?? combo._activityEntryCost);
-    const payout = num(combo.realized_payout_usdc ?? combo._activityPayout);
     const status = String(combo.status || "").toUpperCase();
     const comboId = String(combo.combo_position_id || combo.combo_condition_id || "");
     const uniqueKey = wallet + ":" + comboId;
-    if (!wallet || !comboId || seenCombos.has(uniqueKey) || entry === null || payout === null || !["RESOLVED_WIN","RESOLVED_LOSS","RESOLVED_PARTIAL"].includes(status)) continue;
-    seenCombos.add(uniqueKey);
+    if (!wallet || !comboId || seenCombos.has(uniqueKey) || !["RESOLVED_WIN","RESOLVED_LOSS","RESOLVED_PARTIAL"].includes(status)) continue;
     const timeValue = combo.resolved_at ?? combo.resolvedAt ?? combo._activityResolvedAt;
     const ts = timeValue == null ? null : (Number.isFinite(Number(timeValue)) ? (Number(timeValue) < 1e12 ? Number(timeValue)*1000 : Number(timeValue)) : Date.parse(timeValue));
     if (ts === null || !Number.isFinite(ts) || ts < weekAgo || ts > now) continue;
-    const profit = payout - entry;
-    const current = byWallet.get(wallet) || {wallet, trader:combo._trader || {}, profit:0, combos:0, wins:0, losses:0, volume:0};
-    current.profit += profit; current.combos++; current.volume += entry;
-    if (profit > 0) current.wins++; else if (profit < 0) current.losses++;
+    seenCombos.add(uniqueKey);
+    const entry = num(combo.gross_entry_cost_usdc ?? combo.entry_cost_usdc);
+    const payout = num(combo.realized_payout_usdc);
+    const current = byWallet.get(wallet) || {wallet, trader:combo._trader || {}, profit:0, combos:0, wins:0, losses:0, partial:0, volume:0, pnlKnown:0, pnlMissing:0};
+    current.combos++;
+    if (status === "RESOLVED_WIN") current.wins++;
+    else if (status === "RESOLVED_LOSS") current.losses++;
+    else current.partial++;
+    if (entry !== null && entry >= 0 && payout !== null) {
+      current.profit += payout - entry;
+      current.volume += entry;
+      current.pnlKnown++;
+    } else current.pnlMissing++;
     byWallet.set(wallet,current);
   }
-  return [...byWallet.values()].filter(row=>row.profit>0).sort((a,b)=>b.profit-a.profit).map((row,index)=>({...row,displayRank:index+1}));
+  return [...byWallet.values()].sort((a,b) =>
+    (b.pnlKnown ? b.profit : -Infinity) - (a.pnlKnown ? a.profit : -Infinity) || b.combos-a.combos
+  ).map((row,index)=>({...row,displayRank:index+1}));
 }
 function comboEfficiencyRows() {
-  const now = Date.now(), weekAgo = now - 7 * 24 * 60 * 60 * 1000;
+  const now = Date.now(), monthAgo = now - 30 * 24 * 60 * 60 * 1000;
   const seen = new Set(), rows = [];
   for (const combo of comboRows) {
     const wallet = String(combo._wallet || walletOf(combo._trader || {})).toLowerCase();
     const id = String(combo.combo_position_id || combo.combo_condition_id || "");
     const status = String(combo.status || "").toUpperCase();
-    const entry = num(combo.entry_cost_usdc ?? combo.gross_entry_cost_usdc ?? combo._activityEntryCost);
+    const entry = num(combo.gross_entry_cost_usdc ?? combo.entry_cost_usdc);
     const payout = num(combo.realized_payout_usdc ?? combo._activityPayout);
     const timeValue = combo.resolved_at ?? combo.resolvedAt ?? combo._activityResolvedAt;
     const ts = timeValue == null ? null : (Number.isFinite(Number(timeValue)) ? (Number(timeValue) < 1e12 ? Number(timeValue)*1000 : Number(timeValue)) : Date.parse(timeValue));
     const key = wallet + ":" + id;
-    if (!wallet || !id || seen.has(key) || !["RESOLVED_WIN","RESOLVED_LOSS","RESOLVED_PARTIAL"].includes(status) ||
-        entry === null || entry <= 0 || payout === null || ts === null || !Number.isFinite(ts) || ts < weekAgo || ts > now) continue;
+    if (!wallet || !id || seen.has(key) || status !== "RESOLVED_WIN" ||
+        entry === null || entry <= 0 || payout === null || ts === null || !Number.isFinite(ts) || ts < monthAgo || ts > now || payout <= entry) continue;
     seen.add(key);
     const profit = payout - entry;
     if (profit <= 0) continue;
@@ -541,16 +549,16 @@ function renderLeaders() {
   const visible = allLeaders ? list : list.slice(0, 10);
   $("leaderModeNote").textContent = "";
   $("leaderHeader").innerHTML = comboMode
-    ? "<th>#</th><th>Trader</th><th>Winning combos</th><th>Losing combos</th><th>Weekly combo profit</th><th>Entry total</th>"
+    ? "<th>#</th><th>Trader</th><th>Won</th><th>Lost</th><th>Partial</th><th>Weekly combo P&amp;L</th><th>P&amp;L coverage</th>"
     : efficiencyMode
       ? "<th>#</th><th>Trader</th><th>Combo</th><th>Entry</th><th>Payout</th><th>Net profit</th><th>Return</th>"
       : "<th>#</th><th>Trader</th><th>Profitable–unprofitable closes</th><th>Close rate</th><th>Period P&amp;L</th><th>Volume</th>";
   $("leadersBody").innerHTML = visible.length ? visible.map((trader,index) => {
-    if (comboMode) return `<tr><td class="rank">${index+1}</td><td><div class="trader-name">${avatar(trader.trader)}<span class="name-text">${profileButton(trader.trader, nameOf(trader.trader))}</span></div></td><td class="record">${trader.wins}</td><td class="record">${trader.losses}</td><td class="positive">+${cash(trader.profit)}</td><td class="money">${cash(trader.volume)}</td></tr>`;
+    if (comboMode) return `<tr><td class="rank">${index+1}</td><td><div class="trader-name">${avatar(trader.trader)}<span class="name-text">${profileButton(trader.trader, nameOf(trader.trader))}</span></div></td><td class="record">${trader.wins}</td><td class="record">${trader.losses}</td><td class="record">${trader.partial}</td><td class="${trader.pnlKnown && trader.profit < 0 ? "negative" : "positive"}">${trader.pnlKnown ? (trader.profit > 0 ? "+" : "") + cash(trader.profit) : "N/A"}</td><td class="record">${trader.pnlKnown}/${trader.combos} combos</td></tr>`;
     if (efficiencyMode) return `<tr><td class="rank">${index+1}</td><td><div class="trader-name">${avatar(trader.trader)}<span class="name-text">${profileButton(trader.trader, nameOf(trader.trader))}</span></div></td><td class="combo-title" title="${esc(trader.title || "Combo details unavailable")}">${esc(trader.title || "Combo details unavailable")}</td><td class="money">${cash(trader.entry)}</td><td class="money">${cash(trader.payout)}</td><td class="positive">+${cash(trader.profit)}</td><td class="record">${trader.multiple.toFixed(1)}×</td></tr>`;
     const pnl = num(trader.pnl ?? trader.profit), volume = num(trader.volume ?? trader.vol), pnlClass = pnl !== null && pnl < 0 ? "negative" : "positive";
     return `<tr><td class="rank">${trader.displayRank}</td><td><div class="trader-name">${avatar(trader)}<span class="name-text">${profileButton(trader)}</span></div></td><td class="record">${recordText(trader)}</td><td class="record">${num(trader.winRate) === null ? "N/A" : num(trader.winRate).toFixed(1) + "%"}</td><td class="${pnlClass}">${pnl === null ? "N/A" : (pnl > 0 ? "+" : "") + cash(pnl)}</td><td class="money">${cash(volume)}</td></tr>`;
-  }).join("") : `<tr><td colspan="${efficiencyMode ? 7 : 6}" class="empty">${comboMode ? (comboLoadFinished ? "No verified combo profits in the last 7 days with complete entry and payout data." : "Scanning combo positions…") : efficiencyMode ? (comboLoadFinished ? "No verified profitable combos with entry and payout data in the last 7 days." : "Scanning combo positions…") : "No leaderboard data available. Check that the updater has created " + esc(FILES[period]) + "."}</td></tr>`;
+  }).join("") : `<tr><td colspan="${efficiencyMode ? 7 : 6}" class="empty">${comboMode ? (comboLoadFinished ? "No verified combo profits in the last 7 days with complete entry and payout data." : "Scanning combo positions…") : efficiencyMode ? (comboLoadFinished ? "No verified winning combos with entry and payout data in the last 30 days." : "Scanning combo positions…") : "No leaderboard data available. Check that the updater has created " + esc(FILES[period]) + "."}</td></tr>`;
   $("leadersMore").textContent = allLeaders ? "Show fewer ↑" : "View all traders →";
   $("leadersMore").style.display = list.length > 10 ? "inline-block" : "none";
   const overviewList = comboMode ? list : efficiencyMode ? [] : baseList;
@@ -837,6 +845,7 @@ function openProfile(wallet) {
       <div class="profile-stat"><small>${period === "week" ? "Weekly" : "Monthly"} P&amp;L</small><strong class="${pnl !== null && pnl < 0 ? "negative" : "positive"}">${cash(pnl)}</strong></div>
       <div class="profile-stat"><small>Volume</small><strong>${cash(volume)}</strong></div>
     </div>
+    <div class="profile-trades"><h3>Combo results · last 7 days</h3><div id="profileComboSummary" class="empty">Loading resolved combo results…</div></div>
     <div class="profile-trades"><h3>Active combos</h3><div id="profileActiveCombos" class="empty">Loading active combos…</div></div>
     <div class="profile-trades"><h3>Recent buys</h3>
       ${recentTrades.length ? recentTrades.map(trade => `
@@ -883,6 +892,27 @@ async function loadTraderCombos(wallet) {
       if (!rec.legs?.length && a.legs) rec.legs=a.legs;
       byId.set(id,rec);
     }
+    const weekCutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
+    const resolvedThisWeek = positions.filter(c => {
+      const status = String(c.status || "").toUpperCase();
+      const rawTime = c.resolved_at ?? c.resolvedAt;
+      const time = rawTime == null ? NaN : Date.parse(rawTime);
+      return ["RESOLVED_WIN","RESOLVED_LOSS","RESOLVED_PARTIAL"].includes(status) && Number.isFinite(time) && time >= weekCutoff && time <= Date.now();
+    });
+    const weeklyWins = resolvedThisWeek.filter(c => String(c.status).toUpperCase() === "RESOLVED_WIN").length;
+    const weeklyLosses = resolvedThisWeek.filter(c => String(c.status).toUpperCase() === "RESOLVED_LOSS").length;
+    const weeklyPartial = resolvedThisWeek.filter(c => String(c.status).toUpperCase() === "RESOLVED_PARTIAL").length;
+    const knownFinancials = resolvedThisWeek.map(c => {
+      const entry = num(c.gross_entry_cost_usdc ?? c.entry_cost_usdc), payout = num(c.realized_payout_usdc);
+      return entry !== null && entry >= 0 && payout !== null ? payout - entry : null;
+    }).filter(v => v !== null);
+    const summaryBox = $("profileComboSummary");
+    if (summaryBox) {
+      const net = knownFinancials.reduce((sum,v)=>sum+v,0);
+      summaryBox.innerHTML = '<strong>' + weeklyWins + ' won · ' + weeklyLosses + ' lost · ' + weeklyPartial + ' partial</strong><br>' +
+        '<span class="' + (net < 0 ? 'negative' : 'positive') + '">Verified net P&amp;L: ' + (knownFinancials.length ? (net > 0 ? '+' : '') + cash(net) : 'N/A') + '</span><br>' +
+        '<small class="subtitle">Financial data available for ' + knownFinancials.length + ' of ' + resolvedThisWeek.length + ' resolved combos. Missing entry or payout is not treated as $0.</small>';
+    }
     const active = positions.filter(c => ["OPEN","REDEEMABLE","PARTIAL"].includes(String(c.status || "").toUpperCase()));
     activeBox.innerHTML = active.length ? active.map(c => renderProfileCombo(c, false)).join("") : '<div class="empty">No active combos.</div>';
     const terminal = new Set(["RESOLVED_WIN","RESOLVED_LOSS","RESOLVED_PARTIAL"]);
@@ -903,7 +933,7 @@ function renderProfileCombo(combo, isClosed) {
     const m = leg.market || {};
     return 'Leg ' + (num(leg.leg_index) ?? i+1) + ': ' + esc(m.question || m.title || m.event?.event_title || "Market details unavailable") + ' — ' + esc(leg.leg_outcome_label || m.outcome || "Outcome unavailable");
   }).join("<br>");
-  const entry = num(combo.entry_cost_usdc ?? combo.gross_entry_cost_usdc ?? combo._activityEntryCost);
+  const entry = num(combo.gross_entry_cost_usdc ?? combo.entry_cost_usdc);
   const payout = num(combo.realized_payout_usdc ?? combo._activityPayout);
   const profit = entry !== null && payout !== null ? payout - entry : null;
   const status = String(combo.status || (isClosed ? "RESOLVED" : "OPEN")).replaceAll("_"," ");
