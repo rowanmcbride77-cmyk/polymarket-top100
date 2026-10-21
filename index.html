@@ -493,7 +493,7 @@ function comboProfitRows() {
     const uniqueKey = wallet + ":" + comboId;
     if (!wallet || !comboId || seenCombos.has(uniqueKey) || entry === null || payout === null || !["RESOLVED_WIN","RESOLVED_LOSS","RESOLVED_PARTIAL"].includes(status)) continue;
     seenCombos.add(uniqueKey);
-    const timeValue = combo.resolved_at ?? combo.resolvedAt;
+    const timeValue = combo.resolved_at ?? combo.resolvedAt ?? combo._activityResolvedAt;
     const ts = timeValue == null ? null : (Number.isFinite(Number(timeValue)) ? (Number(timeValue) < 1e12 ? Number(timeValue)*1000 : Number(timeValue)) : Date.parse(timeValue));
     if (ts === null || !Number.isFinite(ts) || ts < weekAgo || ts > now) continue;
     const profit = payout - entry;
@@ -669,11 +669,11 @@ async function loadComboPositions() {
               for (const a of events) {
                 const id = String(a.combo_position_id || "");
                 if (!id) continue;
-                const rec = activityById.get(id) || {entry:0,payout:0,hasEntry:false,hasPayout:false};
+                const rec = activityById.get(id) || {entry:0,payout:0,hasEntry:false,hasPayout:false,resolvedAt:null};
                 const type = String(a.type || "").toUpperCase(), amount = num(a.amount_usdc), payout = num(a.payout_usdc);
                 if (type === "SPLIT" && amount !== null) { rec.entry += amount; rec.hasEntry = true; }
                 if (type === "MERGE" && amount !== null) { rec.entry -= amount; rec.hasEntry = true; }
-                if (type === "REDEEM" && payout !== null) { rec.payout += payout; rec.hasPayout = true; }
+                if (type === "REDEEM" && payout !== null) { rec.payout += payout; rec.hasPayout = true; rec.resolvedAt = a.timestamp ?? rec.resolvedAt; }
                 activityById.set(id, rec);
               }
             }
@@ -684,6 +684,7 @@ async function loadComboPositions() {
           comboRows.push({...combo,
             _activityEntryCost: num(combo.entry_cost_usdc ?? combo.gross_entry_cost_usdc) ?? (a?.hasEntry ? a.entry : null),
             _activityPayout: num(combo.realized_payout_usdc) ?? (a?.hasPayout ? a.payout : null),
+            _activityResolvedAt: a?.resolvedAt ?? null,
             _trader:trader, _wallet:wallet
           });
         }
