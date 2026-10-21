@@ -89,6 +89,7 @@ select{max-width:155px}
 .empty,.loading{text-align:center;color:var(--muted);padding:22px 5px;line-height:1.6}
 .error{color:#ffb4c1;background:#321a24;border:1px solid #663344;padding:12px;border-radius:8px;margin-bottom:16px;line-height:1.5}
 footer{text-align:center;color:#71869b;font-size:12px;padding:25px}
+.combo-title{max-width:300px;white-space:normal;min-width:180px;font-size:12px;line-height:1.45}.combo-title{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
 .compact-details summary{cursor:pointer;font-weight:750;font-size:15px;list-style:none}.compact-details summary::-webkit-details-marker{display:none}.compact-details summary:after{content:"＋";float:right;color:var(--muted)}.compact-details[open] summary{margin-bottom:14px}.compact-details[open] summary:after{content:"−"}
 dialog{width:min(600px,calc(100% - 28px));max-height:85vh;overflow:auto;background:#091521;color:var(--text);border:1px solid #284158;border-radius:13px;padding:22px}
 dialog::backdrop{background:#000b}
@@ -146,7 +147,7 @@ dialog::backdrop{background:#000b}
           <span class="pill" id="leaderPeriod">Week</span>
         </div>
         <div class="filters" style="margin:0 0 12px">
-          <label>Leaderboard <select id="leaderMode" onchange="renderLeaders()"><option value="all">All traders</option><option value="efficiency">Low volume / high profit</option><option value="combos">Combo profits only</option></select></label>
+          <label>Leaderboard <select id="leaderMode" onchange="renderLeaders()"><option value="all">All traders</option><option value="efficiency">High-return combos</option><option value="combos">Combo profits only</option></select></label>
         </div>
         <div id="leaderModeNote" style="display:none"></div>
         <div class="table-wrap">
@@ -504,42 +505,62 @@ function comboProfitRows() {
   }
   return [...byWallet.values()].filter(row=>row.profit>0).sort((a,b)=>b.profit-a.profit).map((row,index)=>({...row,displayRank:index+1}));
 }
+function comboEfficiencyRows() {
+  const now = Date.now(), weekAgo = now - 7 * 24 * 60 * 60 * 1000;
+  const seen = new Set(), rows = [];
+  for (const combo of comboRows) {
+    const wallet = String(combo._wallet || walletOf(combo._trader || {})).toLowerCase();
+    const id = String(combo.combo_position_id || combo.combo_condition_id || "");
+    const status = String(combo.status || "").toUpperCase();
+    const entry = num(combo.entry_cost_usdc ?? combo.gross_entry_cost_usdc ?? combo._activityEntryCost);
+    const payout = num(combo.realized_payout_usdc ?? combo._activityPayout);
+    const timeValue = combo.resolved_at ?? combo.resolvedAt ?? combo._activityResolvedAt;
+    const ts = timeValue == null ? null : (Number.isFinite(Number(timeValue)) ? (Number(timeValue) < 1e12 ? Number(timeValue)*1000 : Number(timeValue)) : Date.parse(timeValue));
+    const key = wallet + ":" + id;
+    if (!wallet || !id || seen.has(key) || !["RESOLVED_WIN","RESOLVED_LOSS","RESOLVED_PARTIAL"].includes(status) ||
+        entry === null || entry <= 0 || payout === null || ts === null || !Number.isFinite(ts) || ts < weekAgo || ts > now) continue;
+    seen.add(key);
+    const profit = payout - entry;
+    if (profit <= 0) continue;
+    const legs = Array.isArray(combo.legs) ? combo.legs : [];
+    const title = legs.map(leg => {
+      const m = leg.market || {};
+      return (m.question || m.title || m.event?.event_title || "Combo leg") + " — " + (leg.leg_outcome_label || m.outcome || "");
+    }).filter(Boolean).join(" · ");
+    rows.push({wallet, trader:combo._trader || {}, entry, payout, profit, multiple:payout/entry, roi:profit/entry*100, title, ts, comboId:id});
+  }
+  return rows.sort((a,b) => b.multiple-a.multiple || b.profit-a.profit);
+}
+
 function renderLeaders() {
   const mode = $("leaderMode")?.value || "all";
   const comboMode = mode === "combos";
   const efficiencyMode = mode === "efficiency";
   const baseList = rankedLeaders();
-  const list = comboMode ? comboProfitRows() : efficiencyMode
-    ? baseList.filter(t => num(t.pnl ?? t.profit) > 0 && num(t.volume ?? t.vol) > 0)
-        .sort((a,b) => (num(b.pnl ?? b.profit) / num(b.volume ?? b.vol)) - (num(a.pnl ?? a.profit) / num(a.volume ?? a.vol)))
-    : baseList;
+  const list = comboMode ? comboProfitRows() : efficiencyMode ? comboEfficiencyRows() : baseList;
   const visible = allLeaders ? list : list.slice(0, 10);
   $("leaderModeNote").textContent = "";
   $("leaderHeader").innerHTML = comboMode
     ? "<th>#</th><th>Trader</th><th>Winning combos</th><th>Losing combos</th><th>Weekly combo profit</th><th>Entry total</th>"
     : efficiencyMode
-      ? "<th>#</th><th>Trader</th><th>Period profit</th><th>Volume</th><th>Profit / volume</th><th>Markets</th>"
+      ? "<th>#</th><th>Trader</th><th>Combo</th><th>Entry</th><th>Payout</th><th>Net profit</th><th>Return</th>"
       : "<th>#</th><th>Trader</th><th>Profitable–unprofitable closes</th><th>Close rate</th><th>Period P&amp;L</th><th>Volume</th>";
   $("leadersBody").innerHTML = visible.length ? visible.map((trader,index) => {
     if (comboMode) return `<tr><td class="rank">${index+1}</td><td><div class="trader-name">${avatar(trader.trader)}<span class="name-text">${profileButton(trader.trader, nameOf(trader.trader))}</span></div></td><td class="record">${trader.wins}</td><td class="record">${trader.losses}</td><td class="positive">+${cash(trader.profit)}</td><td class="money">${cash(trader.volume)}</td></tr>`;
+    if (efficiencyMode) return `<tr><td class="rank">${index+1}</td><td><div class="trader-name">${avatar(trader.trader)}<span class="name-text">${profileButton(trader.trader, nameOf(trader.trader))}</span></div></td><td class="combo-title" title="${esc(trader.title || "Combo details unavailable")}">${esc(trader.title || "Combo details unavailable")}</td><td class="money">${cash(trader.entry)}</td><td class="money">${cash(trader.payout)}</td><td class="positive">+${cash(trader.profit)}</td><td class="record">${trader.multiple.toFixed(1)}×</td></tr>`;
     const pnl = num(trader.pnl ?? trader.profit), volume = num(trader.volume ?? trader.vol), pnlClass = pnl !== null && pnl < 0 ? "negative" : "positive";
-    if (efficiencyMode) {
-      const ratio = pnl !== null && volume > 0 ? pnl / volume * 100 : null;
-      const markets = num(trader.markets ?? trader.trades ?? trader.closedMarkets);
-      return `<tr><td class="rank">${index+1}</td><td><div class="trader-name">${avatar(trader)}<span class="name-text">${profileButton(trader)}</span></div></td><td class="positive">+${cash(pnl)}</td><td class="money">${cash(volume)}</td><td class="record">${ratio === null ? "N/A" : ratio.toFixed(1) + "%"}</td><td class="record">${markets === null ? "—" : markets}</td></tr>`;
-    }
     return `<tr><td class="rank">${trader.displayRank}</td><td><div class="trader-name">${avatar(trader)}<span class="name-text">${profileButton(trader)}</span></div></td><td class="record">${recordText(trader)}</td><td class="record">${num(trader.winRate) === null ? "N/A" : num(trader.winRate).toFixed(1) + "%"}</td><td class="${pnlClass}">${pnl === null ? "N/A" : (pnl > 0 ? "+" : "") + cash(pnl)}</td><td class="money">${cash(volume)}</td></tr>`;
-  }).join("") : `<tr><td colspan="6" class="empty">${comboMode ? (comboLoadFinished ? "No verified combo profits in the last 7 days with complete entry and payout data." : "Scanning combo positions…") : efficiencyMode ? "No positive-profit traders with usable volume data in this period." : "No leaderboard data available. Check that the updater has created " + esc(FILES[period]) + "."}</td></tr>`;
+  }).join("") : `<tr><td colspan="${efficiencyMode ? 7 : 6}" class="empty">${comboMode ? (comboLoadFinished ? "No verified combo profits in the last 7 days with complete entry and payout data." : "Scanning combo positions…") : efficiencyMode ? (comboLoadFinished ? "No verified profitable combos with entry and payout data in the last 7 days." : "Scanning combo positions…") : "No leaderboard data available. Check that the updater has created " + esc(FILES[period]) + "."}</td></tr>`;
   $("leadersMore").textContent = allLeaders ? "Show fewer ↑" : "View all traders →";
   $("leadersMore").style.display = list.length > 10 ? "inline-block" : "none";
-  const overviewList = comboMode ? list : baseList;
-  const pnlTotal = comboMode ? overviewList.reduce((sum,row)=>sum+row.profit,0) : overviewList.reduce((sum,trader)=>sum+(num(trader.pnl ?? trader.profit)??0),0);
-  const volumeTotal = comboMode ? overviewList.reduce((sum,row)=>sum+row.volume,0) : overviewList.reduce((sum,trader)=>sum+(num(trader.volume ?? trader.vol)??0),0);
-  const records = overviewList.map(recordOf).filter(Boolean);
+  const overviewList = comboMode ? list : efficiencyMode ? [] : baseList;
+  const pnlTotal = comboMode || efficiencyMode ? overviewList.reduce((sum,row)=>sum+row.profit,0) : overviewList.reduce((sum,trader)=>sum+(num(trader.pnl ?? trader.profit)??0),0);
+  const volumeTotal = comboMode ? overviewList.reduce((sum,row)=>sum+row.volume,0) : efficiencyMode ? overviewList.reduce((sum,row)=>sum+row.entry,0) : overviewList.reduce((sum,trader)=>sum+(num(trader.volume ?? trader.vol)??0),0);
+  const records = efficiencyMode ? [] : overviewList.map(recordOf).filter(Boolean);
   $("totalPnl").textContent = cash(pnlTotal);
   $("totalPnl").className = "metric-value " + (pnlTotal < 0 ? "negative" : "positive");
   $("totalVolume").textContent = cash(volumeTotal);
-  $("avgWinRate").textContent = comboMode ? "N/A" : records.length ? (records.reduce((sum,record)=>sum+record.rate,0)/records.length).toFixed(1)+"%" : "N/A";
+  $("avgWinRate").textContent = comboMode || efficiencyMode ? "N/A" : records.length ? (records.reduce((sum,record)=>sum+record.rate,0)/records.length).toFixed(1)+"%" : "N/A";
 }
 
 function renderSportsLeaders() {
