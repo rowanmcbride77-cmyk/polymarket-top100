@@ -644,13 +644,17 @@ async function loadComboPositions() {
     while (next < candidates.length) {
       const trader = candidates[next++], wallet = walletOf(trader);
       try {
-        const response = await fetch("https://data-api.polymarket.com/v2/positions/combos?user=" + encodeURIComponent(wallet) + "&status=OPEN,REDEEMABLE,PARTIAL,RESOLVED_WIN,RESOLVED_LOSS,RESOLVED_PARTIAL&limit=100", {cache:"no-store"});
+        const response = await fetch("https://data-api.polymarket.com/v2/positions/combos?user=" + encodeURIComponent(wallet) + "&status=OPEN,PARTIAL,RESOLVED_WIN,RESOLVED_LOSS,RESOLVED_PARTIAL&limit=1000", {cache:"no-store"});
         if (!response.ok) throw new Error("HTTP " + response.status);
         const json = await response.json(), rows = Array.isArray(json?.data) ? json.data : [];
         for (const combo of rows) comboRows.push({...combo, _trader:trader, _wallet:wallet});
       } catch (error) { console.warn("Combo lookup failed for " + wallet + ": " + error.message); }
       completed++;
-      if (completed % 10 === 0) $("comboList").innerHTML = '<div class="loading">Checked ' + completed + ' of ' + candidates.length + ' traders…</div>';
+      if (completed % 10 === 0) {
+        $("comboList").innerHTML = '<div class="loading">Checked ' + completed + ' of ' + candidates.length + ' traders · ' + comboRows.length + ' combo rows found…</div>';
+        if (($("leaderMode")?.value || "all") === "combos") renderLeaders();
+        renderCombos();
+      }
     }
   };
   await Promise.all(Array.from({length:5}, () => worker()));
