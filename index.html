@@ -558,7 +558,7 @@ function renderLeaders() {
     if (efficiencyMode) return `<tr><td class="rank">${index+1}</td><td><div class="trader-name">${avatar(trader.trader)}<span class="name-text">${profileButton(trader.trader, nameOf(trader.trader))}</span></div></td><td class="combo-title" title="${esc(trader.title || "Combo details unavailable")}">${esc(trader.title || "Combo details unavailable")}</td><td class="money">${cash(trader.entry)}</td><td class="money">${cash(trader.payout)}</td><td class="positive">+${cash(trader.profit)}</td><td class="record">${trader.multiple.toFixed(1)}×</td></tr>`;
     const pnl = num(trader.pnl ?? trader.profit), volume = num(trader.volume ?? trader.vol), pnlClass = pnl !== null && pnl < 0 ? "negative" : "positive";
     return `<tr><td class="rank">${trader.displayRank}</td><td><div class="trader-name">${avatar(trader)}<span class="name-text">${profileButton(trader)}</span></div></td><td class="record">${recordText(trader)}</td><td class="record">${num(trader.winRate) === null ? "N/A" : num(trader.winRate).toFixed(1) + "%"}</td><td class="${pnlClass}">${pnl === null ? "N/A" : (pnl > 0 ? "+" : "") + cash(pnl)}</td><td class="money">${cash(volume)}</td></tr>`;
-  }).join("") : `<tr><td colspan="${efficiencyMode ? 7 : 6}" class="empty">${comboMode ? (comboLoadFinished ? "No verified combo profits in the last 7 days with complete entry and payout data." : "Scanning combo positions…") : efficiencyMode ? (comboLoadFinished ? "No verified winning combos with entry and payout data in the last 30 days." : "Scanning combo positions…") : "No leaderboard data available. Check that the updater has created " + esc(FILES[period]) + "."}</td></tr>`;
+  }).join("") : `<tr><td colspan="${comboMode || efficiencyMode ? 7 : 6}" class="empty">${comboMode ? (comboLoadFinished ? "No verified combo profits in the last 7 days with complete entry and payout data." : "Scanning combo positions…") : efficiencyMode ? (comboLoadFinished ? "No verified winning combos with entry and payout data in the last 30 days." : "Scanning combo positions…") : "No leaderboard data available. Check that the updater has created " + esc(FILES[period]) + "."}</td></tr>`;
   $("leadersMore").textContent = allLeaders ? "Show fewer ↑" : "View all traders →";
   $("leadersMore").style.display = list.length > 10 ? "inline-block" : "none";
   const overviewList = comboMode ? list : efficiencyMode ? [] : baseList;
@@ -683,7 +683,7 @@ async function loadComboPositions() {
     while (next < candidates.length) {
       const trader = candidates[next++], wallet = walletOf(trader);
       try {
-        const response = await fetch("https://data-api.polymarket.com/v2/positions/combos?user=" + encodeURIComponent(wallet) + "&status=OPEN,PARTIAL,RESOLVED_WIN,RESOLVED_LOSS,RESOLVED_PARTIAL&limit=1000", {cache:"no-store"});
+        const response = await fetch("https://data-api.polymarket.com/v2/positions/combos?user=" + encodeURIComponent(wallet) + "&status=OPEN,PARTIAL,RESOLVED_WIN,RESOLVED_LOSS,RESOLVED_PARTIAL&sort_by=UPDATED&sort_direction=DESC&limit=1000", {cache:"no-store"});
         if (!response.ok) throw new Error("HTTP " + response.status);
         const json = await response.json(), rows = Array.isArray(json?.data) ? json.data : [];
         const terminal = new Set(["RESOLVED_WIN","RESOLVED_LOSS","RESOLVED_PARTIAL"]);
