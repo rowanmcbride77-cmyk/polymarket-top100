@@ -84,7 +84,7 @@ for (const g of orderedSources) {
       }
     }
     // Track current observable positions and recent buy/sell activity for the consensus wallets.
-    for (const wallet of wallets.slice(0,4)) {
+    for (const wallet of [...new Set([...recentWallets, ...wallets])].slice(0,4)) {
       try {
         const u=await get(API+"/trades?user="+encodeURIComponent(wallet)+"&limit=100");
         const trades=arr(u).filter(t=>String(t.conditionId||t.condition_id||"").toLowerCase()===condition).slice(0,100);
