@@ -31,14 +31,24 @@ jobs:
         run: node forward-test.mjs
       - name: Validate and commit tracker
         run: |
+          set -e
           node -e 'const d=require("./forward-test.json"); if(!d.generatedAt||!Array.isArray(d.signals)||!d.metrics) process.exit(1); console.log(JSON.stringify(d.metrics))'
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add forward-test.json
-          if ! git diff --cached --quiet; then
-            git commit -m "Update consensus forward paper test"
-            git pull --rebase origin main
-            git push origin HEAD:main
-          else
-            echo "No forward-test changes."
-          fi
+          if git diff --cached --quiet; then echo "No forward-test changes."; exit 0; fi
+          git commit -m "Update consensus forward paper test"
+          for attempt in 1 2 3; do
+            git fetch origin main
+            if git rebase origin/main; then
+              if git push origin HEAD:main; then exit 0; fi
+            fi
+            git rebase --abort || true
+            git reset --hard origin/main
+            node forward-test.mjs
+            node -e 'const d=require("./forward-test.json"); if(!d.generatedAt||!Array.isArray(d.signals)||!d.metrics) process.exit(1); console.log(JSON.stringify(d.metrics))'
+            git add forward-test.json
+            git commit -m "Update consensus forward paper test (retry $attempt)"
+          done
+          echo "Could not push forward-test data after three attempts."
+          exit 1
