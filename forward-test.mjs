@@ -32,8 +32,9 @@ const old = await readJson(FILE,{generatedAt:null,methodology:"Forward paper tes
 const signals = Array.isArray(old.signals) ? old.signals : [];
 const byKey = new Map(signals.map(s=>[s.key,s]));
 const sources = [];
+const sourceTimestamps = [];
 for (const file of ["consensus-week.json","consensus-month.json"]) {
-  try { const d=await readJson(file,null); for (const g of arr(d?.consensus)) sources.push({...g,pool:file.includes("week")?"week":"month"}); } catch {}
+  try { const d=await readJson(file,null); if (d?.generatedAt) sourceTimestamps.push(d.generatedAt); for (const g of arr(d?.consensus)) sources.push({...g,pool:file.includes("week")?"week":"month"}); } catch {}
 }
 const seen = new Set();
 const freshCutoff = now - 60 * 60 * 1000;
@@ -141,6 +142,6 @@ const openMarkets=valid.filter(s=>s.status==="PENDING"&&s.resolutionCheckReason=
 const closedAwaitingPrice=valid.filter(s=>s.status==="PENDING"&&s.resolutionCheckReason==="closed_but_price_not_terminal").length;
 const terminalAwaitingSettlement=valid.filter(s=>s.status==="PENDING"&&s.resolutionCheckReason==="closed_with_terminal_price").length;
 const sellObservations=signals.reduce((n,s)=>n+(s.exitObservations||[]).filter(t=>t.side==="SELL").length,0);
-const output={generatedAt:iso(now),methodology:"Forward copy test records a signal only when at least two qualified consensus traders show recent position activity within 60 minutes. Entry is the market outcome price observed by this tracker, not the traders’ historical execution price. Consensus invested/current holding values are reported from open-position snapshots and are not the paper test’s P&L. Settlement requires an explicitly closed/resolved market and terminal outcome price. SELL prints are observations, not proof of full exits; partial exits and fees/slippage are not modeled.",metrics:{signals:signals.length,entryPriced:valid.length,freshSignals,pending,resolved:resolved.length,wins,losses,openMarkets,closedAwaitingPrice,terminalAwaitingSettlement,notChecked,markedSignals:marked.length,consensusEntryValue,consensusCurrentValue,sellObservations,winRate:resolved.length?wins/resolved.length*100:null,paperPnl:pnl,worstConsecutiveLosses:worst,byCategory},signals:signals.sort((a,b)=>Date.parse(b.firstSeenAt)-Date.parse(a.firstSeenAt)).slice(0,1500)};
+const output={generatedAt:iso(now),sourceDataUpdatedAt:sourceTimestamps.sort().at(-1)||null,methodology:"Forward copy test records a signal only when at least two qualified consensus traders show recent position activity within 60 minutes. Entry is the market outcome price observed by this tracker, not the traders’ historical execution price. Consensus invested/current holding values are reported from open-position snapshots and are not the paper test’s P&L. Settlement requires an explicitly closed/resolved market and terminal outcome price. SELL prints are observations, not proof of full exits; partial exits and fees/slippage are not modeled.",metrics:{signals:signals.length,entryPriced:valid.length,freshSignals,pending,resolved:resolved.length,wins,losses,openMarkets,closedAwaitingPrice,terminalAwaitingSettlement,notChecked,markedSignals:marked.length,consensusEntryValue,consensusCurrentValue,sellObservations,winRate:resolved.length?wins/resolved.length*100:null,paperPnl:pnl,worstConsecutiveLosses:worst,byCategory},signals:signals.sort((a,b)=>Date.parse(b.firstSeenAt)-Date.parse(a.firstSeenAt)).slice(0,1500)};
 await fs.writeFile(FILE,JSON.stringify(output,null,2)+"\n");
 console.log("Forward test: "+valid.length+" entry-priced signals; "+resolved.length+" resolved; "+wins+" wins / "+losses+" losses; paper P&L $"+pnl.toFixed(2));
