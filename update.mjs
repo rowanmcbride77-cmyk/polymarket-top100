@@ -949,7 +949,7 @@ function makeOutput(period, ranked, sportsRanked, activePositions, tradeRows, no
     rankingBasis:
       `General leaderboard ranks the discovered candidate set using the existing period ranking. Closed-position profitability is a realized-P&L proxy, not verified settlement accuracy and not proof that a trader never exits early. Candidate discovery is limited to the discovered public leaderboard universe.`,
     recordBasis: "IMPORTANT: complete profitable/unprofitable close counts are inferred from realized P&L, not verified market prediction wins/losses. If a history scan hits its cap, counts and rate are hidden rather than shown as a misleading 1,000–0 sample. Incomplete-record traders fall back to Polymarket period P&L/volume ranking.",
-    candidateCount: ranked.length,\n
+    candidateCount: ranked.length,
     sportsLeaders: sportsRanked.slice(0, LEADER_COUNT),
     minResolvedMarketsForRecordRanking: 10,
     recordRankingEnabled: true,
