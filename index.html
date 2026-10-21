@@ -147,7 +147,7 @@ dialog::backdrop{background:#000b}
           <span class="pill" id="leaderPeriod">Week</span>
         </div>
         <div class="filters" style="margin:0 0 12px">
-          <label>Leaderboard <select id="leaderMode" onchange="renderLeaders()"><option value="all">All traders</option><option value="efficiency">High-return combos</option><option value="combos">Combo profits only</option></select></label>
+          <label>Leaderboard <select id="leaderMode" onchange="renderLeaders()"><option value="all">All traders</option><option value="efficiency">High-return combos</option><option value="combos">Weekly combo profits</option></select></label>
         </div>
         <div id="leaderModeNote" style="display:none"></div>
         <div class="table-wrap">
@@ -509,7 +509,7 @@ function comboProfitRows() {
     } else current.pnlMissing++;
     byWallet.set(wallet,current);
   }
-  return [...byWallet.values()].sort((a,b) =>
+  return [...byWallet.values()].filter(row => row.pnlKnown > 0 && row.profit > 0).sort((a,b) =>
     (b.pnlKnown ? b.profit : -Infinity) - (a.pnlKnown ? a.profit : -Infinity) || b.combos-a.combos
   ).map((row,index)=>({...row,displayRank:index+1}));
 }
