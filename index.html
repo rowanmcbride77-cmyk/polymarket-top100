@@ -130,7 +130,7 @@ dialog::backdrop{background:#000b}
       <button id="weekTab" class="active" onclick="selectPeriod('week')">Week</button>
       <button id="monthTab" onclick="selectPeriod('month')">Month</button>
     </div>
-    <div class="refresh-actions"><a class="refresh-button" href="https://github.com/rowanmcbride77-cmyk/polymarket-top100/actions/workflows/update.yml" target="_blank" rel="noopener noreferrer" title="Opens GitHub Actions. Click Run workflow there to start a new data update.">↻ Run updater ↗</a><button class="refresh-button" id="reloadData" onclick="loadData(true)">Reload data</button><div><div class="updated">● Last updated<div id="updatedAt">Loading…</div></div><div class="refresh-help">Run updater opens GitHub Actions; choose “Run workflow” there.</div></div></div>
+    <div class="refresh-actions"><a class="refresh-button" href="https://github.com/rowanmcbride77-cmyk/polymarket-top100/actions/workflows/update.yml" target="_blank" rel="noopener noreferrer" title="Opens GitHub Actions. Click Run workflow there to start a new data update.">↻ Run updater ↗</a><button class="refresh-button" id="reloadData" onclick="loadData(true)">Reload data</button><div><div class="updated">● Last updated<div id="updatedAt">Loading…</div></div></div></div>
   </div>
 </header>
 
@@ -145,9 +145,9 @@ dialog::backdrop{background:#000b}
           <span class="pill" id="leaderPeriod">Week</span>
         </div>
         <div class="filters" style="margin:0 0 12px">
-          <label>Leaderboard <select id="leaderMode" onchange="renderLeaders()"><option value="all">All traders</option><option value="combos">Combo profits only</option></select></label>
+          <label>Leaderboard <select id="leaderMode" onchange="renderLeaders()"><option value="all">All traders</option><option value="efficiency">Low volume / high profit</option><option value="combos">Combo profits only</option></select></label>
         </div>
-        <div class="source-note" id="leaderModeNote" style="margin-top:-4px;margin-bottom:10px">All-trader leaderboard. Closed-position profitability is not proof of settlement accuracy or a no-early-exit strategy.</div>
+        <div id="leaderModeNote" style="display:none"></div>
         <div class="table-wrap">
           <table>
             <thead><tr id="leaderHeader"><th>#</th><th>Trader</th><th>Profitable–Unprofitable Closes</th><th>Profitable Close Rate</th><th>Period P&amp;L</th><th>Volume</th></tr></thead>
@@ -166,13 +166,10 @@ dialog::backdrop{background:#000b}
           <div><div class="metric-label">Total Volume</div><div class="metric-value" id="totalVolume">—</div></div>
           <div><div class="metric-label">Avg. Profitable Close Rate</div><div class="metric-value" id="avgWinRate">N/A</div></div>
         </div>
-        <div class="source-note">
-          IMPORTANT: These are not verified prediction wins/losses. Profitable close means positive realized P&amp;L; unprofitable close means negative realized P&amp;L. This rate can differ from market settlement accuracy and coexist with negative period P&amp;L. Ranking uses up to 1,000 recent closed-position rows per trader. Candidate discovery is limited to Polymarket P&amp;L and volume leaderboard entries, not every trader on the platform. Consensus scans current holders in markets expected to resolve within 24 hours across sports, esports, politics, crypto, and other categories. Fresh entries are prioritized; long-term markets are excluded by default.
-        </div>
-      </section>
+        </section>
       <section class="panel">
         <div class="panel-heading"><div class="heading-left"><span class="heading-icon">🎯</span><h2>Sports Trader Rankings</h2></div><span class="pill">Sports record</span></div>
-        <div class="source-note" style="margin:0 0 12px">Traders from the weekly/monthly candidate pool with at least five closed sports positions. Profitable-close rate uses realized P&amp;L as a proxy, not verified settlement results.</div>
+        
         <div class="table-wrap"><table><thead><tr><th>#</th><th>Trader</th><th>Sports Profitable–Unprofitable Closes (proxy)</th><th>Sports Profitable-Close Rate</th><th>Sports Sample</th></tr></thead><tbody id="sportsLeadersBody"><tr><td colspan="5" class="loading">Loading sports traders…</td></tr></tbody></table></div>
       </section>
     </div>
@@ -183,7 +180,7 @@ dialog::backdrop{background:#000b}
           <div class="heading-left"><span class="heading-icon">👥</span><h2>Top Consensus Markets</h2></div>
           <span class="pill" id="consensusPeriod">Weekly pool · 24h</span>
         </div>
-        <div class="source-note" style="margin:0 0 12px">Consensus matches traders holding the same exact outcome in open markets expected to resolve within the selected window. It does not establish that the traders entered at the same price, that their positions are profitable now, or that a copied entry has positive expected value. Recent position activity is filtered to 24 hours. The candidate pool is limited to discovered public leaderboard traders.</div>
+        
         <div class="filters">
           <label>Trader pool
             <select id="consensusPool" onchange="loadConsensusData()">
@@ -217,7 +214,7 @@ dialog::backdrop{background:#000b}
       </section>
   <section class="panel" id="forwardTestPanel" style="margin-bottom:18px">
     <div class="panel-heading"><div class="heading-left"><span class="heading-icon">🧪</span><h2>Forward Signal Tracker</h2></div><span class="pill" id="forwardUpdated">Loading test…</span></div>
-    <div class="source-note" style="margin:0 0 12px">This is the history log, not another live consensus list. Top Consensus Markets shows what qualified traders share now; this tracker records the market price when a signal first qualifies and checks its outcome later. OPEN means it has not been verified settled yet.</div>
+    <div class="subtitle" style="margin:0 0 12px">Recent observed buys from consensus traders. Values assume the shares are still held.</div>
     <div class="overview-grid">
       <div><div class="metric-label">Signals tracked</div><div class="metric-value" id="ftResolved">—</div></div>
       <div><div class="metric-label">Verified settled wins</div><div class="metric-value" id="ftWinRate">Not enough data</div></div>
@@ -228,14 +225,13 @@ dialog::backdrop{background:#000b}
     </div>
     <div class="source-note" id="ftStatus">Only new signals with at least two qualified traders showing recent position activity are added. Historical profitable-close rates are not verified prediction win rates.</div>
     <div class="table-wrap"><table><thead><tr><th>Trader</th><th>Market / outcome</th><th>Buy time</th><th>Buy price</th><th>Amount bought</th><th>Price now</th><th>Value now if held</th><th>P&amp;L if held*</th></tr></thead><tbody id="ftSignals"><tr><td colspan="8" class="empty">Waiting for the first tracker run.</td></tr></tbody></table></div>
-    <div class="source-note"><strong>How this differs from Top Consensus Markets:</strong> Consensus Markets is the live shortlist of outcomes multiple qualified traders currently share. This table is the trade-level watchlist: it shows observed buys by those traders, when they traded, what they paid, and what those shares are worth at the latest market price. Amount bought is estimated as trade price × shares; *open P&amp;L excludes fees and does not prove the trader still holds every share.</div>
-  </section>
+</section>
     </div>
 
     <div class="column right-column">
       <section class="panel">
         <div class="panel-heading"><div class="heading-left"><span class="heading-icon">🧩</span><h2>Open Combos</h2></div><span class="pill">Live API</span></div>
-        <div class="source-note" style="margin:0 0 12px">“Open” means the trader still has a combo position; it does NOT mean every event has not started. Use Event timing to filter for combos where every leg has a known future start time. Combo cards are not ranked by stake size. The separate Combo profits leaderboard includes only reported realized payouts with a usable close/resolve timestamp from the last 7 days. The combo scanner checks wallets in its discovered candidate pool, not every Polymarket account.</div>
+        
         <div class="filters">
           <label>Minimum entry <select id="minComboEntry" onchange="renderCombos()"><option value="0">Any amount</option><option value="100">$100+</option><option value="500">$500+</option><option value="1000">$1,000+</option><option value="5000">$5,000+</option></select></label>
           <label>Position <select id="comboStatus" onchange="renderCombos()"><option value="held">Open only</option><option value="all">Open + resolved</option></select></label>
@@ -494,7 +490,7 @@ function comboProfitRows() {
     const payout = num(combo.realized_payout_usdc);
     const status = String(combo.status || "").toUpperCase();
     if (!wallet || entry === null || payout === null || !["RESOLVED_WIN","RESOLVED_LOSS","RESOLVED_PARTIAL"].includes(status)) continue;
-    const timeValue = combo.resolved_at ?? combo.resolvedAt ?? combo.updated_at ?? combo.updatedAt;
+    const timeValue = combo.resolved_at ?? combo.resolvedAt;
     const ts = timeValue == null ? null : (Number.isFinite(Number(timeValue)) ? (Number(timeValue) < 1e12 ? Number(timeValue)*1000 : Number(timeValue)) : Date.parse(timeValue));
     if (ts === null || !Number.isFinite(ts) || ts < weekAgo || ts > now) continue;
     const profit = payout - entry;
@@ -508,19 +504,29 @@ function comboProfitRows() {
 function renderLeaders() {
   const mode = $("leaderMode")?.value || "all";
   const comboMode = mode === "combos";
-  const list = comboMode ? comboProfitRows() : rankedLeaders();
+  const efficiencyMode = mode === "efficiency";
+  const baseList = rankedLeaders();
+  const list = comboMode ? comboProfitRows() : efficiencyMode
+    ? baseList.filter(t => num(t.pnl ?? t.profit) > 0 && num(t.volume ?? t.vol) > 0)
+        .sort((a,b) => (num(b.pnl ?? b.profit) / num(b.volume ?? b.vol)) - (num(a.pnl ?? a.profit) / num(a.volume ?? a.vol)))
+    : baseList;
   const visible = allLeaders ? list : list.slice(0, 10);
-  $("leaderModeNote").textContent = comboMode
-    ? "Ranks net realized profit on resolved combo positions in the last 7 days (payout minus entry cost), not stake size. Resolution time is used when available; otherwise the position’s last update time is used. Coverage is limited to wallets discovered by the scanner."
-    : "All-trader leaderboard. Closed-position profitability is not proof of settlement accuracy or a no-early-exit strategy.";
+  $("leaderModeNote").textContent = "";
   $("leaderHeader").innerHTML = comboMode
-    ? "<th>#</th><th>Trader</th><th>Profitable combos</th><th>Unprofitable combos</th><th>Weekly combo profit</th><th>Combo entry total</th>"
-    : "<th>#</th><th>Trader</th><th>Profitable–Unprofitable Closes</th><th>Profitable Close Rate</th><th>Period P&amp;L</th><th>Volume</th>";
+    ? "<th>#</th><th>Trader</th><th>Winning combos</th><th>Losing combos</th><th>Weekly combo profit</th><th>Entry total</th>"
+    : efficiencyMode
+      ? "<th>#</th><th>Trader</th><th>Period profit</th><th>Volume</th><th>Profit / volume</th><th>Markets</th>"
+      : "<th>#</th><th>Trader</th><th>Profitable–unprofitable closes</th><th>Close rate</th><th>Period P&amp;L</th><th>Volume</th>";
   $("leadersBody").innerHTML = visible.length ? visible.map((trader,index) => {
     if (comboMode) return `<tr><td class="rank">${index+1}</td><td><div class="trader-name">${avatar(trader.trader)}<span class="name-text">${profileButton(trader.trader, nameOf(trader.trader))}</span></div></td><td class="record">${trader.wins}</td><td class="record">${trader.losses}</td><td class="positive">+${cash(trader.profit)}</td><td class="money">${cash(trader.volume)}</td></tr>`;
     const pnl = num(trader.pnl ?? trader.profit), volume = num(trader.volume ?? trader.vol), pnlClass = pnl !== null && pnl < 0 ? "negative" : "positive";
+    if (efficiencyMode) {
+      const ratio = pnl !== null && volume > 0 ? pnl / volume * 100 : null;
+      const markets = num(trader.markets ?? trader.trades ?? trader.closedMarkets);
+      return `<tr><td class="rank">${index+1}</td><td><div class="trader-name">${avatar(trader)}<span class="name-text">${profileButton(trader)}</span></div></td><td class="positive">+${cash(pnl)}</td><td class="money">${cash(volume)}</td><td class="record">${ratio === null ? "N/A" : ratio.toFixed(1) + "%"}</td><td class="record">${markets === null ? "—" : markets}</td></tr>`;
+    }
     return `<tr><td class="rank">${trader.displayRank}</td><td><div class="trader-name">${avatar(trader)}<span class="name-text">${profileButton(trader)}</span></div></td><td class="record">${recordText(trader)}</td><td class="record">${num(trader.winRate) === null ? "N/A" : num(trader.winRate).toFixed(1) + "%"}</td><td class="${pnlClass}">${pnl === null ? "N/A" : (pnl > 0 ? "+" : "") + cash(pnl)}</td><td class="money">${cash(volume)}</td></tr>`;
-  }).join("") : `<tr><td colspan="6" class="empty">${comboMode ? "Still scanning combo positions (" + comboRows.length + " rows found so far). Results will populate as the scan runs." : "No leaderboard data available. Check that the updater has created " + esc(FILES[period]) + "."}</td></tr>`;
+  }).join("") : `<tr><td colspan="6" class="empty">${comboMode ? "Scanning combo positions…" : "No leaderboard data available. Check that the updater has created " + esc(FILES[period]) + "."}</td></tr>`;
   $("leadersMore").textContent = allLeaders ? "Show fewer ↑" : "View all traders →";
   $("leadersMore").style.display = list.length > 10 ? "inline-block" : "none";
   const pnlTotal = comboMode ? list.reduce((sum,row)=>sum+row.profit,0) : list.reduce((sum,trader)=>sum+(num(trader.pnl ?? trader.profit)??0),0);
@@ -799,25 +805,40 @@ async function loadTraderCombos(wallet) {
   const activeBox = $("profileActiveCombos"), closedBox = $("profileClosedCombos");
   if (!activeBox || !closedBox) return;
   activeBox.textContent = "Loading active combos…";
-  closedBox.textContent = "Loading combo history…";
+  closedBox.textContent = "Loading resolved combos…";
   try {
+    const base = "https://data-api.polymarket.com/v2/positions/combos?user=" + encodeURIComponent(wallet);
     const [positionsResponse, activityResponse] = await Promise.all([
-      fetch("https://data-api.polymarket.com/v2/positions/combos?user=" + encodeURIComponent(wallet) + "&limit=100", {cache:"no-store"}),
-      fetch("https://data-api.polymarket.com/v2/activity/combos?user=" + encodeURIComponent(wallet) + "&limit=100", {cache:"no-store"})
+      fetch(base + "&status=OPEN,PARTIAL,RESOLVED_WIN,RESOLVED_LOSS,RESOLVED_PARTIAL&limit=1000", {cache:"no-store"}),
+      fetch("https://data-api.polymarket.com/v2/activity/combos?user=" + encodeURIComponent(wallet) + "&limit=1000", {cache:"no-store"})
     ]);
     if (!positionsResponse.ok) throw new Error("Combo positions API HTTP " + positionsResponse.status);
     const positionsJson = await positionsResponse.json();
-    const positions = Array.isArray(positionsJson) ? positionsJson : (Array.isArray(positionsJson?.data) ? positionsJson.data : []);
-    const active = positions.filter(c => ["OPEN","REDEEMABLE","PARTIAL"].includes(String(c.status || "").toUpperCase()) || (!c.status && (num(c.current_size) ?? 0) > 0));
-    activeBox.innerHTML = active.length ? active.map(c => renderProfileCombo(c, false)).join("") : '<div class="empty">No active combo positions returned.</div>';
-    if (!activityResponse.ok) throw new Error("Combo activity API HTTP " + activityResponse.status);
-    const activityJson = await activityResponse.json();
-    const activities = Array.isArray(activityJson) ? activityJson : (Array.isArray(activityJson?.data) ? activityJson.data : []);
-    const closed = activities.filter(c => /CLOSE|REDEEM|RESOLV|SETTLE|CLAIM|PAYOUT|WIN|LOSS/i.test(String(c.status || c.activity_type || c.type || c.event_type || "")) || (num(c.legs_resolved) > 0 && num(c.legs_total) > 0 && num(c.legs_resolved) >= num(c.legs_total)));
-    closedBox.innerHTML = closed.length ? closed.map(c => renderProfileCombo(c, true)).join("") : '<div class="empty">No closed combo activity returned for this trader. The public API may expose only lifecycle events for some accounts.</div>';
+    const positions = Array.isArray(positionsJson?.data) ? positionsJson.data : Array.isArray(positionsJson) ? positionsJson : [];
+    const activities = activityResponse.ok ? ((j => Array.isArray(j?.data) ? j.data : Array.isArray(j) ? j : [])(await activityResponse.json())) : [];
+    const byId = new Map();
+    for (const a of activities) {
+      const id = String(a.combo_position_id || "");
+      if (!id) continue;
+      const rec = byId.get(id) || {entry:0,payout:0,hasEntry:false,hasPayout:false,legs:a.legs || []};
+      const type = String(a.type || "").toUpperCase(), amount = num(a.amount_usdc), payout = num(a.payout_usdc);
+      if (type === "SPLIT" && amount !== null) { rec.entry += amount; rec.hasEntry=true; }
+      if (type === "MERGE" && amount !== null) { rec.entry -= amount; rec.hasEntry=true; }
+      if (type === "REDEEM" && payout !== null) { rec.payout += payout; rec.hasPayout=true; }
+      if (!rec.legs?.length && a.legs) rec.legs=a.legs;
+      byId.set(id,rec);
+    }
+    const active = positions.filter(c => ["OPEN","REDEEMABLE","PARTIAL"].includes(String(c.status || "").toUpperCase()));
+    activeBox.innerHTML = active.length ? active.map(c => renderProfileCombo(c, false)).join("") : '<div class="empty">No active combos.</div>';
+    const terminal = new Set(["RESOLVED_WIN","RESOLVED_LOSS","RESOLVED_PARTIAL"]);
+    const closed = positions.filter(c => terminal.has(String(c.status || "").toUpperCase())).map(c => {
+      const a = byId.get(String(c.combo_position_id || ""));
+      return {...c, _activityEntryCost: (num(c.entry_cost_usdc ?? c.gross_entry_cost_usdc) ?? (a?.hasEntry ? a.entry : null)), _activityPayout: (num(c.realized_payout_usdc) ?? (a?.hasPayout ? a.payout : null)), legs: c.legs?.length ? c.legs : (a?.legs || [])};
+    }).sort((a,b) => Date.parse(b.resolved_at || b.updated_at || 0) - Date.parse(a.resolved_at || a.updated_at || 0));
+    closedBox.innerHTML = closed.length ? closed.map(c => renderProfileCombo(c, true)).join("") : '<div class="empty">No resolved combo positions returned.</div>';
   } catch (error) {
     activeBox.innerHTML = '<div class="error">Could not load combo positions: ' + esc(error.message) + '</div>';
-    closedBox.innerHTML = '<div class="error">Could not load closed combos: ' + esc(error.message) + '</div>';
+    closedBox.innerHTML = '<div class="error">Could not load resolved combos: ' + esc(error.message) + '</div>';
   }
 }
 
@@ -827,10 +848,11 @@ function renderProfileCombo(combo, isClosed) {
     const m = leg.market || {};
     return 'Leg ' + (num(leg.leg_index) ?? i+1) + ': ' + esc(m.question || m.title || m.event?.event_title || "Market details unavailable") + ' — ' + esc(leg.leg_outcome_label || m.outcome || "Outcome unavailable");
   }).join("<br>");
-  const entry = combo.entry_cost_usdc ?? combo.gross_entry_cost_usdc ?? combo.amount_usdc ?? combo.amount;
-  const payout = num(combo.realized_payout_usdc ?? combo.payout_usdc ?? combo.payout);
-  const status = String(combo.status || combo.activity_type || combo.type || (isClosed ? "CLOSED ACTIVITY" : "OPEN")).replaceAll("_"," ");
-  return '<div class="profile-trade"><strong>' + esc(status) + '</strong><br>' + (title || '<span class="subtitle">Combo leg details unavailable in this API record.</span>') + '<br><small class="subtitle">Entry: ' + cash(entry) + ' · Payout: ' + (payout === null ? "N/A" : cash(payout)) + '</small></div>';
+  const entry = num(combo.entry_cost_usdc ?? combo.gross_entry_cost_usdc ?? combo._activityEntryCost);
+  const payout = num(combo.realized_payout_usdc ?? combo._activityPayout);
+  const profit = entry !== null && payout !== null ? payout - entry : null;
+  const status = String(combo.status || (isClosed ? "RESOLVED" : "OPEN")).replaceAll("_"," ");
+  return '<div class="profile-trade"><strong>' + esc(status) + '</strong><br>' + (title || '<span class="subtitle">Combo leg details unavailable.</span>') + '<br><small class="subtitle">Entry: ' + (entry === null ? "Cost basis unavailable" : cash(entry)) + ' · Payout: ' + (payout === null ? "Not paid yet" : cash(payout)) + (profit === null ? '' : ' · P&amp;L: ' + (profit >= 0 ? '+' : '') + cash(profit)) + '</small></div>';
 }
 
 function closeProfile() {
