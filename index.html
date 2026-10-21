@@ -486,8 +486,8 @@ function comboProfitRows() {
   const byWallet = new Map();
   for (const combo of comboRows) {
     const wallet = String(combo._wallet || walletOf(combo._trader || {})).toLowerCase();
-    const entry = num(combo.entry_cost_usdc ?? combo.gross_entry_cost_usdc);
-    const payout = num(combo.realized_payout_usdc);
+    const entry = num(combo.entry_cost_usdc ?? combo.gross_entry_cost_usdc ?? combo._activityEntryCost);
+    const payout = num(combo.realized_payout_usdc ?? combo._activityPayout);
     const status = String(combo.status || "").toUpperCase();
     if (!wallet || entry === null || payout === null || !["RESOLVED_WIN","RESOLVED_LOSS","RESOLVED_PARTIAL"].includes(status)) continue;
     const timeValue = combo.resolved_at ?? combo.resolvedAt;
@@ -526,7 +526,7 @@ function renderLeaders() {
       return `<tr><td class="rank">${index+1}</td><td><div class="trader-name">${avatar(trader)}<span class="name-text">${profileButton(trader)}</span></div></td><td class="positive">+${cash(pnl)}</td><td class="money">${cash(volume)}</td><td class="record">${ratio === null ? "N/A" : ratio.toFixed(1) + "%"}</td><td class="record">${markets === null ? "—" : markets}</td></tr>`;
     }
     return `<tr><td class="rank">${trader.displayRank}</td><td><div class="trader-name">${avatar(trader)}<span class="name-text">${profileButton(trader)}</span></div></td><td class="record">${recordText(trader)}</td><td class="record">${num(trader.winRate) === null ? "N/A" : num(trader.winRate).toFixed(1) + "%"}</td><td class="${pnlClass}">${pnl === null ? "N/A" : (pnl > 0 ? "+" : "") + cash(pnl)}</td><td class="money">${cash(volume)}</td></tr>`;
-  }).join("") : `<tr><td colspan="6" class="empty">${comboMode ? "Scanning combo positions…" : "No leaderboard data available. Check that the updater has created " + esc(FILES[period]) + "."}</td></tr>`;
+  }).join("") : `<tr><td colspan="6" class="empty">${comboMode ? (comboLoadFinished ? "No verified combo profits in the last 7 days with complete entry and payout data." : "Scanning combo positions…") : efficiencyMode ? "No positive-profit traders with usable volume data in this period." : "No leaderboard data available. Check that the updater has created " + esc(FILES[period]) + "."}</td></tr>`;
   $("leadersMore").textContent = allLeaders ? "Show fewer ↑" : "View all traders →";
   $("leadersMore").style.display = list.length > 10 ? "inline-block" : "none";
   const pnlTotal = comboMode ? list.reduce((sum,row)=>sum+row.profit,0) : list.reduce((sum,trader)=>sum+(num(trader.pnl ?? trader.profit)??0),0);
@@ -653,7 +653,36 @@ async function loadComboPositions() {
         const response = await fetch("https://data-api.polymarket.com/v2/positions/combos?user=" + encodeURIComponent(wallet) + "&status=OPEN,PARTIAL,RESOLVED_WIN,RESOLVED_LOSS,RESOLVED_PARTIAL&limit=1000", {cache:"no-store"});
         if (!response.ok) throw new Error("HTTP " + response.status);
         const json = await response.json(), rows = Array.isArray(json?.data) ? json.data : [];
-        for (const combo of rows) comboRows.push({...combo, _trader:trader, _wallet:wallet});
+        const terminal = new Set(["RESOLVED_WIN","RESOLVED_LOSS","RESOLVED_PARTIAL"]);
+        const needsActivity = rows.some(c => terminal.has(String(c.status || "").toUpperCase()) &&
+          (num(c.entry_cost_usdc ?? c.gross_entry_cost_usdc) === null || num(c.realized_payout_usdc) === null));
+        let activityById = new Map();
+        if (needsActivity) {
+          try {
+            const ar = await fetch("https://data-api.polymarket.com/v2/activity/combos?user=" + encodeURIComponent(wallet) + "&limit=1000", {cache:"no-store"});
+            if (ar.ok) {
+              const aj = await ar.json(), events = Array.isArray(aj?.data) ? aj.data : [];
+              for (const a of events) {
+                const id = String(a.combo_position_id || "");
+                if (!id) continue;
+                const rec = activityById.get(id) || {entry:0,payout:0,hasEntry:false,hasPayout:false};
+                const type = String(a.type || "").toUpperCase(), amount = num(a.amount_usdc), payout = num(a.payout_usdc);
+                if (type === "SPLIT" && amount !== null) { rec.entry += amount; rec.hasEntry = true; }
+                if (type === "MERGE" && amount !== null) { rec.entry -= amount; rec.hasEntry = true; }
+                if (type === "REDEEM" && payout !== null) { rec.payout += payout; rec.hasPayout = true; }
+                activityById.set(id, rec);
+              }
+            }
+          } catch (activityError) { console.warn("Combo activity lookup failed for " + wallet + ": " + activityError.message); }
+        }
+        for (const combo of rows) {
+          const a = activityById.get(String(combo.combo_position_id || ""));
+          comboRows.push({...combo,
+            _activityEntryCost: num(combo.entry_cost_usdc ?? combo.gross_entry_cost_usdc) ?? (a?.hasEntry ? a.entry : null),
+            _activityPayout: num(combo.realized_payout_usdc) ?? (a?.hasPayout ? a.payout : null),
+            _trader:trader, _wallet:wallet
+          });
+        }
       } catch (error) { console.warn("Combo lookup failed for " + wallet + ": " + error.message); }
       completed++;
       if (completed % 10 === 0) {
