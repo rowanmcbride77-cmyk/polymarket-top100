@@ -916,12 +916,10 @@ function makeOutput(period, ranked, sportsRanked, activePositions, tradeRows, no
   // Full-history enrichment must never overwrite weekly/monthly wins, losses,
   // win rate, or resolved-market count, otherwise the displayed numbers no
   // longer match the sort order.
-  const qualifiedLeaders = ranked.filter(trader =>
-    trader.recordComplete === true &&
-    num(trader.winRate) === 100 &&
-    num(trader.resolvedMarkets) >= MIN_TRADER_RESOLVED_MARKETS
-  );
-  const leaders = qualifiedLeaders.slice(0, LEADER_COUNT).map(trader => {
+  // Keep the general leaderboard populated; the public data cannot prove
+  // that traders never exit early, so don't use a 100% profitable-close
+  // filter as if it were a verified hold-to-settlement guarantee.
+  const leaders = ranked.slice(0, LEADER_COUNT).map(trader => {
     const lifetime = leaderRecords[trader.wallet] || {};
     return {
       ...lifetime,
@@ -949,9 +947,9 @@ function makeOutput(period, ranked, sportsRanked, activePositions, tradeRows, no
     generatedAt: new Date(nowMs).toISOString(),
     period: period.key,
     rankingBasis:
-      `Top 100 requires a complete closed-position sample with a 100% positive-realized-P&L close rate and at least ${MIN_TRADER_RESOLVED_MARKETS} classifiable closes. This is a profitable-close proxy, NOT verified 100% market settlement wins and does not prove the trader never exits early. Candidate discovery is limited to the discovered public leaderboard universe.`,
+      `General leaderboard ranks the discovered candidate set using the existing period ranking. Closed-position profitability is a realized-P&L proxy, not verified settlement accuracy and not proof that a trader never exits early. Candidate discovery is limited to the discovered public leaderboard universe.`,
     recordBasis: "IMPORTANT: complete profitable/unprofitable close counts are inferred from realized P&L, not verified market prediction wins/losses. If a history scan hits its cap, counts and rate are hidden rather than shown as a misleading 1,000–0 sample. Incomplete-record traders fall back to Polymarket period P&L/volume ranking.",
-    candidateCount: ranked.length,\n    qualified100PercentProfitableClosers: qualifiedLeaders.length,\n    leaderboardQualification: "Top 100 shows only traders with a complete sampled closed-position record, 100% positive-realized-P&L close rate, and at least 15 classifiable closes. This is NOT proof of 100% market settlement wins or that they never exit early.",
+    candidateCount: ranked.length,\n
     sportsLeaders: sportsRanked.slice(0, LEADER_COUNT),
     minResolvedMarketsForRecordRanking: 10,
     recordRankingEnabled: true,
