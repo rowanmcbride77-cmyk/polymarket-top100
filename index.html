@@ -492,8 +492,10 @@ function comboProfitRows() {
     const wallet = String(combo._wallet || walletOf(combo._trader || {})).toLowerCase();
     const entry = num(combo.entry_cost_usdc ?? combo.gross_entry_cost_usdc);
     const payout = num(combo.realized_payout_usdc);
-    if (!wallet || entry === null || payout === null) continue;
-    const timeValue = combo.closed_at ?? combo.closedAt ?? combo.resolved_at ?? combo.resolvedAt ?? combo.updated_at ?? combo.updatedAt ?? combo.timestamp;
+    const status = String(combo.status || "").toUpperCase();
+    // Open combo positions do not contain realized profit. Only count terminal states.
+    if (!wallet || entry === null || payout === null || !["RESOLVED_WIN","RESOLVED_LOSS","RESOLVED_PARTIAL"].includes(status)) continue;
+    const timeValue = combo.resolved_at ?? combo.resolvedAt;
     const ts = timeValue == null ? null : (Number.isFinite(Number(timeValue)) ? (Number(timeValue) < 1e12 ? Number(timeValue)*1000 : Number(timeValue)) : Date.parse(timeValue));
     if (ts === null || !Number.isFinite(ts) || ts < weekAgo || ts > now) continue;
     const profit = payout - entry;
@@ -510,7 +512,7 @@ function renderLeaders() {
   const list = comboMode ? comboProfitRows() : rankedLeaders();
   const visible = allLeaders ? list : list.slice(0, 10);
   $("leaderModeNote").textContent = comboMode
-    ? "Combo leaderboard ranks positive realized combo profit reported by the API for combos closed/resolved in the last 7 days. Bets are not ranked by size. Missing close timestamps or unreported realized payouts are excluded. Coverage is limited to wallets checked by the combo scanner."
+    ? "Combo leaderboard ranks reported realized profit for combo positions in a terminal resolved state during the last 7 days. It checks resolved combo positions as well as open positions; bets are not ranked by size. Results are limited to the discovered candidate-wallet pool and rows with a recorded resolution timestamp."
     : "All-trader leaderboard. Closed-position profitability is not proof of settlement accuracy or a no-early-exit strategy.";
   $("leaderHeader").innerHTML = comboMode
     ? "<th>#</th><th>Trader</th><th>Profitable combos</th><th>Unprofitable combos</th><th>Weekly combo profit</th><th>Combo entry total</th>"
@@ -643,7 +645,7 @@ async function loadComboPositions() {
     while (next < candidates.length) {
       const trader = candidates[next++], wallet = walletOf(trader);
       try {
-        const response = await fetch("https://data-api.polymarket.com/v2/positions/combos?user=" + encodeURIComponent(wallet) + "&limit=100", {cache:"no-store"});
+        const response = await fetch("https://data-api.polymarket.com/v2/positions/combos?user=" + encodeURIComponent(wallet) + "&status=OPEN,REDEEMABLE,PARTIAL,RESOLVED_WIN,RESOLVED_LOSS,RESOLVED_PARTIAL&limit=100", {cache:"no-store"});
         if (!response.ok) throw new Error("HTTP " + response.status);
         const json = await response.json(), rows = Array.isArray(json?.data) ? json.data : [];
         for (const combo of rows) comboRows.push({...combo, _trader:trader, _wallet:wallet});
