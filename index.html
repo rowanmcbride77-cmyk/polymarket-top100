@@ -158,10 +158,13 @@ dialog::backdrop{background:#000b}
           <div class="heading-left"><span class="heading-icon">🏆</span><h2>Top 100 Traders</h2></div>
           <span class="pill" id="leaderPeriod">Week</span>
         </div>
-        <div class="source-note" style="margin-top:-8px;margin-bottom:10px">Filtered to complete records showing 100% profitable closed positions and at least 15 closes. This is based on realized P&amp;L, not proof of 100% market-settlement wins or that a trader never exits early. A reliable “holds to settlement” filter requires position-level exit history.</div>
+        <div class="filters" style="margin:0 0 12px">
+          <label>Leaderboard <select id="leaderMode" onchange="renderLeaders()"><option value="all">All traders</option><option value="combos">Combo profits only</option></select></label>
+        </div>
+        <div class="source-note" id="leaderModeNote" style="margin-top:-4px;margin-bottom:10px">All-trader leaderboard. Closed-position profitability is not proof of settlement accuracy or a no-early-exit strategy.</div>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>#</th><th>Trader</th><th>Profitable–Unprofitable Closes</th><th>Profitable Close Rate</th><th>Period P&amp;L</th><th>Volume</th></tr></thead>
+            <thead><tr id="leaderHeader"><th>#</th><th>Trader</th><th>Profitable–Unprofitable Closes</th><th>Profitable Close Rate</th><th>Period P&amp;L</th><th>Volume</th></tr></thead>
             <tbody id="leadersBody"><tr><td colspan="6" class="loading">Loading traders…</td></tr></tbody>
           </table>
         </div>
@@ -231,7 +234,7 @@ dialog::backdrop{background:#000b}
     <div class="column right-column">
       <section class="panel">
         <div class="panel-heading"><div class="heading-left"><span class="heading-icon">🧩</span><h2>Open Combos</h2></div><span class="pill">Live API</span></div>
-        <div class="source-note" style="margin:0 0 12px">“Open” means the trader still has a combo position; it does NOT mean every event has not started. Use Event timing to filter for combos where every leg has a known future start time. “Estimated payout” assumes the combo settles successfully; “estimated profit” subtracts the original entry cost and is not guaranteed. Combos are scanned only among qualified traders returned by the data file, not every Polymarket account.</div>
+        <div class="source-note" style="margin:0 0 12px">“Open” means the trader still has a combo position; it does NOT mean every event has not started. Use Event timing to filter for combos where every leg has a known future start time. Combo cards are not ranked by stake size. The separate Combo profits leaderboard includes only reported realized payouts with a usable close/resolve timestamp from the last 7 days. The combo scanner checks wallets in its discovered candidate pool, not every Polymarket account.</div>
         <div class="filters">
           <label>Minimum entry <select id="minComboEntry" onchange="renderCombos()"><option value="0">Any amount</option><option value="100">$100+</option><option value="500">$500+</option><option value="1000">$1,000+</option><option value="5000">$5,000+</option></select></label>
           <label>Position <select id="comboStatus" onchange="renderCombos()"><option value="held">Open only</option><option value="all">Open + resolved</option></select></label>
@@ -481,38 +484,50 @@ function rankedLeaders() {
     .map((trader, index) => ({...trader, displayRank:index + 1}));
 }
 
+function comboProfitRows() {
+  const now = Date.now(), weekAgo = now - 7 * 24 * 60 * 60 * 1000;
+  const byWallet = new Map();
+  for (const combo of comboRows) {
+    const wallet = String(combo._wallet || walletOf(combo._trader || {})).toLowerCase();
+    const entry = num(combo.entry_cost_usdc ?? combo.gross_entry_cost_usdc);
+    const payout = num(combo.realized_payout_usdc);
+    if (!wallet || entry === null || payout === null) continue;
+    const timeValue = combo.closed_at ?? combo.closedAt ?? combo.resolved_at ?? combo.resolvedAt ?? combo.updated_at ?? combo.updatedAt ?? combo.timestamp;
+    const ts = timeValue == null ? null : (Number.isFinite(Number(timeValue)) ? (Number(timeValue) < 1e12 ? Number(timeValue)*1000 : Number(timeValue)) : Date.parse(timeValue));
+    if (ts === null || !Number.isFinite(ts) || ts < weekAgo || ts > now) continue;
+    const profit = payout - entry;
+    const current = byWallet.get(wallet) || {wallet, trader:combo._trader || {}, profit:0, combos:0, wins:0, losses:0, volume:0};
+    current.profit += profit; current.combos++; current.volume += entry;
+    if (profit > 0) current.wins++; else if (profit < 0) current.losses++;
+    byWallet.set(wallet,current);
+  }
+  return [...byWallet.values()].filter(row=>row.profit>0).sort((a,b)=>b.profit-a.profit).map((row,index)=>({...row,displayRank:index+1}));
+}
 function renderLeaders() {
-  const list = rankedLeaders();
+  const mode = $("leaderMode")?.value || "all";
+  const comboMode = mode === "combos";
+  const list = comboMode ? comboProfitRows() : rankedLeaders();
   const visible = allLeaders ? list : list.slice(0, 10);
-
-  $("leadersBody").innerHTML = visible.length ? visible.map(trader => {
-    const pnl = num(trader.pnl ?? trader.profit);
-    const volume = num(trader.volume ?? trader.vol);
-    const pnlClass = pnl !== null && pnl < 0 ? "negative" : "positive";
-
-    return `<tr>
-      <td class="rank">${trader.displayRank}</td>
-      <td><div class="trader-name">${avatar(trader)}<span class="name-text">${profileButton(trader)}</span></div></td>
-      <td class="record">${recordText(trader)}</td>
-      <td class="record">${num(trader.winRate) === null ? "N/A" : num(trader.winRate).toFixed(1) + "%"}</td>
-      <td class="${pnlClass}">${pnl === null ? "N/A" : (pnl > 0 ? "+" : "") + cash(pnl)}</td>
-      <td class="money">${cash(volume)}</td>
-    </tr>`;
-  }).join("") : `<tr><td colspan="6" class="empty">No leaderboard data available. Check that the updater has created ${esc(FILES[period])}.</td></tr>`;
-
+  $("leaderModeNote").textContent = comboMode
+    ? "Combo leaderboard ranks positive realized combo profit reported by the API for combos closed/resolved in the last 7 days. Bets are not ranked by size. Missing close timestamps or unreported realized payouts are excluded. Coverage is limited to wallets checked by the combo scanner."
+    : "All-trader leaderboard. Closed-position profitability is not proof of settlement accuracy or a no-early-exit strategy.";
+  $("leaderHeader").innerHTML = comboMode
+    ? "<th>#</th><th>Trader</th><th>Profitable combos</th><th>Unprofitable combos</th><th>Weekly combo profit</th><th>Combo entry total</th>"
+    : "<th>#</th><th>Trader</th><th>Profitable–Unprofitable Closes</th><th>Profitable Close Rate</th><th>Period P&amp;L</th><th>Volume</th>";
+  $("leadersBody").innerHTML = visible.length ? visible.map((trader,index) => {
+    if (comboMode) return `<tr><td class="rank">${index+1}</td><td><div class="trader-name">${avatar(trader.trader)}<span class="name-text">${profileButton(trader.trader, nameOf(trader.trader))}</span></div></td><td class="record">${trader.wins}</td><td class="record">${trader.losses}</td><td class="positive">+${cash(trader.profit)}</td><td class="money">${cash(trader.volume)}</td></tr>`;
+    const pnl = num(trader.pnl ?? trader.profit), volume = num(trader.volume ?? trader.vol), pnlClass = pnl !== null && pnl < 0 ? "negative" : "positive";
+    return `<tr><td class="rank">${trader.displayRank}</td><td><div class="trader-name">${avatar(trader)}<span class="name-text">${profileButton(trader)}</span></div></td><td class="record">${recordText(trader)}</td><td class="record">${num(trader.winRate) === null ? "N/A" : num(trader.winRate).toFixed(1) + "%"}</td><td class="${pnlClass}">${pnl === null ? "N/A" : (pnl > 0 ? "+" : "") + cash(pnl)}</td><td class="money">${cash(volume)}</td></tr>`;
+  }).join("") : `<tr><td colspan="6" class="empty">${comboMode ? "No verified profitable combo settlements in the last 7 days among the wallets currently checked. This may mean data coverage is incomplete, not that no profitable combo traders exist." : "No leaderboard data available. Check that the updater has created " + esc(FILES[period]) + "."}</td></tr>`;
   $("leadersMore").textContent = allLeaders ? "Show fewer ↑" : "View all traders →";
   $("leadersMore").style.display = list.length > 10 ? "inline-block" : "none";
-
-  const pnlTotal = list.reduce((sum, trader) => sum + (num(trader.pnl ?? trader.profit) ?? 0), 0);
-  const volumeTotal = list.reduce((sum, trader) => sum + (num(trader.volume ?? trader.vol) ?? 0), 0);
+  const pnlTotal = comboMode ? list.reduce((sum,row)=>sum+row.profit,0) : list.reduce((sum,trader)=>sum+(num(trader.pnl ?? trader.profit)??0),0);
+  const volumeTotal = comboMode ? list.reduce((sum,row)=>sum+row.volume,0) : list.reduce((sum,trader)=>sum+(num(trader.volume ?? trader.vol)??0),0);
   const records = list.map(recordOf).filter(Boolean);
-
   $("totalPnl").textContent = cash(pnlTotal);
   $("totalPnl").className = "metric-value " + (pnlTotal < 0 ? "negative" : "positive");
   $("totalVolume").textContent = cash(volumeTotal);
-  $("avgWinRate").textContent = records.length
-    ? (records.reduce((sum, record) => sum + record.rate, 0) / records.length).toFixed(1) + "%"
-    : "N/A";
+  $("avgWinRate").textContent = comboMode ? "N/A" : records.length ? (records.reduce((sum,record)=>sum+record.rate,0)/records.length).toFixed(1)+"%" : "N/A";
 }
 
 function renderSportsLeaders() {
@@ -679,7 +694,7 @@ function renderCombos() {
     const held = ["OPEN","REDEEMABLE","PARTIAL"].includes(status) || (!status && (num(combo.current_size) ?? 0) > 0);
     const timing = comboTimingState(combo);
     return entry >= minimum && (allStatuses || held) && (timingFilter === "all" || timing.key === timingFilter);
-  }).sort((a,b) => (num(b.entry_cost_usdc ?? b.gross_entry_cost_usdc) ?? 0) - (num(a.entry_cost_usdc ?? a.gross_entry_cost_usdc) ?? 0));
+  }).sort((a,b) => { const ap=num(a.realized_payout_usdc), ae=num(a.entry_cost_usdc ?? a.gross_entry_cost_usdc), bp=num(b.realized_payout_usdc), be=num(b.entry_cost_usdc ?? b.gross_entry_cost_usdc); const aprofit=ap!==null&&ae!==null?ap-ae:null, bprofit=bp!==null&&be!==null?bp-be:null; if(aprofit!==null||bprofit!==null) return (bprofit??-Infinity)-(aprofit??-Infinity); return 0; });
   const visible = allCombos ? rows : rows.slice(0,12);
   if (!visible.length) container.innerHTML = comboLoadFinished ? '<div class="empty">No combos matched among the qualified traders whose positions were checked. Coverage depends on available complete records; this is not a platform-wide scan.</div>' : '<div class="loading">Checking combo positions…</div>';
   else container.innerHTML = visible.map((combo,index) => {
