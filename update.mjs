@@ -594,6 +594,7 @@ async function getMarketConsensus(market, knownNames) {
         sameSide: 0,
         totalValue: 0,
         totalEntry: 0,
+        entryValueKnownCount: 0,
         newestBuy: null,
         oldestBuy: null,
         traders: [],
@@ -612,9 +613,9 @@ async function getMarketConsensus(market, knownNames) {
     // initialValue fields have incompatible semantics and can inflate totals.
     const entryValue = (avgPrice !== null && shares !== null && avgPrice >= 0 && shares >= 0)
       ? avgPrice * shares
-      : num(position.entry_cost_usdc ?? position.total_cost_usdc ?? position.initialValue ?? position.initial_value ?? position.entryValue ?? position.entry_value);
+      : null;
     group.totalValue += currentValue;
-    if (entryValue !== null) group.totalEntry += entryValue;
+    if (entryValue !== null) { group.totalEntry += entryValue; group.entryValueKnownCount++; }
     if (lastEventAt !== null) {
       group.newestBuy = group.newestBuy === null ? lastEventAt : Math.max(group.newestBuy, lastEventAt);
       group.oldestBuy = group.oldestBuy === null ? lastEventAt : Math.min(group.oldestBuy, lastEventAt);
@@ -645,7 +646,7 @@ async function getMarketConsensus(market, knownNames) {
     .filter(group => group.sameSide >= 2);
   if (qualifyingGroups.length === 0) console.log("No same-side group had 2+ holders with position activity in the last " + CONSENSUS_ENTRY_WINDOW_MINUTES + " minutes for market " + conditionId);
   return qualifyingGroups
-    .map(({ walletsSeen, ...group }) => group);
+    .map(({ walletsSeen, ...group }) => ({ ...group, totalEntry: group.entryValueKnownCount === group.sameSide ? group.totalEntry : null, traders: group.traders.map(trader => ({ ...trader, isStillHolding: true, positionStatus: "OPEN" })) }));
 }
 
 function marketEndDate(market) {
