@@ -36,10 +36,13 @@ for (const file of ["consensus-week.json","consensus-month.json"]) {
   try { const d=await readJson(file,null); for (const g of arr(d?.consensus)) sources.push({...g,pool:file.includes("week")?"week":"month"}); } catch {}
 }
 const seen = new Set();
-for (const g of sources.slice(0,50)) {
+const freshCutoff = now - 60 * 60 * 1000;
+const orderedSources = sources.sort((a,b)=>(num(b.newestBuy)||0)-(num(a.newestBuy)||0));
+for (const g of orderedSources) {
   const condition = String(g.conditionId||g.condition_id||"").toLowerCase();
   const side = String(g.side||"").trim();
-  const wallets = [...new Set(arr(g.traders).map(t=>String(t.wallet||"").toLowerCase()).filter(Boolean))];
+  const recentTraders = arr(g.traders).filter(t => { const ts=num(t.buyTime); return ts!==null && ts>=freshCutoff && ts<=now; });
+  const wallets = [...new Set(recentTraders.map(t=>String(t.wallet||"").toLowerCase()).filter(Boolean))];
   if (!condition || !side || wallets.length<2) continue;
   const key=condition+"|"+side.toLowerCase();
   seen.add(key);
@@ -52,10 +55,11 @@ for (const g of sources.slice(0,50)) {
     const entryPrice=index>=0?prices[index]:null;
     let row=byKey.get(key);
     if (!row) {
-      row={key,conditionId:condition,title:g.title||m.question||m.title||"Untitled market",side,category:category({...m,title:g.title||m.question}),firstSeenAt:iso(now),entryPrice,entryPriceSource:"Gamma outcome price at first observation",stake:10,shares:entryPrice>0&&entryPrice<1?10/entryPrice:null,consensusCount:wallets.length,traderWallets:wallets,pool:g.pool,firstSignalPriceAvailable:entryPrice>0&&entryPrice<1,status:entryPrice>0&&entryPrice<1?"PENDING":"ENTRY_UNAVAILABLE",resolvedAt:null,settlement:null,paperPnl:null,exitObservations:[]};
+      row={key,conditionId:condition,title:g.title||m.question||m.title||"Untitled market",side,category:category({...m,title:g.title||m.question}),firstSeenAt:iso(now),entryPrice,entryPriceSource:"Market outcome price when at least two qualified traders had recent position activity",stake:10,shares:entryPrice>0&&entryPrice<1?10/entryPrice:null,consensusCount:wallets.length,traderWallets:wallets,pool:g.pool,consensusEntryValue:num(g.totalEntry),consensusCurrentValue:num(g.totalValue),recentTraderEntryCount:wallets.length,firstSignalPriceAvailable:entryPrice>0&&entryPrice<1,status:entryPrice>0&&entryPrice<1?"PENDING":"ENTRY_UNAVAILABLE",resolvedAt:null,settlement:null,paperPnl:null,exitObservations:[]};
       signals.push(row); byKey.set(key,row);
     } else {
       row.lastSeenAt=iso(now); row.latestConsensusCount=wallets.length;
+      row.consensusEntryValue=num(g.totalEntry); row.consensusCurrentValue=num(g.totalValue); row.recentTraderEntryCount=wallets.length;
       row.traderWallets=[...new Set([...(row.traderWallets||[]),...wallets])];
     }
     row.currentPrice = index >= 0 ? prices[index] : null;
@@ -125,12 +129,14 @@ const pending=valid.filter(s=>s.status==="PENDING").length;
 const pnl=resolved.reduce((n,s)=>n+(num(s.paperPnl)||0),0);
 const byCategory={};
 for(const c of ["sports","crypto","politics","other"]) { const rows=resolved.filter(s=>s.category===c); byCategory[c]={resolved:rows.length,wins:rows.filter(s=>s.settlement==="WIN").length,losses:rows.filter(s=>s.settlement==="LOSS").length,paperPnl:rows.reduce((n,s)=>n+(num(s.paperPnl)||0),0)}; }
-const marked=valid.filter(s=>s.unrealizedPaperPnl!=null);
-const markedPnl=marked.reduce((n,s)=>n+(num(s.unrealizedPaperPnl)||0),0);
+const marked=valid.filter(s=>s.currentPrice!=null);
+const consensusEntryValue=signals.filter(s=>s.status==="PENDING").reduce((n,s)=>n+(num(s.consensusEntryValue)||0),0);
+const consensusCurrentValue=signals.filter(s=>s.status==="PENDING").reduce((n,s)=>n+(num(s.consensusCurrentValue)||0),0);
+const notChecked=valid.filter(s=>!s.resolutionCheckReason).length;
 const openMarkets=valid.filter(s=>s.status==="PENDING"&&s.resolutionCheckReason==="market_not_closed_or_resolved").length;
 const closedAwaitingPrice=valid.filter(s=>s.status==="PENDING"&&s.resolutionCheckReason==="closed_but_price_not_terminal").length;
 const terminalAwaitingSettlement=valid.filter(s=>s.status==="PENDING"&&s.resolutionCheckReason==="closed_with_terminal_price").length;
 const sellObservations=signals.reduce((n,s)=>n+(s.exitObservations||[]).filter(t=>t.side==="SELL").length,0);
-const output={generatedAt:iso(now),methodology:"Forward paper test at the first observed Gamma outcome price; hypothetical $10 stake per unique condition+outcome; current mark-to-market P&L is not realized profit and can change. Settlement requires a market explicitly marked closed/resolved by Gamma and a terminal outcome price. Current P&L is marked to market and does not count as a win. Ignores fees, slippage, partial fills and precise intrarun exits. Historical entry price is never backfilled. SELL observations are raw trade prints, not proof of full position exit.",metrics:{signals:signals.length,entryPriced:valid.length,pending,resolved:resolved.length,wins,losses,openMarkets,closedAwaitingPrice,terminalAwaitingSettlement,markedSignals:marked.length,unrealizedPaperPnl:markedPnl,sellObservations,winRate:resolved.length?wins/resolved.length*100:null,paperPnl:pnl,worstConsecutiveLosses:worst,byCategory},signals:signals.sort((a,b)=>Date.parse(b.firstSeenAt)-Date.parse(a.firstSeenAt)).slice(0,1500)};
+const output={generatedAt:iso(now),methodology:"Forward copy test records a signal only when at least two qualified consensus traders show recent position activity within 60 minutes. Entry is the market outcome price observed by this tracker, not the traders’ historical execution price. Consensus invested/current holding values are reported from open-position snapshots and are not the paper test’s P&L. Settlement requires an explicitly closed/resolved market and terminal outcome price. SELL prints are observations, not proof of full exits; partial exits and fees/slippage are not modeled.",metrics:{signals:signals.length,entryPriced:valid.length,pending,resolved:resolved.length,wins,losses,openMarkets,closedAwaitingPrice,terminalAwaitingSettlement,notChecked,markedSignals:marked.length,consensusEntryValue,consensusCurrentValue,sellObservations,winRate:resolved.length?wins/resolved.length*100:null,paperPnl:pnl,worstConsecutiveLosses:worst,byCategory},signals:signals.sort((a,b)=>Date.parse(b.firstSeenAt)-Date.parse(a.firstSeenAt)).slice(0,1500)};
 await fs.writeFile(FILE,JSON.stringify(output,null,2)+"\n");
 console.log("Forward test: "+valid.length+" entry-priced signals; "+resolved.length+" resolved; "+wins+" wins / "+losses+" losses; paper P&L $"+pnl.toFixed(2));
