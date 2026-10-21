@@ -605,8 +605,13 @@ async function getMarketConsensus(market, knownNames) {
     if (group.walletsSeen.has(wallet)) continue;
     group.walletsSeen.add(wallet);
     group.sameSide++;
-    group.totalValue += value;
-    group.totalEntry += value;
+    const currentValue = num(position.currentValue ?? position.current_value ?? value) ?? value;
+    const avgPrice = num(position.avgPrice ?? position.avg_price ?? position.averagePrice ?? position.average_price);
+    const shares = num(position.size ?? position.shares ?? position.balance);
+    const entryValue = num(position.initialValue ?? position.initial_value ?? position.entryValue ?? position.entry_value) ??
+      (avgPrice !== null && shares !== null ? avgPrice * shares : null);
+    group.totalValue += currentValue;
+    if (entryValue !== null) group.totalEntry += entryValue;
     if (lastEventAt !== null) {
       group.newestBuy = group.newestBuy === null ? lastEventAt : Math.max(group.newestBuy, lastEventAt);
       group.oldestBuy = group.oldestBuy === null ? lastEventAt : Math.min(group.oldestBuy, lastEventAt);
@@ -620,7 +625,14 @@ async function getMarketConsensus(market, knownNames) {
         pnl: knownNames.get(wallet)?.pnl ?? null,
         volume: knownNames.get(wallet)?.volume ?? null,
         side,
-        amount: value,
+        amount: currentValue,
+        currentValue,
+        entryValue,
+        avgPrice,
+        currentPrice: num(position.curPrice ?? position.currentPrice ?? position.outcomePrice ?? position.outcome_price),
+        shares,
+        isStillHolding: true,
+        positionStatus: "OPEN",
         buyTime: lastEventAt
       });
     }
