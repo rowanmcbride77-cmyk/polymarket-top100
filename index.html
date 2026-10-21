@@ -140,18 +140,16 @@ dialog::backdrop{background:#000b}
     <div class="panel-heading"><div class="heading-left"><span class="heading-icon">🧪</span><h2>Forward Copy-Trading Test</h2></div><span class="pill" id="forwardUpdated">Loading test…</span></div>
     <div class="source-note" style="margin:0 0 12px">Different from Top Consensus Markets: that panel finds shared open positions; this panel records the first observed price and tracks what happens afterward. Current unrealized P&amp;L changes with market prices and is not settled profit. Hypothetical $10 stake; fees and slippage are excluded. SELL prints do not prove a full exit.</div>
     <div class="overview-grid">
-      <div><div class="metric-label">Resolved signals</div><div class="metric-value" id="ftResolved">—</div></div>
-      <div><div class="metric-label">Forward win rate</div><div class="metric-value" id="ftWinRate">Not enough data</div></div>
-      <div><div class="metric-label">Realized paper P&amp;L</div><div class="metric-value" id="ftPnl">—</div></div>
-      <div><div class="metric-label">Unrealized P&amp;L (open signals)</div><div class="metric-value" id="ftUnrealized">—</div></div>
-      <div><div class="metric-label">Pending signals</div><div class="metric-value" id="ftPending">—</div></div>
-      <div><div class="metric-label">Worst consecutive losses</div><div class="metric-value" id="ftWorst">—</div></div>
-      <div><div class="metric-label">Entry-priced signals</div><div class="metric-value" id="ftPriced">—</div></div>
+      <div><div class="metric-label">Signals tracked</div><div class="metric-value" id="ftResolved">—</div></div>
+      <div><div class="metric-label">Verified settled wins</div><div class="metric-value" id="ftWinRate">Not enough data</div></div>
+      <div><div class="metric-label">Open signals</div><div class="metric-value" id="ftPending">—</div></div>
+      <div><div class="metric-label">Fresh consensus signals</div><div class="metric-value" id="ftPriced">—</div></div>
+      <div><div class="metric-label">Signals not checked</div><div class="metric-value" id="ftUnrealized">—</div></div>
       <div><div class="metric-label">Observed SELL prints</div><div class="metric-value" id="ftSells">—</div></div>
     </div>
-    <div class="source-note" id="ftStatus">The tracker will populate after its scheduled run.</div>
-    <div class="table-wrap"><table><thead><tr><th>First seen</th><th>Market</th><th>Outcome</th><th>Entry</th><th>Current</th><th>Consensus</th><th>Status</th><th>Unrealized P&amp;L</th><th>Settled P&amp;L</th></tr></thead><tbody id="ftSignals"><tr><td colspan="9" class="empty">Waiting for the first tracker run.</td></tr></tbody></table></div>
-    <div class="source-note"><strong>Exit observations:</strong> tracked from public trade prints for a sample of consensus wallets when available. They are observations, not proof that the trader fully exited. Do not treat this paper test as proof of a profitable strategy until enough new signals have resolved.</div>
+    <div class="source-note" id="ftStatus">Only new signals with at least two qualified traders showing recent position activity are added. Historical profitable-close rates are not verified prediction win rates.</div>
+    <div class="table-wrap"><table><thead><tr><th>First seen</th><th>Market</th><th>Outcome</th><th>Signal price</th><th>Current price</th><th>Traders</th><th>Invested by traders</th><th>Current holdings value</th><th>Status</th></tr></thead><tbody id="ftSignals"><tr><td colspan="9" class="empty">Waiting for the first tracker run.</td></tr></tbody></table></div>
+    <div class="source-note"><strong>Important:</strong> “Invested by traders” and “Current holdings value” come from public open-position snapshots; they are not the amount you personally would invest or profit you would earn. The test records the price available when the signal is first seen and tracks the market to settlement. Public SELL prints may be partial exits, so they cannot yet be treated as complete copy-trade exits.</div>
   </section>
   <div class="layout">
     <div class="column">
@@ -933,19 +931,15 @@ async function loadForwardTest() {
     if (!response.ok) throw new Error("HTTP " + response.status);
     const d = await response.json(), m = d.metrics || {}, rows = Array.isArray(d.signals) ? d.signals : [];
     $("forwardUpdated").textContent = d.generatedAt ? "Updated " + new Date(d.generatedAt).toLocaleString() : "Not run yet";
-    $("ftResolved").textContent = m.resolved ?? 0;
-    $("ftWinRate").textContent = m.winRate == null ? "Not enough data" : Number(m.winRate).toFixed(1) + "%";
-    $("ftPnl").textContent = m.paperPnl == null ? "—" : cash(m.paperPnl);
-    $("ftPnl").className = "metric-value " + (Number(m.paperPnl) < 0 ? "negative" : "positive");
+    $("ftResolved").textContent = (m.signals ?? rows.length) + " total · " + (m.resolved ?? 0) + " settled";
+    $("ftWinRate").textContent = m.resolved ? (Number(m.wins || 0) + " wins / " + Number(m.losses || 0) + " losses · " + Number(m.winRate).toFixed(1) + "%") : "Not enough settled results";
     $("ftPending").textContent = m.pending ?? 0;
-    $("ftWorst").textContent = m.worstConsecutiveLosses ?? 0;
     $("ftPriced").textContent = m.entryPriced ?? 0;
-    $("ftUnrealized").textContent = m.unrealizedPaperPnl == null ? "—" : cash(m.unrealizedPaperPnl);
-    $("ftUnrealized").className = "metric-value " + (Number(m.unrealizedPaperPnl) < 0 ? "negative" : "positive");
+    $("ftUnrealized").textContent = m.notChecked ?? 0;
     $("ftSells").textContent = m.sellObservations ?? 0;
     $("ftStatus").textContent = "Observed signals: " + (m.signals ?? rows.length) + ". Still open: " + (m.openMarkets ?? "diagnostics pending") + "; closed but no terminal price: " + (m.closedAwaitingPrice ?? "diagnostics pending") + "; closed with terminal price awaiting settlement: " + (m.terminalAwaitingSettlement ?? 0) + ". Results by category: " + Object.entries(m.byCategory || {}).map(([k,v]) => k + " " + v.resolved + " resolved / " + cash(v.paperPnl)).join(" · ");
     const visible = rows.slice(0,50);
-    $("ftSignals").innerHTML = visible.length ? visible.map(s => '<tr><td>' + esc(dateText(s.firstSeenAt)) + '</td><td>' + esc(s.title || "Unknown market") + '<br><small class="subtitle">' + esc(s.category || "other") + '</small></td><td>' + esc(s.side || "—") + '</td><td>' + (s.entryPrice == null ? "N/A" : (Number(s.entryPrice)*100).toFixed(1) + "¢") + '</td><td>' + (s.currentPrice == null ? "N/A" : (Number(s.currentPrice)*100).toFixed(1) + "¢") + '</td><td>' + esc(s.consensusCount ?? "—") + '</td><td>' + esc(s.status === "PENDING" && s.resolutionCheckReason === "market_not_closed_or_resolved" ? "OPEN — NOT SETTLED" : s.status === "PENDING" && s.resolutionCheckReason === "closed_but_price_not_terminal" ? "CLOSED — CHECKING RESULT" : s.status || "—") + (s.settlement ? " · " + esc(s.settlement) : "") + '</td><td class="' + (Number(s.unrealizedPaperPnl)<0 ? "negative" : "positive") + '">' + (s.unrealizedPaperPnl == null ? "—" : cash(s.unrealizedPaperPnl)) + '</td><td class="' + (Number(s.paperPnl)<0 ? "negative" : "positive") + '">' + (s.paperPnl == null ? "—" : cash(s.paperPnl)) + '</td></tr>').join("") : '<tr><td colspan="9" class="empty">No signals recorded yet. The first scheduled run will start the forward test.</td></tr>';
+    $("ftSignals").innerHTML = visible.length ? visible.map(s => '<tr><td>' + esc(dateText(s.firstSeenAt)) + '</td><td>' + esc(s.title || "Unknown market") + '<br><small class="subtitle">' + esc(s.category || "other") + '</small></td><td>' + esc(s.side || "—") + '</td><td>' + (s.entryPrice == null ? "N/A" : (Number(s.entryPrice)*100).toFixed(1) + "¢") + '</td><td>' + (s.currentPrice == null ? "N/A" : (Number(s.currentPrice)*100).toFixed(1) + "¢") + '</td><td>' + esc(s.consensusCount ?? "—") + '</td><td>' + (s.consensusEntryValue == null ? "N/A" : cash(s.consensusEntryValue)) + '</td><td>' + (s.consensusCurrentValue == null ? "N/A" : cash(s.consensusCurrentValue)) + '</td><td>' + esc(s.status === "PENDING" && s.resolutionCheckReason === "market_not_closed_or_resolved" ? "OPEN — NOT SETTLED" : s.status === "PENDING" && s.resolutionCheckReason === "closed_but_price_not_terminal" ? "CLOSED — CHECKING RESULT" : s.status || "—") + (s.settlement ? " · " + esc(s.settlement) : "") + '</td></tr>').join("") : '<tr><td colspan="9" class="empty">No signals recorded yet. The first scheduled run will start the forward test.</td></tr>';
   } catch (e) {
     $("forwardUpdated").textContent = "Unavailable";
     $("ftStatus").textContent = "Could not load forward-test.json: " + e.message + ". Check the Forward-test GitHub Actions workflow.";
