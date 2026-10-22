@@ -949,8 +949,7 @@ async function getSettlementStats(wallet, period, nowMs, limit = 250) {
   const conditionChunks = [];
   for (let i = 0; i < conditions.length; i += 40) conditionChunks.push(conditions.slice(i, i + 40));
   const marketPages = await mapLimit(conditionChunks, CONCURRENCY, async ids => {
-    const q = new URLSearchParams();
-    ids.forEach(id => q.append("condition_ids", id));
+    const q = new URLSearchParams({condition_ids: ids.join(",")});
     try { return asArray(await getJson(`${GAMMA_API}/markets?${q.toString()}`)); }
     catch (error) { console.warn("Settlement market metadata lookup failed:", error.message); return []; }
   });
@@ -959,18 +958,29 @@ async function getSettlementStats(wallet, period, nowMs, limit = 250) {
     const condition = String(market.conditionId ?? market.condition_id ?? "").toLowerCase();
     if (condition) markets.set(condition, market);
   }
-  let settlementWins = 0, settlementLosses = 0, earlyExitMarkets = 0, classified = 0;
+  let settlementWins = 0, settlementLosses = 0, earlyExitMarkets = 0, classified = 0, earlyExitPositions = 0;
   const earlyKeys = new Set();
   for (const position of positions) {
     const condition = String(position.condition_id ?? position.conditionId ?? "").toLowerCase();
     const market = markets.get(condition);
-    if (!market || market.closed !== true) continue;
+    const lastEventAt = timeMs(position.last_event_at ?? position.lastEventAt ?? position.timestamp ?? position.updated_at ?? position.updatedAt);
+    if (!market || lastEventAt === null) continue;
+    // /positions?status=CLOSED means the trader's position is closed, not
+    // necessarily that the market settled. If Gamma still reports the market
+    // open, count this as an early exit rather than excluding it and making
+    // every trader's record incomplete.
+    if (market.closed !== true) {
+      classified++;
+      earlyExitPositions++;
+      const rawIndex = position.outcome_index ?? position.outcomeIndex ?? position.outcome;
+      earlyKeys.add(condition + "|" + String(rawIndex ?? "unknown"));
+      continue;
+    }
     const outcomes = parseArrayField(market.outcomes);
     const prices = parseArrayField(market.outcomePrices).map(num);
     const winnerIndex = prices.findIndex(price => price !== null && price >= 0.999);
     const resolvedAt = timeMs(market.closedTime ?? market.closed_time ?? market.resolvedAt ?? market.resolved_at);
-    const lastEventAt = timeMs(position.last_event_at ?? position.lastEventAt ?? position.timestamp);
-    if (winnerIndex < 0 || resolvedAt === null || lastEventAt === null) continue;
+    if (winnerIndex < 0 || resolvedAt === null) continue;
     const rawIndex = position.outcome_index ?? position.outcomeIndex;
     let positionIndex = rawIndex === null || rawIndex === undefined ? -1 : Number(rawIndex);
     if (!Number.isInteger(positionIndex) || positionIndex < 0) {
@@ -982,16 +992,18 @@ async function getSettlementStats(wallet, period, nowMs, limit = 250) {
     if (lastEventAt < resolvedAt) {
       const key = condition + "|" + positionIndex;
       earlyKeys.add(key);
+      earlyExitPositions++;
       continue;
     }
     if (positionIndex === winnerIndex) settlementWins++;
     else settlementLosses++;
   }
-  const allPositionsClassified = classified === positions.length;
+  const allPositionsClassified = classified === positions.length && (earlyExitPositions + settlementWins + settlementLosses) === positions.length;
   return {
     settlementWins: allPositionsClassified ? settlementWins : null,
     settlementLosses: allPositionsClassified ? settlementLosses : null,
     earlyExitMarkets: earlyKeys.size,
+    earlyExitPositions,
     settlementRecordComplete: allPositionsClassified && pagination.has_more !== true,
     settlementPositionsChecked: positions.length
   };
@@ -1003,7 +1015,7 @@ async function attachSettlementStats(traders, period, nowMs) {
       return {...trader, ...stats};
     } catch (error) {
       console.warn("Settlement record unavailable for " + trader.wallet + ":", error.message);
-      return {...trader, settlementWins: null, settlementLosses: null, earlyExitMarkets: null, settlementRecordComplete: false, settlementPositionsChecked: 0};
+      return {...trader, settlementWins: null, settlementLosses: null, earlyExitMarkets: null, earlyExitPositions: null, settlementRecordComplete: false, settlementPositionsChecked: 0};
     }
   });
 }
