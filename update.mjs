@@ -911,6 +911,103 @@ function buildConsensus(holderGroups, candidates, records = {}) {
     .slice(0, CONSENSUS_LIMIT);
 }
 
+function parseArrayField(value) {
+  if (Array.isArray(value)) return value;
+  if (typeof value !== "string" || !value.trim()) return [];
+  try { const parsed = JSON.parse(value); return Array.isArray(parsed) ? parsed : []; }
+  catch { return []; }
+}
+function timeMs(value) {
+  if (value === null || value === undefined || value === "") return null;
+  const n = Number(value);
+  const ms = Number.isFinite(n) ? (n < 1e12 ? n * 1000 : n) : Date.parse(String(value));
+  return Number.isFinite(ms) && ms > 0 ? ms : null;
+}
+async function getSettlementStats(wallet, period, nowMs, limit = 250) {
+  const periodDays = String(period?.api || period || "").toUpperCase() === "MONTH" ? 30 : 7;
+  const cutoffMs = nowMs - periodDays * 24 * 60 * 60 * 1000;
+  const params = new URLSearchParams({
+    user: wallet, limit: String(limit), status: "CLOSED",
+    sort_by: "TIMESTAMP", sort_direction: "DESC", start: String(Math.floor(cutoffMs / 1000))
+  });
+  const response = await getJson(`${API}/v2/positions?${params}`);
+  const rows = asArray(response);
+  const pagination = response?.pagination ?? {};
+  const uniqueRows = new Map();
+  for (const row of rows) {
+    const token = String(row.token_id ?? row.tokenId ?? row.asset ?? "");
+    const condition = String(row.condition_id ?? row.conditionId ?? "");
+    const outcome = String(row.outcome_index ?? row.outcomeIndex ?? row.outcome ?? "");
+    const key = token || (condition ? condition + "|" + outcome : "");
+    if (key) uniqueRows.set(key, row);
+  }
+  const positions = [...uniqueRows.values()];
+  if (!positions.length) {
+    return {settlementWins: 0, settlementLosses: 0, earlyExitMarkets: 0, settlementRecordComplete: pagination.has_more !== true, settlementPositionsChecked: 0};
+  }
+  const conditions = [...new Set(positions.map(row => String(row.condition_id ?? row.conditionId ?? "").toLowerCase()).filter(Boolean))];
+  const conditionChunks = [];
+  for (let i = 0; i < conditions.length; i += 40) conditionChunks.push(conditions.slice(i, i + 40));
+  const marketPages = await mapLimit(conditionChunks, CONCURRENCY, async ids => {
+    const q = new URLSearchParams();
+    ids.forEach(id => q.append("condition_ids", id));
+    try { return asArray(await getJson(`${GAMMA_API}/markets?${q.toString()}`)); }
+    catch (error) { console.warn("Settlement market metadata lookup failed:", error.message); return []; }
+  });
+  const markets = new Map();
+  for (const page of marketPages) for (const market of page) {
+    const condition = String(market.conditionId ?? market.condition_id ?? "").toLowerCase();
+    if (condition) markets.set(condition, market);
+  }
+  let settlementWins = 0, settlementLosses = 0, earlyExitMarkets = 0, classified = 0;
+  const earlyKeys = new Set();
+  for (const position of positions) {
+    const condition = String(position.condition_id ?? position.conditionId ?? "").toLowerCase();
+    const market = markets.get(condition);
+    if (!market || market.closed !== true) continue;
+    const outcomes = parseArrayField(market.outcomes);
+    const prices = parseArrayField(market.outcomePrices).map(num);
+    const winnerIndex = prices.findIndex(price => price !== null && price >= 0.999);
+    const resolvedAt = timeMs(market.closedTime ?? market.closed_time ?? market.resolvedAt ?? market.resolved_at);
+    const lastEventAt = timeMs(position.last_event_at ?? position.lastEventAt ?? position.timestamp);
+    if (winnerIndex < 0 || resolvedAt === null || lastEventAt === null) continue;
+    const rawIndex = position.outcome_index ?? position.outcomeIndex;
+    let positionIndex = rawIndex === null || rawIndex === undefined ? -1 : Number(rawIndex);
+    if (!Number.isInteger(positionIndex) || positionIndex < 0) {
+      const outcome = String(position.outcome ?? "").trim().toLowerCase();
+      positionIndex = outcomes.findIndex(label => String(label).trim().toLowerCase() === outcome);
+    }
+    if (positionIndex < 0 || positionIndex >= outcomes.length) continue;
+    classified++;
+    if (lastEventAt < resolvedAt - 60_000) {
+      const key = condition + "|" + positionIndex;
+      earlyKeys.add(key);
+      continue;
+    }
+    if (positionIndex === winnerIndex) settlementWins++;
+    else settlementLosses++;
+  }
+  const allPositionsClassified = classified === positions.length;
+  return {
+    settlementWins: allPositionsClassified ? settlementWins : null,
+    settlementLosses: allPositionsClassified ? settlementLosses : null,
+    earlyExitMarkets: earlyKeys.size,
+    settlementRecordComplete: allPositionsClassified && pagination.has_more !== true,
+    settlementPositionsChecked: positions.length
+  };
+}
+async function attachSettlementStats(traders, period, nowMs) {
+  return await mapLimit(traders, 4, async trader => {
+    try {
+      const stats = await getSettlementStats(trader.wallet, period, nowMs, 250);
+      return {...trader, ...stats};
+    } catch (error) {
+      console.warn("Settlement record unavailable for " + trader.wallet + ":", error.message);
+      return {...trader, settlementWins: null, settlementLosses: null, earlyExitMarkets: null, settlementRecordComplete: false, settlementPositionsChecked: 0};
+    }
+  });
+}
+
 function makeOutput(period, ranked, sportsRanked, activePositions, tradeRows, nowMs, consensusCandidates, records, leaderRecords, consensusGroups) {
   // Preserve the exact period-scoped record used to rank this list.
   // Full-history enrichment must never overwrite weekly/monthly wins, losses,
@@ -1060,6 +1157,9 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     leaderRecords,
     consensusGroups
   );
+  // Enrich only the visible Top 100 with verified settlement outcomes and a
+  // separate count of positions whose last event preceded market resolution.
+  output.leaders = await attachSettlementStats(output.leaders, period, nowMs);
 
   await writeJsonUnderLimit(`${period.key}.json`, output);
 
