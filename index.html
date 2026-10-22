@@ -699,19 +699,19 @@ async function loadComboPositions() {
     if (!/^0x[a-f0-9]{40}$/i.test(wallet) || seenWallets.has(wallet)) return false;
     seenWallets.add(wallet);
     return true;
-  }).slice(0, 250);
+  }).slice(0, 50);
   traderAliases.clear();
   candidates.forEach((t, i) => traderAliases.set(walletOf(t).toLowerCase(), "Trader " + (i + 1)));
   comboRows = []; comboLoadFinished = false;
   if (!candidates.length) { $("comboList").innerHTML = '<div class="empty">No valid trader wallets were found in the loaded leaderboard.</div>'; return; }
-  $("comboList").innerHTML = '<div class="loading">Checking combo positions for ' + candidates.length + ' traders…</div>';
+  $("comboList").innerHTML = '<div class="loading">Checking combo positions for ' + candidates.length + ' traders (fast scan)…</div>';
   let next = 0, completed = 0;
   const worker = async () => {
     while (next < candidates.length) {
       const trader = candidates[next++], wallet = walletOf(trader);
       try {
         const endpoint = "https://data-api.polymarket.com/v2/positions/combos?user=" + encodeURIComponent(wallet);
-        let response = await fetch(endpoint + "&status=OPEN,PARTIAL,RESOLVED_WIN,RESOLVED_LOSS,RESOLVED_PARTIAL&sort_by=UPDATED&sort_direction=DESC&limit=250", {cache:"no-store", signal:AbortSignal.timeout(12000)});
+        let response = await fetch(endpoint + "&status=OPEN,PARTIAL,RESOLVED_WIN,RESOLVED_LOSS,RESOLVED_PARTIAL&sort_by=UPDATED&sort_direction=DESC&limit=250", {cache:"no-store", signal:AbortSignal.timeout(6000)});
         let json = response.ok ? await response.json() : null;
         let rows = Array.isArray(json?.data) ? json.data : Array.isArray(json) ? json : [];
         // Defensive fallback: some API deployments reject combined status filters.
@@ -779,7 +779,7 @@ async function loadComboPositions() {
       }
     }
   };
-  await Promise.all(Array.from({length:6}, () => worker()));
+  await Promise.all(Array.from({length:8}, () => worker()));
   comboLoadFinished = true; renderCombos(); renderLeaders();
 }
 
