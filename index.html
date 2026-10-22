@@ -660,7 +660,7 @@ async function loadComboPositions() {
     while (next < candidates.length) {
       const trader = candidates[next++], wallet = walletOf(trader);
       try {
-        const response = await fetch("https://data-api.polymarket.com/v2/positions/combos?user=" + encodeURIComponent(wallet) + "&status=OPEN,REDEEMABLE,PARTIAL,RESOLVED_WIN,RESOLVED_LOSS,RESOLVED_PARTIAL&sort_by=UPDATED&sort_direction=DESC&limit=1000", {cache:"no-store"});
+        const response = await fetch("https://data-api.polymarket.com/v2/positions/combos?user=" + encodeURIComponent(wallet) + "&status=OPEN,PARTIAL,RESOLVED_WIN,RESOLVED_LOSS,RESOLVED_PARTIAL&sort_by=UPDATED&sort_direction=DESC&limit=1000", {cache:"no-store"});
         if (!response.ok) throw new Error("HTTP " + response.status);
         const json = await response.json(), rows = Array.isArray(json?.data) ? json.data : [];
         const terminal = new Set(["RESOLVED_WIN","RESOLVED_LOSS","RESOLVED_PARTIAL"]);
@@ -891,7 +891,7 @@ async function loadTraderCombos(wallet) {
     const summaryBox = $("profileComboSummary");
     if (summaryBox) {
       const net = knownFinancials.reduce((sum,v)=>sum+v,0);
-      summaryBox.innerHTML = '<strong>' + weeklyWins + ' won · ' + weeklyLosses + ' lost · ' + weeklyPartial + ' partial</strong><br>' +
+      summaryBox.innerHTML = '<strong>Last 7 days: ' + weeklyWins + ' won · ' + weeklyLosses + ' lost · ' + weeklyPartial + ' partial</strong><br>' +
         '<span class="' + (net < 0 ? 'negative' : 'positive') + '">Verified net P&amp;L: ' + (knownFinancials.length ? (net > 0 ? '+' : '') + cash(net) : 'N/A') + '</span><br>' +
         '<small class="subtitle">Financial data available for ' + knownFinancials.length + ' of ' + resolvedThisWeek.length + ' resolved combos. Missing entry or payout is not treated as $0.</small>';
     }
@@ -900,9 +900,15 @@ async function loadTraderCombos(wallet) {
     const terminal = new Set(["RESOLVED_WIN","RESOLVED_LOSS","RESOLVED_PARTIAL"]);
     const closed = positions.filter(c => terminal.has(String(c.status || "").toUpperCase())).map(c => {
       const a = byId.get(String(c.combo_position_id || ""));
-      return {...c, _activityEntryCost: (num(c.entry_cost_usdc ?? c.gross_entry_cost_usdc) ?? (a?.hasEntry ? a.entry : null)), _activityPayout: (num(c.realized_payout_usdc) ?? (a?.hasPayout ? a.payout : null)), legs: c.legs?.length ? c.legs : (a?.legs || [])};
+      return {...c, _activityEntryCost: ((num(c.gross_entry_cost_usdc ?? c.entry_cost_usdc) > 0 ? num(c.gross_entry_cost_usdc ?? c.entry_cost_usdc) : null) ?? (a?.hasEntry && a.entry > 0 ? a.entry : null)), _activityPayout: (num(c.realized_payout_usdc) ?? (a?.hasPayout ? a.payout : null)), _activityResolvedAt: a?.resolvedAt ?? null, legs: c.legs?.length ? c.legs : (a?.legs || [])};
     }).sort((a,b) => Date.parse(b.resolved_at || b.updated_at || 0) - Date.parse(a.resolved_at || a.updated_at || 0));
     closedBox.innerHTML = closed.length ? closed.map(c => renderProfileCombo(c, true)).join("") : '<div class="empty">No resolved combo positions returned.</div>';
+    if (summaryBox) {
+      const allWins = closed.filter(c => String(c.status || "").toUpperCase() === "RESOLVED_WIN").length;
+      const allLosses = closed.filter(c => String(c.status || "").toUpperCase() === "RESOLVED_LOSS").length;
+      const allPartial = closed.filter(c => String(c.status || "").toUpperCase() === "RESOLVED_PARTIAL").length;
+      summaryBox.innerHTML += '<br><strong>All loaded resolved combos: ' + allWins + ' won · ' + allLosses + ' lost · ' + allPartial + ' partial</strong>';
+    }
   } catch (error) {
     activeBox.innerHTML = '<div class="error">Could not load combo positions: ' + esc(error.message) + '</div>';
     closedBox.innerHTML = '<div class="error">Could not load resolved combos: ' + esc(error.message) + '</div>';
