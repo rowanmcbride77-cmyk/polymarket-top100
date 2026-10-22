@@ -413,7 +413,8 @@ function consensus() {
 async function loadConsensusData() {
   const pool = $("consensusPool").value;
   $("consensusBody").innerHTML = `<tr><td colspan="6" class="loading">Loading ${esc(pool)} consensus pool…</td></tr>`;
-  $("consensusPeriod").textContent = (pool === "week" ? "Weekly pool" : "Rolling 30-day pool") + " · " + $("recency").value + "h";
+  const horizon = Number($("recency").value || 168);
+  $("consensusPeriod").textContent = (pool === "week" ? "Weekly traders" : "30-day traders") + " · " + (horizon === 24 ? "24h" : horizon === 72 ? "3 days" : "7 days");
   const filename = CONSENSUS_FILES[pool];
   try {
     let result = null;
