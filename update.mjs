@@ -926,13 +926,36 @@ function timeMs(value) {
 async function getSettlementStats(wallet, period, nowMs, limit = 250) {
   const periodDays = String(period?.api || period || "").toUpperCase() === "MONTH" ? 30 : 7;
   const cutoffMs = nowMs - periodDays * 24 * 60 * 60 * 1000;
-  const params = new URLSearchParams({
+  const baseParams = {
     user: wallet, limit: String(limit), status: "CLOSED",
     sort_by: "TIMESTAMP", sort_direction: "DESC", start: String(Math.floor(cutoffMs / 1000))
-  });
-  const response = await getJson(`${API}/v2/positions?${params}`);
-  const rows = asArray(response);
-  const pagination = response?.pagination ?? {};
+  };
+  // The API's default page is capped at 250 positions. Follow its opaque cursor
+  // so busy traders aren't automatically marked N/A just because they exceed one page.
+  const rows = [];
+  let pagination = {};
+  let cursor = null;
+  let pagesFetched = 0;
+  const maxPages = 5;
+  do {
+    const params = new URLSearchParams(baseParams);
+    if (cursor) params.set("cursor", cursor);
+    const response = await getJson(`${API}/v2/positions?${params}`);
+    rows.push(...asArray(response));
+    pagination = response?.pagination ?? {};
+    pagesFetched++;
+    const nextCursor = pagination.next_cursor ?? pagination.nextCursor ?? pagination.cursor ?? null;
+    if (pagination.has_more !== true) {
+      cursor = null;
+      break;
+    }
+    if (!nextCursor || pagesFetched >= maxPages) {
+      cursor = null;
+      pagination = {...pagination, has_more: true};
+      break;
+    }
+    cursor = String(nextCursor);
+  } while (cursor);
   const uniqueRows = new Map();
   for (const row of rows) {
     const token = String(row.token_id ?? row.tokenId ?? row.asset ?? "");
