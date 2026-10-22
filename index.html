@@ -155,11 +155,11 @@ dialog::backdrop{background:#000b}
         <div id="leaderModeNote" style="display:none"></div>
         <div class="table-wrap">
           <table>
-            <thead><tr id="leaderHeader"><th>#</th><th>Trader</th><th>Resolved Wins–Losses</th><th>Resolved Win Rate</th><th>Period P&amp;L</th><th>Volume</th></tr></thead>
+            <thead><tr id="leaderHeader"><th>#</th><th>Trader</th><th>Wins–Losses</th><th>Win Rate</th><th>Period P&amp;L</th><th>Volume</th></tr></thead>
             <tbody id="leadersBody"><tr><td colspan="6" class="loading">Loading traders…</td></tr></tbody>
           </table>
         </div>
-        <div class="source-note">Resolved win–loss counts include only positions whose last event was at or after market resolution. Positions closed before resolution are tracked separately as early exits. If the history or resolution data is incomplete, the record shows N/A rather than guessing.</div>
+        <div class="source-note">Resolved win–loss counts include only positions whose last event was at or after market resolution. Positions closed before resolution are tracked separately as early exits. If settlement verification is unavailable, the displayed record falls back to the historical closed-position profitability estimate; it is not guaranteed to equal true settlement wins.</div>
         <button class="link-button" id="leadersMore" onclick="toggleLeaders()">View all traders →</button>
       </section>
 
@@ -308,13 +308,15 @@ function walletOf(trader) {
 }
 
 function recordOf(trader) {
-  // Never present profitable early closes as prediction wins.
-  if (trader?.settlementRecordComplete !== true) return null;
-  const wins = num(trader?.settlementWins);
-  const losses = num(trader?.settlementLosses);
+  // Prefer verified market-settlement results when available; otherwise
+  // restore the existing historical closed-position profitability record.
+  const settled = trader?.settlementRecordComplete === true;
+  const wins = num(settled ? trader?.settlementWins : trader?.wins);
+  const losses = num(settled ? trader?.settlementLosses : trader?.losses);
   if (wins === null || losses === null || wins < 0 || losses < 0) return null;
   const total = wins + losses;
-  return {wins, losses, total, rate:total ? wins / total * 100 : null};
+  const suppliedRate = num(settled ? null : trader?.winRate);
+  return {wins, losses, total, rate:suppliedRate !== null ? suppliedRate : (total ? wins / total * 100 : null), verified:settled};
 }
 
 function recordText(trader) {
@@ -590,7 +592,7 @@ function renderLeaders() {
     ? "<th>#</th><th>Trader</th><th>Won</th><th>Lost</th><th>Partial</th><th>Weekly combo P&amp;L</th><th>P&amp;L coverage</th>"
     : efficiencyMode
       ? "<th>#</th><th>Trader</th><th>Upcoming combo</th><th>Entry</th><th>Est. payout</th><th>Est. profit</th><th>Est. return</th>"
-      : "<th>#</th><th>Trader</th><th>Resolved wins–losses</th><th>Resolved win rate</th><th>Period P&amp;L</th><th>Volume</th>";
+      : "<th>#</th><th>Trader</th><th>Wins–losses</th><th>Win rate</th><th>Period P&amp;L</th><th>Volume</th>";
   $("leadersBody").innerHTML = visible.length ? visible.map((trader,index) => {
     if (comboMode) return `<tr><td class="rank">${index+1}</td><td><div class="trader-name">${avatar(trader.trader)}<span class="name-text">${profileButton(trader.trader, nameOf(trader.trader))}</span></div></td><td class="record">${trader.wins}</td><td class="record">${trader.losses}</td><td class="record">${trader.partial}</td><td class="${trader.pnlKnown && trader.profit < 0 ? "negative" : "positive"}">${trader.pnlKnown ? (trader.pnlMissing ? "Partial: " : "") + (trader.profit > 0 ? "+" : "") + cash(trader.profit) : "N/A"}</td><td class="record">${trader.pnlKnown}/${trader.combos} combos</td></tr>`;
     if (efficiencyMode) return `<tr><td class="rank">${index+1}</td><td><div class="trader-name">${avatar(trader.trader)}<span class="name-text">${profileButton(trader.trader, nameOf(trader.trader))}</span></div></td><td class="combo-title" title="${esc(trader.title || "Combo details unavailable")}">${esc(trader.title || "Combo details unavailable")}<br><small class="subtitle">${esc(trader.timingLabel || "Start time unverified")}</small></td><td class="money">${cash(trader.entry)}</td><td class="money">${cash(trader.payout)}</td><td class="positive">~${cash(trader.profit)}</td><td class="record">~${trader.multiple.toFixed(1)}×</td></tr>`;
@@ -699,7 +701,7 @@ async function loadComboPositions() {
     if (!/^0x[a-f0-9]{40}$/i.test(wallet) || seenWallets.has(wallet)) return false;
     seenWallets.add(wallet);
     return true;
-  }).slice(0, 50);
+  }).slice(0, 250);
   traderAliases.clear();
   candidates.forEach((t, i) => traderAliases.set(walletOf(t).toLowerCase(), "Trader " + (i + 1)));
   comboRows = []; comboLoadFinished = false;
@@ -713,7 +715,7 @@ async function loadComboPositions() {
         const endpoint = "https://data-api.polymarket.com/v2/positions/combos?user=" + encodeURIComponent(wallet);
         let response = await fetch(endpoint + "&status=OPEN,PARTIAL,RESOLVED_WIN,RESOLVED_LOSS,RESOLVED_PARTIAL&sort_by=UPDATED&sort_direction=DESC&limit=250", {cache:"no-store", signal:AbortSignal.timeout(6000)});
         let json = response.ok ? await response.json() : null;
-        let rows = Array.isArray(json?.data) ? json.data : Array.isArray(json) ? json : [];
+        let rows = Array.isArray(json?.data) ? json.data : Array.isArray(json?.combos) ? json.combos : Array.isArray(json) ? json : [];
         // Defensive fallback: some API deployments reject combined status filters.
         // Query held and resolved cohorts separately instead of silently losing all combos.
         if (!response.ok) {
@@ -726,7 +728,7 @@ async function loadComboPositions() {
               const fallbackResponse = await fetch(fallbackUrl, {cache:"no-store", signal:AbortSignal.timeout(12000)});
               if (!fallbackResponse.ok) continue;
               const fallbackJson = await fallbackResponse.json();
-              const fallbackRows = Array.isArray(fallbackJson?.data) ? fallbackJson.data : Array.isArray(fallbackJson) ? fallbackJson : [];
+              const fallbackRows = Array.isArray(fallbackJson?.data) ? fallbackJson.data : Array.isArray(fallbackJson?.combos) ? fallbackJson.combos : Array.isArray(fallbackJson) ? fallbackJson : [];
               rows.push(...fallbackRows);
             } catch (fallbackError) { console.warn("Combo fallback lookup failed for " + wallet + ": " + fallbackError.message); }
           }
@@ -895,7 +897,7 @@ function openProfile(wallet) {
       <div class="profile-stat"><small>Leaderboard rank</small><strong>#${esc(trader.rank ?? trader.displayRank ?? "—")}</strong></div>
       <div class="profile-stat"><small>Resolved wins–losses</small><strong>${record ? recordText(trader) : "N/A"}</strong></div>
       <div class="profile-stat"><small>Resolved win rate</small><strong>${record?.rate == null ? "N/A" : record.rate.toFixed(1) + "%"}</strong></div>
-      <div class="profile-stat"><small>Early exits observed</small><strong id="sellMarketCount">${num(trader.earlyExitMarkets) === null ? "Checking…" : String(trader.earlyExitMarkets) + (trader.settlementRecordComplete === true ? "" : "+")}</strong><small class="subtitle">+ means incomplete sample; SELLs may be partial</small></div>
+      <div class="profile-stat"><small>Early exits observed</small><strong id="sellMarketCount">${num(trader.earlyExitMarkets) === null ? "Checking…" : String(trader.earlyExitMarkets) + (trader.settlementRecordComplete === true ? "" : "+")}</strong><small class="subtitle">Settlement-verified when available; otherwise historical closed-position P&amp;L estimate</small></div>
       <div class="profile-stat"><small>${period === "week" ? "Weekly" : "Monthly"} market P&amp;L</small><strong class="${pnl !== null && pnl < 0 ? "negative" : "positive"}">${cash(pnl)}</strong></div>
       <div class="profile-stat"><small>Volume</small><strong>${cash(volume)}</strong></div>
     </div>
