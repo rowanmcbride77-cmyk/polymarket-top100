@@ -185,8 +185,8 @@ dialog::backdrop{background:#000b}
         <div class="filters">
           <label>Trader pool
             <select id="consensusPool" onchange="loadConsensusData()">
-              <option value="week">Weekly traders</option>
-              <option value="month" selected>30-day traders</option>
+              <option value="week" selected>Weekly traders</option>
+              <option value="month">30-day traders</option>
             </select>
           </label>
           <label>Min. traders
@@ -200,8 +200,9 @@ dialog::backdrop{background:#000b}
           </label>
           <label>Resolves within
             <select id="recency" onchange="renderConsensus()">
-              <option value="24" selected>24 hours</option>
-              <option value="72">72 hours</option>
+              <option value="24">24 hours</option>
+              <option value="72">3 days</option>
+              <option value="168" selected>7 days</option>
             </select>
           </label>
         </div>
@@ -213,20 +214,6 @@ dialog::backdrop{background:#000b}
         </div>
         <button class="link-button" id="consensusMore" onclick="toggleConsensus()">View all consensus markets →</button>
       </section>
-  <section class="panel" id="forwardTestPanel" style="margin-bottom:18px">
-    <div class="panel-heading"><div class="heading-left"><span class="heading-icon">🧪</span><h2>Forward Signal Tracker</h2></div><span class="pill" id="forwardUpdated">Loading test…</span></div>
-    <div class="subtitle" style="margin:0 0 12px">Recent observed buys from consensus traders. Values assume the shares are still held.</div>
-    <div class="overview-grid">
-      <div><div class="metric-label">Signals tracked</div><div class="metric-value" id="ftResolved">—</div></div>
-      <div><div class="metric-label">Verified settled wins</div><div class="metric-value" id="ftWinRate">Not enough data</div></div>
-      <div><div class="metric-label">Open signals</div><div class="metric-value" id="ftPending">—</div></div>
-      <div><div class="metric-label">Signals first seen in last 24h</div><div class="metric-value" id="ftPriced">—</div></div>
-      <div><div class="metric-label">Signals not checked</div><div class="metric-value" id="ftUnrealized">—</div></div>
-      <div><div class="metric-label">Observed SELL prints</div><div class="metric-value" id="ftSells">—</div></div>
-    </div>
-    <div class="source-note" id="ftStatus">Only new signals with at least two qualified traders showing recent position activity are added. Historical profitable-close rates are not verified prediction win rates.</div>
-    <div class="table-wrap"><table><thead><tr><th>Trader</th><th>Market / outcome</th><th>Buy time</th><th>Buy price</th><th>Amount bought</th><th>Price now</th><th>Value now if held</th><th>P&amp;L if held*</th></tr></thead><tbody id="ftSignals"><tr><td colspan="8" class="empty">Waiting for the first tracker run.</td></tr></tbody></table></div>
-</section>
     </div>
 
     <div class="column right-column">
@@ -264,6 +251,7 @@ let allMarkets = false;
 let allCombos = false;
 let comboRows = [];
 let comboLoadFinished = false;
+let forwardTradesByMarket = new Map();
 const expandedCombos = new Set();
 const comboActivityCache = new Map();
 const traderAliases = new Map();
@@ -552,7 +540,7 @@ function renderLeaders() {
     ? "<th>#</th><th>Trader</th><th>Won</th><th>Lost</th><th>Partial</th><th>Weekly combo P&amp;L</th><th>P&amp;L coverage</th>"
     : efficiencyMode
       ? "<th>#</th><th>Trader</th><th>Combo</th><th>Entry</th><th>Payout</th><th>Net profit</th><th>Return</th>"
-      : "<th>#</th><th>Trader</th><th>Profitable–unprofitable closes</th><th>Close rate</th><th>Period P&amp;L</th><th>Volume</th>";
+      : "<th>#</th><th>Trader</th><th>Profitable / losing closes</th><th>Close rate</th><th>Period P&amp;L</th><th>Volume</th>";
   $("leadersBody").innerHTML = visible.length ? visible.map((trader,index) => {
     if (comboMode) return `<tr><td class="rank">${index+1}</td><td><div class="trader-name">${avatar(trader.trader)}<span class="name-text">${profileButton(trader.trader, nameOf(trader.trader))}</span></div></td><td class="record">${trader.wins}</td><td class="record">${trader.losses}</td><td class="record">${trader.partial}</td><td class="${trader.pnlKnown && trader.profit < 0 ? "negative" : "positive"}">${trader.pnlKnown ? (trader.pnlMissing ? "Partial: " : "") + (trader.profit > 0 ? "+" : "") + cash(trader.profit) : "N/A"}</td><td class="record">${trader.pnlKnown}/${trader.combos} combos</td></tr>`;
     if (efficiencyMode) return `<tr><td class="rank">${index+1}</td><td><div class="trader-name">${avatar(trader.trader)}<span class="name-text">${profileButton(trader.trader, nameOf(trader.trader))}</span></div></td><td class="combo-title" title="${esc(trader.title || "Combo details unavailable")}">${esc(trader.title || "Combo details unavailable")}</td><td class="money">${cash(trader.entry)}</td><td class="money">${cash(trader.payout)}</td><td class="positive">+${cash(trader.profit)}</td><td class="record">${trader.multiple.toFixed(1)}×</td></tr>`;
@@ -586,7 +574,7 @@ function renderSportsLeaders() {
 
 function renderConsensus() {
   const minCount = Number($("minTraders").value || 2);
-  const hours = Number($("recency").value || 72);
+  const hours = Number($("recency").value || 168);
   const now = Date.now() / 1000;
   const cutoff = now + hours * 3600;
 
@@ -621,37 +609,25 @@ function renderConsensus() {
     </tr>`;
 
     const detail = expanded ? `<tr class="expand-row"><td colspan="6">
-      <div class="expand-title">Traders following this side (${count})</div>
+      <div class="expand-title">Shared traders · ${count}</div>
       ${members.length ? `<div class="member-list">${members.map(member => {
         const memberName = member.name || member.username || member.userName || "Trader";
-        const memberWallet = walletOf(member);
-        if (memberWallet) consensusMemberCache.set(memberWallet, member);
-        const memberAmount = num(member.currentValue ?? member.amount ?? member.value);
-        const memberAvgPrice = num(member.avgPrice ?? member.avg_price);
-        const memberShares = num(member.shares ?? member.size);
-        const memberEntryValue = memberAvgPrice !== null && memberShares !== null
-          ? memberAvgPrice * memberShares
-          : null;
-        const memberCurrentPrice = num(member.currentPrice ?? member.curPrice ?? member.outcomePrice);
-        const memberPnl = memberAvgPrice !== null && memberCurrentPrice !== null && memberShares !== null
-          ? (memberCurrentPrice - memberAvgPrice) * memberShares
-          : null;
-        const memberReturnPct = memberEntryValue !== null && memberEntryValue > 0 && memberPnl !== null
-          ? memberPnl / memberEntryValue * 100
-          : null;
-        const memberStillHolding = member.isStillHolding === true || String(member.positionStatus || "").toUpperCase() === "OPEN";
-        const memberTime = member.buyTime ?? member.buyAt ?? member.timestamp ?? member.lastEventAt ?? member.time;
-        const memberRecord = recordOf(member);
-        const recordLabel = recordOf(member) ? `Profitable–unprofitable closes (P&L proxy): ${recordText(member)} · ${num(member.winRate) === null ? "" : num(member.winRate).toFixed(1) + "% profitable-close rate"}` : "Profitable-close sample unavailable";
-        const periodLabel = period === "week" ? "Week" : "Month";
-        const pnlLabel = memberPnl === null ? `${periodLabel} P&L N/A` : `${periodLabel} P&L ${cash(memberPnl)}`;
-        return `<div class="member">
-          <div>${profileButton(member, memberName)}<small>${memberStillHolding ? "OPEN · currently in public open-position snapshot" : "Position status unavailable"} · ${esc(relative(memberTime))}</small></div>
-          <div><strong>${memberAvgPrice === null ? "N/A" : (memberAvgPrice * 100).toFixed(1) + "¢"}</strong><small>Avg. entry price</small><small>${memberEntryValue === null ? "Entry value N/A" : "Bought for " + cash(memberEntryValue)}</small></div>
-          <div><strong>${memberCurrentPrice === null ? "N/A" : (memberCurrentPrice * 100).toFixed(1) + "¢"}</strong><small>Current price</small><small>${memberAmount === null ? "Holding value N/A" : "Now worth " + cash(memberAmount)}</small><small class="${memberPnl === null ? "" : memberPnl >= 0 ? "positive" : "negative"}">${memberPnl === null ? "P&L N/A" : (memberPnl >= 0 ? "+" : "") + cash(memberPnl) + (memberReturnPct === null ? "" : " · " + (memberReturnPct >= 0 ? "+" : "") + memberReturnPct.toFixed(1) + "%")}</small></div>
-          <div class="member-time"><strong>${esc(dateText(memberTime))}</strong><small>${recordLabel} · ${pnlLabel}</small></div>
+        const wallet = walletOf(member);
+        if (wallet) consensusMemberCache.set(wallet, member);
+        const key = String(market.conditionId || "").toLowerCase() + "|" + String(side).toLowerCase();
+        const buys = forwardTradesByMarket.get(key) || [];
+        const buy = buys.find(t => String(t.wallet || "").toLowerCase() === wallet);
+        const memberEntry = num(member.amount), memberValue = num(member.currentValue);
+        const memberTime = buy?.timestamp ?? member.buyTime ?? null;
+        const buyPrice = buy?._price, currentPrice = buy?._currentPrice, shares = buy?._shares, bought = buy?._cost;
+        const currentValue = currentPrice !== null && currentPrice !== undefined && shares !== null && shares !== undefined ? currentPrice * shares : null;
+        const pnl = bought !== null && bought !== undefined && currentValue !== null ? currentValue-bought : null;
+        return `<div class="member member-compact">
+          <div class="member-identity"><strong>${profileButton(member, memberName)}</strong><small>${buy ? "Recent BUY observed" : "No recent BUY print matched"} · ${esc(dateText(memberTime))}</small></div>
+          <div><strong>${buyPrice === null || buyPrice === undefined ? "—" : (buyPrice*100).toFixed(1)+"¢"}</strong><small>${buy ? "Observed buy price" : "Buy price unavailable"}</small><small>${bought === null || bought === undefined ? (memberEntry !== null ? "Position amount "+cash(memberEntry) : "Entry amount unavailable") : "Observed buy "+cash(bought)+(shares !== null ? " · "+shares.toFixed(1)+" shares" : "")}</small></div>
+          <div><strong>${currentPrice === null || currentPrice === undefined ? "—" : (currentPrice*100).toFixed(1)+"¢"}</strong><small>Market price now</small><small>${currentValue === null ? (memberValue !== null ? "Position value "+cash(memberValue) : "Current value unavailable") : "Buy shares now "+cash(currentValue)}</small><small class="${pnl === null ? "" : pnl >= 0 ? "positive" : "negative"}">${pnl === null ? "P&L not verified" : (pnl >= 0 ? "+" : "")+cash(pnl)+" if those shares remain held"}</small></div>
         </div>`;
-      }).join("")}</div>` : `<div class="empty">Individual trader details are not included in this data file yet.</div>`}
+      }).join("")}</div>` : `<div class="empty">No trader-level position details were supplied for this market.</div>`}
     </td></tr>` : "";
 
     return row + detail;
@@ -687,8 +663,10 @@ async function loadComboPositions() {
         if (!response.ok) throw new Error("HTTP " + response.status);
         const json = await response.json(), rows = Array.isArray(json?.data) ? json.data : [];
         const terminal = new Set(["RESOLVED_WIN","RESOLVED_LOSS","RESOLVED_PARTIAL"]);
-        const needsActivity = rows.some(c => terminal.has(String(c.status || "").toUpperCase()) &&
-          (num(c.entry_cost_usdc ?? c.gross_entry_cost_usdc) === null || num(c.realized_payout_usdc) === null));
+        const needsActivity = rows.some(c => {
+          const entry = num(c.gross_entry_cost_usdc ?? c.entry_cost_usdc);
+          return entry === null || entry <= 0 || (terminal.has(String(c.status || "").toUpperCase()) && num(c.realized_payout_usdc) === null);
+        });
         let activityById = new Map();
         if (needsActivity) {
           try {
@@ -711,7 +689,7 @@ async function loadComboPositions() {
         for (const combo of rows) {
           const a = activityById.get(String(combo.combo_position_id || ""));
           comboRows.push({...combo,
-            _activityEntryCost: num(combo.entry_cost_usdc ?? combo.gross_entry_cost_usdc) ?? (a?.hasEntry ? a.entry : null),
+            _activityEntryCost: (num(combo.gross_entry_cost_usdc ?? combo.entry_cost_usdc) > 0 ? num(combo.gross_entry_cost_usdc ?? combo.entry_cost_usdc) : null) ?? (a?.hasEntry && a.entry > 0 ? a.entry : null),
             _activityPayout: num(combo.realized_payout_usdc) ?? (a?.hasPayout ? a.payout : null),
             _activityResolvedAt: a?.resolvedAt ?? null,
             _trader:trader, _wallet:wallet
@@ -765,17 +743,17 @@ function renderCombos() {
   const minimum = Number($("minComboEntry")?.value || 0), allStatuses = $("comboStatus")?.value === "all";
   const timingFilter = $("comboTiming")?.value || "all";
   const rows = comboRows.filter(combo => {
-    const status = String(combo.status || "").toUpperCase(), entry = num(combo.entry_cost_usdc ?? combo.gross_entry_cost_usdc) ?? 0;
+    const status = String(combo.status || "").toUpperCase(), entry = num(combo.gross_entry_cost_usdc ?? combo.entry_cost_usdc) ?? num(combo._activityEntryCost);
     const held = ["OPEN","REDEEMABLE","PARTIAL"].includes(status) || (!status && (num(combo.current_size) ?? 0) > 0);
     const timing = comboTimingState(combo);
-    return entry >= minimum && (allStatuses || held) && (timingFilter === "all" || timing.key === timingFilter);
-  }).sort((a,b) => { const ap=num(a.realized_payout_usdc), ae=num(a.entry_cost_usdc ?? a.gross_entry_cost_usdc), bp=num(b.realized_payout_usdc), be=num(b.entry_cost_usdc ?? b.gross_entry_cost_usdc); const aprofit=ap!==null&&ae!==null?ap-ae:null, bprofit=bp!==null&&be!==null?bp-be:null; if(aprofit!==null||bprofit!==null) return (bprofit??-Infinity)-(aprofit??-Infinity); return 0; });
+    return (minimum === 0 || (entry !== null && entry >= minimum)) && (allStatuses || held) && (timingFilter === "all" || timing.key === timingFilter);
+  }).sort((a,b) => { const ap=num(a.realized_payout_usdc), ae=num(a.gross_entry_cost_usdc ?? a.entry_cost_usdc) ?? num(a._activityEntryCost), bp=num(b.realized_payout_usdc), be=num(b.gross_entry_cost_usdc ?? b.entry_cost_usdc) ?? num(b._activityEntryCost); const aprofit=ap!==null&&ae!==null?ap-ae:null, bprofit=bp!==null&&be!==null?bp-be:null; if(aprofit!==null||bprofit!==null) return (bprofit??-Infinity)-(aprofit??-Infinity); return 0; });
   const visible = allCombos ? rows : rows.slice(0,12);
   if (!visible.length) container.innerHTML = comboLoadFinished ? '<div class="empty">No combos matched among the qualified traders whose positions were checked. Coverage depends on available complete records; this is not a platform-wide scan.</div>' : '<div class="loading">Checking combo positions…</div>';
   else container.innerHTML = visible.map((combo,index) => {
     const trader = combo._trader || {}, id = String(combo.combo_position_id || combo.combo_condition_id || combo._wallet + "-" + index);
     const expanded = expandedCombos.has(id), status = String(combo.status || "UNKNOWN").replaceAll("_"," ");
-    const entry = combo.entry_cost_usdc ?? combo.gross_entry_cost_usdc, realizedPayout = num(combo.realized_payout_usdc), potentialPayout = num(combo.current_size), payout = realizedPayout !== null && realizedPayout > 0 ? realizedPayout : (potentialPayout !== null && potentialPayout > 0 ? potentialPayout : null), potentialProfit = realizedPayout !== null && realizedPayout > 0 ? null : (payout !== null && num(entry) !== null ? payout - num(entry) : null), legs = Array.isArray(combo.legs) ? combo.legs : [], timing = comboTimingState(combo);
+    const entry = num(combo.gross_entry_cost_usdc ?? combo.entry_cost_usdc) > 0 ? num(combo.gross_entry_cost_usdc ?? combo.entry_cost_usdc) : num(combo._activityEntryCost), realizedPayout = num(combo.realized_payout_usdc), potentialPayout = num(combo.current_size), payout = realizedPayout !== null && realizedPayout > 0 ? realizedPayout : (potentialPayout !== null && potentialPayout > 0 ? potentialPayout : null), potentialProfit = realizedPayout !== null && realizedPayout > 0 ? null : (payout !== null && num(entry) !== null ? payout - num(entry) : null), legs = Array.isArray(combo.legs) ? combo.legs : [], timing = comboTimingState(combo);
     const summary = legs.slice(0,3).map(leg => leg.market?.question || leg.market?.title || leg.market?.event?.event_title || "Market leg").join(" · ");
     const detail = expanded ? '<div class="combo-legs">' + (legs.length ? legs.map((leg,i) => {
       const market = leg.market || {}, event = market.event || {}, label = leg.leg_outcome_label || market.outcome || (leg.leg_outcome_index ?? "Unknown outcome");
@@ -1071,44 +1049,24 @@ async function loadForwardTest() {
   try {
     const response = await fetch("forward-test.json?t=" + Date.now(), {cache:"no-store"});
     if (!response.ok) throw new Error("HTTP " + response.status);
-    const d = await response.json(), m = d.metrics || {}, rows = Array.isArray(d.signals) ? d.signals : [];
-    $("forwardUpdated").textContent = d.generatedAt ? "Updated " + new Date(d.generatedAt).toLocaleString() : "Not run yet";
-    $("ftResolved").textContent = (m.signals ?? rows.length) + " total · " + (m.resolved ?? 0) + " settled";
-    $("ftWinRate").textContent = m.resolved ? (Number(m.wins || 0) + " wins / " + Number(m.losses || 0) + " losses · " + Number(m.winRate).toFixed(1) + "%") : "Not enough settled results";
-    $("ftPending").textContent = m.pending ?? 0;
-    $("ftPriced").textContent = m.freshSignals ?? 0;
-    $("ftUnrealized").textContent = m.notChecked ?? 0;
-    $("ftSells").textContent = m.sellObservations ?? 0;
-    const sourceAgeMinutes = d.sourceDataUpdatedAt ? Math.max(0, Math.round((Date.now()-Date.parse(d.sourceDataUpdatedAt))/60000)) : null;
-    $("ftStatus").textContent = "Updated " + (d.sourceDataUpdatedAt ? dateText(d.sourceDataUpdatedAt) : "time unavailable") + ". Only settled outcomes count as wins.";
-    const trades = [];
+    const d = await response.json(), rows = Array.isArray(d.signals) ? d.signals : [];
+    const indexed = new Map();
     for (const signal of rows) {
+      const condition = String(signal.conditionId || "").toLowerCase(), side = String(signal.side || "").toLowerCase();
+      if (!condition || !side) continue;
+      const key = condition + "|" + side;
       const observations = Array.isArray(signal.exitObservations) ? signal.exitObservations : [];
-      const currentPrice = num(signal.currentPrice);
-      for (const t of observations) {
-        if (String(t.side || "").toUpperCase() !== "BUY") continue;
-        if (String(t.outcome || "").toLowerCase() !== String(signal.side || "").toLowerCase()) continue;
-        const price = num(t.price), shares = num(t.size), bought = price !== null && shares !== null ? price * shares : null;
-        const currentValue = currentPrice !== null && shares !== null ? currentPrice * shares : null;
-        const pnl = bought !== null && currentValue !== null ? currentValue - bought : null;
-        trades.push({signal,t,price,shares,bought,currentValue,pnl});
-      }
+      const buys = observations.filter(t => String(t.side || "").toUpperCase() === "BUY" &&
+        String(t.outcome || "").toLowerCase() === side).map(t => {
+          const price = num(t.price), shares = num(t.size);
+          return {...t, _price:price, _shares:shares, _cost:price !== null && shares !== null ? price*shares : null,
+            _currentPrice:num(signal.currentPrice)};
+        }).sort((a,b)=>(timestamp(b.timestamp)||0)-(timestamp(a.timestamp)||0));
+      if (buys.length) indexed.set(key, buys);
     }
-    trades.sort((a,b)=>(timestamp(b.t.timestamp)||0)-(timestamp(a.t.timestamp)||0));
-    const visible = trades.slice(0,100);
-    $("ftSignals").innerHTML = visible.length ? visible.map(({signal:s,t,price,shares,bought,currentValue,pnl}) => {
-      const wallet = String(t.wallet || "");
-      const trader = wallet ? '<a href="https://polymarket.com/profile/' + encodeURIComponent(wallet) + '" target="_blank" rel="noopener noreferrer">' + esc(wallet.slice(0,6) + "…" + wallet.slice(-4)) + '</a>' : "Trader unavailable";
-      const amountText = bought === null ? "N/A" : cash(bought);
-      const valueText = currentValue === null ? "N/A" : cash(currentValue);
-      const pnlText = pnl === null ? "N/A" : (pnl > 0 ? "+" : "") + cash(pnl);
-      const pnlClass = pnl !== null && pnl < 0 ? "negative" : "positive";
-      return '<tr><td>' + trader + '</td><td>' + esc(s.title || "Unknown market") + '<br><small class="subtitle">' + esc(s.side || "—") + '</small></td><td>' + esc(dateText(t.timestamp)) + '</td><td>' + (price === null ? "N/A" : (price*100).toFixed(1) + "¢") + '</td><td>' + amountText + (shares !== null ? '<br><small class="subtitle">' + shares.toFixed(2) + ' shares</small>' : '') + '</td><td>' + (num(s.currentPrice) === null ? "N/A" : (Number(s.currentPrice)*100).toFixed(1) + "¢") + '</td><td>' + valueText + '</td><td class="' + pnlClass + '">' + pnlText + '</td></tr>';
-    }).join("") : '<tr><td colspan="8" class="empty">No matching BUY trades have been recorded yet. The scanner is limited to recent trade history returned by Polymarket for consensus wallets; a scheduled refresh may be needed.</td></tr>';
-  } catch (e) {
-    $("forwardUpdated").textContent = "Unavailable";
-    $("ftStatus").textContent = "Could not load forward-test.json: " + e.message + ". Check the Forward-test GitHub Actions workflow.";
-  }
+    forwardTradesByMarket = indexed;
+    renderConsensus();
+  } catch (e) { console.warn("Recent buy details unavailable", e); }
 }
 loadData();
 loadConsensusData();
