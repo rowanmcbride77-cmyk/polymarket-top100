@@ -348,11 +348,18 @@ function timestamp(value) {
 function relative(value) {
   const n = timestamp(value);
   if (!n) return "Time unavailable";
-  const seconds = Math.max(0, Math.floor(Date.now() / 1000 - n));
-  if (seconds < 60) return `${seconds}s ago`;
-  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
-  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
-  return `${Math.floor(seconds / 86400)}d ago`;
+  const delta = Math.floor(n - Date.now() / 1000);
+  if (delta >= 0) {
+    if (delta < 60) return "in under 1m";
+    if (delta < 3600) return `in ${Math.ceil(delta / 60)}m`;
+    if (delta < 86400) return `in ${Math.ceil(delta / 3600)}h`;
+    return `in ${Math.ceil(delta / 86400)}d`;
+  }
+  const elapsed = -delta;
+  if (elapsed < 60) return "under 1m overdue";
+  if (elapsed < 3600) return `${Math.floor(elapsed / 60)}m overdue`;
+  if (elapsed < 86400) return `${Math.floor(elapsed / 3600)}h overdue`;
+  return `${Math.floor(elapsed / 86400)}d overdue`;
 }
 
 function dateText(value) {
@@ -574,7 +581,7 @@ function renderLeaders() {
     ? "<th>#</th><th>Trader</th><th>Won</th><th>Lost</th><th>Partial</th><th>Weekly combo P&amp;L</th><th>P&amp;L coverage</th>"
     : efficiencyMode
       ? "<th>#</th><th>Trader</th><th>Upcoming combo</th><th>Entry</th><th>Est. payout</th><th>Est. profit</th><th>Est. return</th>"
-      : "<th>#</th><th>Trader</th><th>Profitable / losing closes</th><th>Close rate</th><th>Period P&amp;L</th><th>Volume</th>";
+      : "<th>#</th><th>Trader</th><th>Resolved wins–losses</th><th>Resolved win rate</th><th>Period P&amp;L</th><th>Volume</th>";
   $("leadersBody").innerHTML = visible.length ? visible.map((trader,index) => {
     if (comboMode) return `<tr><td class="rank">${index+1}</td><td><div class="trader-name">${avatar(trader.trader)}<span class="name-text">${profileButton(trader.trader, nameOf(trader.trader))}</span></div></td><td class="record">${trader.wins}</td><td class="record">${trader.losses}</td><td class="record">${trader.partial}</td><td class="${trader.pnlKnown && trader.profit < 0 ? "negative" : "positive"}">${trader.pnlKnown ? (trader.pnlMissing ? "Partial: " : "") + (trader.profit > 0 ? "+" : "") + cash(trader.profit) : "N/A"}</td><td class="record">${trader.pnlKnown}/${trader.combos} combos</td></tr>`;
     if (efficiencyMode) return `<tr><td class="rank">${index+1}</td><td><div class="trader-name">${avatar(trader.trader)}<span class="name-text">${profileButton(trader.trader, nameOf(trader.trader))}</span></div></td><td class="combo-title" title="${esc(trader.title || "Combo details unavailable")}">${esc(trader.title || "Combo details unavailable")}<br><small class="subtitle">${esc(trader.timingLabel || "Start time unverified")}</small></td><td class="money">${cash(trader.entry)}</td><td class="money">${cash(trader.payout)}</td><td class="positive">~${cash(trader.profit)}</td><td class="record">~${trader.multiple.toFixed(1)}×</td></tr>`;
@@ -683,31 +690,31 @@ async function loadComboPositions() {
     if (!/^0x[a-f0-9]{40}$/i.test(wallet) || seenWallets.has(wallet)) return false;
     seenWallets.add(wallet);
     return true;
-  }).slice(0, 1000);
+  }).slice(0, 250);
   traderAliases.clear();
   candidates.forEach((t, i) => traderAliases.set(walletOf(t).toLowerCase(), "Trader " + (i + 1)));
   comboRows = []; comboLoadFinished = false;
   if (!candidates.length) { $("comboList").innerHTML = '<div class="empty">No valid trader wallets were found in the loaded leaderboard.</div>'; return; }
-  $("comboList").innerHTML = '<div class="loading">Checking combo positions for ' + candidates.length + ' traders, with no win-rate or trade-count cutoff…</div>';
+  $("comboList").innerHTML = '<div class="loading">Checking combo positions for ' + candidates.length + ' traders…</div>';
   let next = 0, completed = 0;
   const worker = async () => {
     while (next < candidates.length) {
       const trader = candidates[next++], wallet = walletOf(trader);
       try {
         const endpoint = "https://data-api.polymarket.com/v2/positions/combos?user=" + encodeURIComponent(wallet);
-        let response = await fetch(endpoint + "&status=OPEN,PARTIAL,RESOLVED_WIN,RESOLVED_LOSS,RESOLVED_PARTIAL&sort_by=UPDATED&sort_direction=DESC&limit=1000", {cache:"no-store"});
+        let response = await fetch(endpoint + "&status=OPEN,PARTIAL,RESOLVED_WIN,RESOLVED_LOSS,RESOLVED_PARTIAL&sort_by=UPDATED&sort_direction=DESC&limit=250", {cache:"no-store", signal:AbortSignal.timeout(12000)});
         let json = response.ok ? await response.json() : null;
         let rows = Array.isArray(json?.data) ? json.data : [];
         // Defensive fallback: some API deployments reject combined status filters.
         // Query held and resolved cohorts separately instead of silently losing all combos.
-        if (!response.ok || !rows.length) {
+        if (!response.ok) {
           const fallbackUrls = [
-            endpoint + "&sort_by=UPDATED&sort_direction=DESC&limit=1000",
-            endpoint + "&status=RESOLVED_WIN,RESOLVED_LOSS,RESOLVED_PARTIAL&sort_by=UPDATED&sort_direction=DESC&limit=1000"
+            endpoint + "&sort_by=UPDATED&sort_direction=DESC&limit=250",
+            endpoint + "&status=RESOLVED_WIN,RESOLVED_LOSS,RESOLVED_PARTIAL&sort_by=UPDATED&sort_direction=DESC&limit=250"
           ];
           for (const fallbackUrl of fallbackUrls) {
             try {
-              const fallbackResponse = await fetch(fallbackUrl, {cache:"no-store"});
+              const fallbackResponse = await fetch(fallbackUrl, {cache:"no-store", signal:AbortSignal.timeout(12000)});
               if (!fallbackResponse.ok) continue;
               const fallbackJson = await fallbackResponse.json();
               const fallbackRows = Array.isArray(fallbackJson?.data) ? fallbackJson.data : [];
@@ -729,7 +736,7 @@ async function loadComboPositions() {
         let activityById = new Map();
         if (needsActivity) {
           try {
-            const ar = await fetch("https://data-api.polymarket.com/v2/activity/combos?user=" + encodeURIComponent(wallet) + "&limit=1000", {cache:"no-store"});
+            const ar = await fetch("https://data-api.polymarket.com/v2/activity/combos?user=" + encodeURIComponent(wallet) + "&limit=250", {cache:"no-store", signal:AbortSignal.timeout(12000)});
             if (ar.ok) {
               const aj = await ar.json(), events = Array.isArray(aj?.data) ? aj.data : [];
               for (const a of events) {
@@ -763,7 +770,7 @@ async function loadComboPositions() {
       }
     }
   };
-  await Promise.all(Array.from({length:4}, () => worker()));
+  await Promise.all(Array.from({length:6}, () => worker()));
   comboLoadFinished = true; renderCombos(); renderLeaders();
 }
 
