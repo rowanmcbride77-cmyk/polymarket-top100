@@ -755,7 +755,7 @@ async function loadComboPositions() {
         for (const combo of rows) {
           const a = activityById.get(String(combo.combo_position_id || ""));
           comboRows.push({...combo,
-            _activityEntryCost: (num(combo.gross_entry_cost_usdc ?? combo.entry_cost_usdc) > 0 ? num(combo.gross_entry_cost_usdc ?? combo.entry_cost_usdc) : null) ?? (a?.hasEntry && a.entry > 0 ? a.entry : null),
+            _activityEntryCost: (num(combo.entry_cost_usdc) > 0 ? num(combo.entry_cost_usdc) : null) ?? (a?.hasEntry && a.entry > 0 ? a.entry : null) ?? (num(combo.gross_entry_cost_usdc) > 0 ? num(combo.gross_entry_cost_usdc) : null),
             _activityPayout: num(combo.realized_payout_usdc) ?? (a?.hasPayout ? a.payout : null),
             _activityResolvedAt: a?.resolvedAt ?? null,
             _trader:trader, _wallet:wallet
@@ -1009,7 +1009,7 @@ async function loadTraderCombos(wallet) {
     const terminal = new Set(["RESOLVED_WIN","RESOLVED_LOSS","RESOLVED_PARTIAL"]);
     const closed = positions.filter(c => terminal.has(String(c.status || "").toUpperCase())).map(c => {
       const a = byId.get(String(c.combo_position_id || ""));
-      return {...c, _activityEntryCost: (comboEntryCost(c) ?? (a?.hasEntry && a.entry > 0 ? a.entry : null)), _activityPayout: (num(c.realized_payout_usdc) ?? (a?.hasPayout ? a.payout : null)), _activityResolvedAt: a?.resolvedAt ?? null, legs: c.legs?.length ? c.legs : (a?.legs || [])};
+      return {...c, _activityEntryCost: ((num(c.entry_cost_usdc) > 0 ? num(c.entry_cost_usdc) : null) ?? (a?.hasEntry && a.entry > 0 ? a.entry : null) ?? (num(c.gross_entry_cost_usdc) > 0 ? num(c.gross_entry_cost_usdc) : null)), _activityPayout: (num(c.realized_payout_usdc) ?? (a?.hasPayout ? a.payout : null)), _activityResolvedAt: a?.resolvedAt ?? null, legs: c.legs?.length ? c.legs : (a?.legs || [])};
     }).sort((a,b) => Date.parse(b.resolved_at || b.updated_at || 0) - Date.parse(a.resolved_at || a.updated_at || 0));
     closedBox.innerHTML = closed.length ? closed.map(c => renderProfileCombo(c, true)).join("") : '<div class="empty">No resolved combo positions returned.</div>';
     if (summaryBox) {
