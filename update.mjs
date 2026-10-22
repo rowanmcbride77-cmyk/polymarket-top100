@@ -979,7 +979,7 @@ async function getSettlementStats(wallet, period, nowMs, limit = 250) {
     }
     if (positionIndex < 0 || positionIndex >= outcomes.length) continue;
     classified++;
-    if (lastEventAt < resolvedAt - 60_000) {
+    if (lastEventAt < resolvedAt) {
       const key = condition + "|" + positionIndex;
       earlyKeys.add(key);
       continue;
