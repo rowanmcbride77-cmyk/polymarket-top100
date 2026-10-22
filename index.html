@@ -543,7 +543,7 @@ function comboEfficiencyRows() {
     const timingLegs = Array.isArray(combo.legs) ? combo.legs : [];
     const noLegResolved = timingLegs.length > 0 && timingLegs.every(leg => {
       const legStatus = String(leg.leg_status || "").toUpperCase();
-      return !leg.leg_resolved_at && !["RESOLVED_WIN","RESOLVED_LOSS","RESOLVED_PARTIAL","CLOSED"].includes(legStatus);
+      return !leg.leg_resolved_at && !legStatus.startsWith("RESOLV") && legStatus !== "CLOSED";
     });
     const entry = comboEntryCost(combo);
     const shares = num(combo.current_size);
@@ -579,7 +579,7 @@ function renderLeaders() {
     if (efficiencyMode) return `<tr><td class="rank">${index+1}</td><td><div class="trader-name">${avatar(trader.trader)}<span class="name-text">${profileButton(trader.trader, nameOf(trader.trader))}</span></div></td><td class="combo-title" title="${esc(trader.title || "Combo details unavailable")}">${esc(trader.title || "Combo details unavailable")}<br><small class="subtitle">${esc(trader.timingLabel || "Start time unverified")}</small></td><td class="money">${cash(trader.entry)}</td><td class="money">${cash(trader.payout)}</td><td class="positive">~${cash(trader.profit)}</td><td class="record">~${trader.multiple.toFixed(1)}×</td></tr>`;
     const pnl = num(trader.pnl ?? trader.profit), volume = num(trader.volume ?? trader.vol), pnlClass = pnl !== null && pnl < 0 ? "negative" : "positive";
     return `<tr><td class="rank">${trader.displayRank}</td><td><div class="trader-name">${avatar(trader)}<span class="name-text">${profileButton(trader)}</span></div></td><td class="record">${recordText(trader)}</td><td class="record">${recordOf(trader) === null ? "N/A" : recordOf(trader).rate.toFixed(1) + "%"}</td><td class="${pnlClass}">${pnl === null ? "N/A" : (pnl > 0 ? "+" : "") + cash(pnl)}</td><td class="money">${cash(volume)}</td></tr>`;
-  }).join("") : `<tr><td colspan="${comboMode || efficiencyMode ? 7 : 6}" class="empty">${comboMode ? (comboLoadFinished ? "No verified combo profits in the last 7 days with complete entry and payout data." : "Scanning combo positions…") : efficiencyMode ? (comboLoadFinished ? "No verified winning combos with entry and payout data in the last 30 days." : "Scanning combo positions…") : "No leaderboard data available. Check that the updater has created " + esc(FILES[period]) + "."}</td></tr>`;
+  }).join("") : `<tr><td colspan="${comboMode || efficiencyMode ? 7 : 6}" class="empty">${comboMode ? (comboLoadFinished ? "No resolved combos with usable entry and payout data were found for the last 7 days." : "Scanning combo positions…") : efficiencyMode ? (comboLoadFinished ? "No open combos with a positive estimated return and no resolved legs were found in the checked traders." : "Scanning combo positions…") : "No leaderboard data available. Check that the updater has created " + esc(FILES[period]) + "."}</td></tr>`;
   $("leadersMore").textContent = allLeaders ? "Show fewer ↑" : "View all traders →";
   $("leadersMore").style.display = list.length > 10 ? "inline-block" : "none";
   const overviewList = comboMode ? list : efficiencyMode ? [] : baseList;
