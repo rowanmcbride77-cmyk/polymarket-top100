@@ -718,10 +718,10 @@ async function loadComboPositions() {
         let rows = Array.isArray(json?.data) ? json.data : Array.isArray(json?.combos) ? json.combos : Array.isArray(json) ? json : [];
         // Defensive fallback: some API deployments reject combined status filters.
         // Query held and resolved cohorts separately instead of silently losing all combos.
-        if (!response.ok) {
+        if (!response.ok || rows.length === 0) {
           const fallbackUrls = [
             endpoint + "&sort_by=UPDATED&sort_direction=DESC&limit=250",
-            endpoint + "&status=RESOLVED_WIN,RESOLVED_LOSS,RESOLVED_PARTIAL&sort_by=UPDATED&sort_direction=DESC&limit=250"
+            "https://data-api.polymarket.com/v1/positions/combos?user=" + encodeURIComponent(wallet) + "&limit=250"
           ];
           for (const fallbackUrl of fallbackUrls) {
             try {
