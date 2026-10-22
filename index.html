@@ -875,7 +875,8 @@ function openProfile(wallet) {
     <div class="profile-grid">
       <div class="profile-stat"><small>Leaderboard rank</small><strong>#${esc(trader.rank ?? trader.displayRank ?? "—")}</strong></div>
       <div class="profile-stat"><small>Market positions: profitable / unprofitable</small><strong>${record ? recordText(trader) : "N/A"}</strong></div>
-      <div class="profile-stat"><small>Market-position close rate</small><strong>${num(trader.winRate) === null ? "N/A" : num(trader.winRate).toFixed(1) + "%"}</strong></div>
+      <div class="profile-stat"><small>Profitable-close rate (not settlement win rate)</small><strong>${num(trader.winRate) === null ? "N/A" : num(trader.winRate).toFixed(1) + "%"}</strong></div>
+      <div class="profile-stat"><small>Markets with SELL activity</small><strong id="sellMarketCount">Checking…</strong><small class="subtitle">May be partial; not proof of a full exit</small></div>
       <div class="profile-stat"><small>${period === "week" ? "Weekly" : "Monthly"} market P&amp;L</small><strong class="${pnl !== null && pnl < 0 ? "negative" : "positive"}">${cash(pnl)}</strong></div>
       <div class="profile-stat"><small>Volume</small><strong>${cash(volume)}</strong></div>
     </div>
@@ -897,6 +898,30 @@ function openProfile(wallet) {
   $("profileDialog").showModal();
   loadTraderCombos(traderWallet);
   loadClosedPositionHistory(traderWallet);
+  loadSellMarketCount(traderWallet);
+}
+
+async function loadSellMarketCount(wallet) {
+  const target = $("sellMarketCount");
+  if (!target) return;
+  try {
+    const response = await fetch("https://data-api.polymarket.com/trades?user=" + encodeURIComponent(wallet) + "&side=SELL&limit=1000", {cache:"no-store"});
+    if (!response.ok) throw new Error("HTTP " + response.status);
+    const json = await response.json();
+    const trades = Array.isArray(json?.data) ? json.data : Array.isArray(json) ? json : [];
+    const markets = new Set();
+    for (const trade of trades) {
+      const condition = String(trade.conditionId ?? trade.condition_id ?? trade.market ?? "");
+      const asset = String(trade.asset ?? trade.token_id ?? trade.tokenId ?? "");
+      const key = condition || asset;
+      if (key) markets.add(key);
+    }
+    target.textContent = markets.size.toLocaleString() + (trades.length >= 1000 ? "+" : "");
+    target.title = "Unique markets with SELL prints in the latest " + trades.length + " returned SELL trades. A print may be a partial reduction, not a full exit.";
+  } catch (error) {
+    target.textContent = "N/A";
+    target.title = "SELL activity could not be loaded: " + error.message;
+  }
 }
 
 async function loadTraderCombos(wallet) {
@@ -910,9 +935,29 @@ async function loadTraderCombos(wallet) {
       fetch(base + "&status=OPEN,PARTIAL,RESOLVED_WIN,RESOLVED_LOSS,RESOLVED_PARTIAL&sort_by=UPDATED&sort_direction=DESC&limit=1000", {cache:"no-store"}),
       fetch("https://data-api.polymarket.com/v2/activity/combos?user=" + encodeURIComponent(wallet) + "&limit=1000", {cache:"no-store"})
     ]);
-    if (!positionsResponse.ok) throw new Error("Combo positions API HTTP " + positionsResponse.status);
-    const positionsJson = await positionsResponse.json();
-    const positions = Array.isArray(positionsJson?.data) ? positionsJson.data : Array.isArray(positionsJson) ? positionsJson : [];
+    let positions = [];
+    if (positionsResponse.ok) {
+      const positionsJson = await positionsResponse.json();
+      positions = Array.isArray(positionsJson?.data) ? positionsJson.data : Array.isArray(positionsJson) ? positionsJson : [];
+    }
+    if (!positionsResponse.ok || !positions.length) {
+      const fallbackResponse = await fetch(base + "&sort_by=UPDATED&sort_direction=DESC&limit=1000", {cache:"no-store"});
+      if (fallbackResponse.ok) {
+        const fallbackJson = await fallbackResponse.json();
+        positions = Array.isArray(fallbackJson?.data) ? fallbackJson.data : Array.isArray(fallbackJson) ? fallbackJson : [];
+      }
+      const resolvedResponse = await fetch(base + "&status=RESOLVED_WIN,RESOLVED_LOSS,RESOLVED_PARTIAL&sort_by=UPDATED&sort_direction=DESC&limit=1000", {cache:"no-store"});
+      if (resolvedResponse.ok) {
+        const resolvedJson = await resolvedResponse.json();
+        const resolvedRows = Array.isArray(resolvedJson?.data) ? resolvedJson.data : Array.isArray(resolvedJson) ? resolvedJson : [];
+        const byKey = new Map(positions.map(c => [String(c.combo_position_id || c.combo_condition_id || ""), c]));
+        for (const row of resolvedRows) {
+          const key = String(row.combo_position_id || row.combo_condition_id || "");
+          if (key) byKey.set(key, row);
+        }
+        positions = [...byKey.values()];
+      }
+    }
     const activities = activityResponse.ok ? ((j => Array.isArray(j?.data) ? j.data : Array.isArray(j) ? j : [])(await activityResponse.json())) : [];
     const byId = new Map();
     for (const a of activities) {
