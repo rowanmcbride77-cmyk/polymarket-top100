@@ -485,19 +485,19 @@ function rankedLeaders() {
 }
 
 function comboEntryCost(combo) {
-  // A present-but-zero gross field must not mask a valid entry_cost_usdc fallback.
-  const gross = num(combo?.gross_entry_cost_usdc);
-  if (gross !== null && gross > 0) return gross;
+  // Prefer net remaining cost basis; if the API reports zero/missing after a
+  // close or merge, use observed split/merge cash flows before gross cost.
   const net = num(combo?.entry_cost_usdc);
   if (net !== null && net > 0) return net;
   const activity = num(combo?._activityEntryCost);
-  return activity !== null && activity > 0 ? activity : null;
+  if (activity !== null && activity > 0) return activity;
+  const gross = num(combo?.gross_entry_cost_usdc);
+  return gross !== null && gross > 0 ? gross : null;
 }
 function comboResolvedMs(combo) {
   const status = String(combo?.status || "").toUpperCase();
   const terminal = ["RESOLVED_WIN","RESOLVED_LOSS","RESOLVED_PARTIAL"].includes(status);
-  const candidates = [combo?.resolved_at, combo?.resolvedAt, combo?._activityResolvedAt,
-    ...(terminal ? [combo?.updated_at, combo?.updatedAt] : [])];
+  const candidates = [combo?.resolved_at, combo?.resolvedAt, combo?._activityResolvedAt];
   for (const value of candidates) {
     if (value === null || value === undefined || value === "") continue;
     const n = Number(value);
@@ -704,7 +704,7 @@ async function loadComboPositions() {
         const endpoint = "https://data-api.polymarket.com/v2/positions/combos?user=" + encodeURIComponent(wallet);
         let response = await fetch(endpoint + "&status=OPEN,PARTIAL,RESOLVED_WIN,RESOLVED_LOSS,RESOLVED_PARTIAL&sort_by=UPDATED&sort_direction=DESC&limit=250", {cache:"no-store", signal:AbortSignal.timeout(12000)});
         let json = response.ok ? await response.json() : null;
-        let rows = Array.isArray(json?.data) ? json.data : [];
+        let rows = Array.isArray(json?.data) ? json.data : Array.isArray(json) ? json : [];
         // Defensive fallback: some API deployments reject combined status filters.
         // Query held and resolved cohorts separately instead of silently losing all combos.
         if (!response.ok) {
@@ -717,7 +717,7 @@ async function loadComboPositions() {
               const fallbackResponse = await fetch(fallbackUrl, {cache:"no-store", signal:AbortSignal.timeout(12000)});
               if (!fallbackResponse.ok) continue;
               const fallbackJson = await fallbackResponse.json();
-              const fallbackRows = Array.isArray(fallbackJson?.data) ? fallbackJson.data : [];
+              const fallbackRows = Array.isArray(fallbackJson?.data) ? fallbackJson.data : Array.isArray(fallbackJson) ? fallbackJson : [];
               rows.push(...fallbackRows);
             } catch (fallbackError) { console.warn("Combo fallback lookup failed for " + wallet + ": " + fallbackError.message); }
           }
@@ -738,7 +738,7 @@ async function loadComboPositions() {
           try {
             const ar = await fetch("https://data-api.polymarket.com/v2/activity/combos?user=" + encodeURIComponent(wallet) + "&limit=250", {cache:"no-store", signal:AbortSignal.timeout(12000)});
             if (ar.ok) {
-              const aj = await ar.json(), events = Array.isArray(aj?.data) ? aj.data : [];
+              const aj = await ar.json(), events = Array.isArray(aj?.data) ? aj.data : Array.isArray(aj) ? aj : [];
               for (const a of events) {
                 const id = String(a.combo_position_id || "");
                 if (!id) continue;
