@@ -729,10 +729,10 @@ async function loadComboPositions() {
           rows = [...uniqueRows.values()];
         }
         const terminal = new Set(["RESOLVED_WIN","RESOLVED_LOSS","RESOLVED_PARTIAL"]);
-        const needsActivity = rows.some(c => {
-          const entry = num(c.gross_entry_cost_usdc ?? c.entry_cost_usdc);
-          return entry === null || entry <= 0 || (terminal.has(String(c.status || "").toUpperCase()) && num(c.realized_payout_usdc) === null);
-        });
+        const needsActivity = rows.some(c =>
+          comboEntryCost(c) === null ||
+          (terminal.has(String(c.status || "").toUpperCase()) && num(c.realized_payout_usdc) === null)
+        );
         let activityById = new Map();
         if (needsActivity) {
           try {
