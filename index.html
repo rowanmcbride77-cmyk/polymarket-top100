@@ -929,10 +929,9 @@ async function loadTraderCombos(wallet) {
     const weekCutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
     const resolvedThisWeek = positions.filter(c => {
       const status = String(c.status || "").toUpperCase();
-      const rawTime = c.resolved_at ?? c.resolvedAt;
       const activity = byId.get(String(c.combo_position_id || ""));
-      const time = timestamp(rawTime ?? activity?.resolvedAt);
-      return ["RESOLVED_WIN","RESOLVED_LOSS","RESOLVED_PARTIAL"].includes(status) && time !== null && time*1000 >= weekCutoff && time*1000 <= Date.now();
+      const timeMs = comboResolvedMs({...c, _activityResolvedAt: activity?.resolvedAt});
+      return ["RESOLVED_WIN","RESOLVED_LOSS","RESOLVED_PARTIAL"].includes(status) && timeMs !== null && timeMs >= weekCutoff && timeMs <= Date.now();
     });
     const weeklyWins = resolvedThisWeek.filter(c => String(c.status).toUpperCase() === "RESOLVED_WIN").length;
     const weeklyLosses = resolvedThisWeek.filter(c => String(c.status).toUpperCase() === "RESOLVED_LOSS").length;
@@ -976,7 +975,7 @@ function renderProfileCombo(combo, isClosed) {
     const m = leg.market || {};
     return 'Leg ' + (num(leg.leg_index) ?? i+1) + ': ' + esc(m.question || m.title || m.event?.event_title || "Market details unavailable") + ' — ' + esc(leg.leg_outcome_label || m.outcome || "Outcome unavailable");
   }).join("<br>");
-  const entry = (num(combo.gross_entry_cost_usdc ?? combo.entry_cost_usdc) > 0 ? num(combo.gross_entry_cost_usdc ?? combo.entry_cost_usdc) : null) ?? (num(combo._activityEntryCost) > 0 ? num(combo._activityEntryCost) : null);
+  const entry = comboEntryCost(combo);
   const payout = num(combo.realized_payout_usdc ?? combo._activityPayout);
   const profit = entry !== null && payout !== null ? payout - entry : null;
   const status = String(combo.status || (isClosed ? "RESOLVED" : "OPEN")).replaceAll("_"," ");
