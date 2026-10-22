@@ -84,18 +84,18 @@ for (const g of orderedSources) {
       }
     }
     // Track current observable positions and recent buy/sell activity for the consensus wallets.
-    for (const wallet of [...new Set([...recentWallets, ...wallets])].slice(0,4)) {
+    for (const wallet of [...new Set([...recentWallets, ...wallets])].slice(0,8)) {
       try {
-        const u=await get(API+"/trades?user="+encodeURIComponent(wallet)+"&limit=100");
-        const trades=arr(u).filter(t=>String(t.conditionId||t.condition_id||"").toLowerCase()===condition).slice(0,100);
-        const latest=trades.map(t=>({side:String(t.side||"").toUpperCase(),outcome:t.outcome||null,price:num(t.price),size:num(t.size),timestamp:num(t.timestamp),wallet})).filter(t=>t.side==="BUY"||t.side==="SELL").sort((a,b)=>(b.timestamp||0)-(a.timestamp||0)).slice(0,10);
+        const u=await get(API+"/trades?user="+encodeURIComponent(wallet)+"&market="+encodeURIComponent(condition)+"&limit=500");
+        const trades=arr(u).filter(t=>String(t.conditionId||t.condition_id||t.market||"").toLowerCase()===condition).slice(0,500);
+        const latest=trades.map(t=>({side:String(t.side||"").toUpperCase(),outcome:t.outcome||null,price:num(t.price),size:num(t.size),timestamp:num(t.timestamp),wallet})).filter(t=>t.side==="BUY"||t.side==="SELL").sort((a,b)=>(b.timestamp||0)-(a.timestamp||0)).slice(0,30);
         for (const t of latest) {
           const id=[wallet,t.side,t.timestamp,t.price,t.size].join("|");
           if (!row.exitObservations.some(x=>x.id===id)) row.exitObservations.push({id,...t,observedAt:iso(now)});
         }
       } catch (e) { console.warn("trade history fetch failed",wallet,e.message); }
     }
-    row.exitObservations=row.exitObservations.slice(-300);
+    row.exitObservations=row.exitObservations.slice(-600);
   } catch(e) { console.warn("market snapshot failed",condition,e.message); }
 }
 // Continue checking every pending signal even after it falls off the current consensus list.
