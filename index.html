@@ -226,7 +226,7 @@ dialog::backdrop{background:#000b}
         <div class="filters">
           <label>Minimum entry <select id="minComboEntry" onchange="renderCombos()"><option value="0">Any amount</option><option value="100">$100+</option><option value="500">$500+</option><option value="1000">$1,000+</option><option value="5000">$5,000+</option></select></label>
           <label>Position <select id="comboStatus" onchange="renderCombos()"><option value="held">Open only</option><option value="all">Open + resolved</option></select></label>
-          <label>Event timing <select id="comboTiming" onchange="renderCombos()"><option value="all">Any timing</option><option value="upcoming">Confirmed upcoming</option><option value="unknown">Timing unknown</option><option value="started">Already started</option></select></label>
+          <label>Event timing <select id="comboTiming" onchange="renderCombos()"><option value="all">Any timing</option><option value="upcoming" selected>Not started yet</option><option value="unknown">Timing unknown</option><option value="started">Already started</option></select></label>
         </div>
         <div id="comboList" class="recent-list"><div class="loading">Loading actual combo positions…</div></div>
         <button class="link-button" id="comboMore" onclick="toggleCombos()">View more combos →</button>
@@ -487,8 +487,8 @@ function comboProfitRows() {
     const ts = timeValue == null ? null : (Number.isFinite(Number(timeValue)) ? (Number(timeValue) < 1e12 ? Number(timeValue)*1000 : Number(timeValue)) : Date.parse(timeValue));
     if (ts === null || !Number.isFinite(ts) || ts < weekAgo || ts > now) continue;
     seenCombos.add(uniqueKey);
-    const entry = num(combo.gross_entry_cost_usdc ?? combo.entry_cost_usdc);
-    const payout = num(combo.realized_payout_usdc);
+    const entry = (num(combo.gross_entry_cost_usdc ?? combo.entry_cost_usdc) > 0 ? num(combo.gross_entry_cost_usdc ?? combo.entry_cost_usdc) : null) ?? (num(combo._activityEntryCost) > 0 ? num(combo._activityEntryCost) : null);
+    const payout = num(combo.realized_payout_usdc ?? combo._activityPayout);
     const current = byWallet.get(wallet) || {wallet, trader:combo._trader || {}, profit:0, combos:0, wins:0, losses:0, partial:0, volume:0, pnlKnown:0, pnlMissing:0};
     current.combos++;
     if (status === "RESOLVED_WIN") current.wins++;
@@ -512,7 +512,7 @@ function comboEfficiencyRows() {
     const wallet = String(combo._wallet || walletOf(combo._trader || {})).toLowerCase();
     const id = String(combo.combo_position_id || combo.combo_condition_id || "");
     const status = String(combo.status || "").toUpperCase();
-    const entry = num(combo.gross_entry_cost_usdc ?? combo.entry_cost_usdc);
+    const entry = (num(combo.gross_entry_cost_usdc ?? combo.entry_cost_usdc) > 0 ? num(combo.gross_entry_cost_usdc ?? combo.entry_cost_usdc) : null) ?? (num(combo._activityEntryCost) > 0 ? num(combo._activityEntryCost) : null);
     const payout = num(combo.realized_payout_usdc ?? combo._activityPayout);
     const timeValue = combo.resolved_at ?? combo.resolvedAt ?? combo._activityResolvedAt;
     const ts = timeValue == null ? null : (Number.isFinite(Number(timeValue)) ? (Number(timeValue) < 1e12 ? Number(timeValue)*1000 : Number(timeValue)) : Date.parse(timeValue));
@@ -663,7 +663,7 @@ async function loadComboPositions() {
     while (next < candidates.length) {
       const trader = candidates[next++], wallet = walletOf(trader);
       try {
-        const response = await fetch("https://data-api.polymarket.com/v2/positions/combos?user=" + encodeURIComponent(wallet) + "&status=OPEN,PARTIAL,RESOLVED_WIN,RESOLVED_LOSS,RESOLVED_PARTIAL&sort_by=UPDATED&sort_direction=DESC&limit=1000", {cache:"no-store"});
+        const response = await fetch("https://data-api.polymarket.com/v2/positions/combos?user=" + encodeURIComponent(wallet) + "&status=OPEN,REDEEMABLE,PARTIAL,RESOLVED_WIN,RESOLVED_LOSS,RESOLVED_PARTIAL&sort_by=UPDATED&sort_direction=DESC&limit=1000", {cache:"no-store"});
         if (!response.ok) throw new Error("HTTP " + response.status);
         const json = await response.json(), rows = Array.isArray(json?.data) ? json.data : [];
         const terminal = new Set(["RESOLVED_WIN","RESOLVED_LOSS","RESOLVED_PARTIAL"]);
@@ -757,13 +757,13 @@ function renderCombos() {
   else container.innerHTML = visible.map((combo,index) => {
     const trader = combo._trader || {}, id = String(combo.combo_position_id || combo.combo_condition_id || combo._wallet + "-" + index);
     const expanded = expandedCombos.has(id), status = String(combo.status || "UNKNOWN").replaceAll("_"," ");
-    const entry = num(combo.gross_entry_cost_usdc ?? combo.entry_cost_usdc) > 0 ? num(combo.gross_entry_cost_usdc ?? combo.entry_cost_usdc) : num(combo._activityEntryCost), realizedPayout = num(combo.realized_payout_usdc), potentialPayout = num(combo.current_size), payout = realizedPayout !== null && realizedPayout > 0 ? realizedPayout : (potentialPayout !== null && potentialPayout > 0 ? potentialPayout : null), potentialProfit = realizedPayout !== null && realizedPayout > 0 ? null : (payout !== null && num(entry) !== null ? payout - num(entry) : null), legs = Array.isArray(combo.legs) ? combo.legs : [], timing = comboTimingState(combo);
+    const entry = (num(combo.gross_entry_cost_usdc ?? combo.entry_cost_usdc) > 0 ? num(combo.gross_entry_cost_usdc ?? combo.entry_cost_usdc) : null) ?? (num(combo._activityEntryCost) > 0 ? num(combo._activityEntryCost) : null), realizedPayout = num(combo.realized_payout_usdc ?? combo._activityPayout), potentialPayout = num(combo.potential_payout_usdc ?? combo.max_payout_usdc ?? combo.maximum_payout_usdc), payout = realizedPayout !== null ? realizedPayout : (potentialPayout !== null && potentialPayout > 0 ? potentialPayout : null), potentialProfit = realizedPayout === null && payout !== null && entry !== null ? payout - entry : null, legs = Array.isArray(combo.legs) ? combo.legs : [], timing = comboTimingState(combo);
     const summary = legs.slice(0,3).map(leg => leg.market?.question || leg.market?.title || leg.market?.event?.event_title || "Market leg").join(" · ");
     const detail = expanded ? '<div class="combo-legs">' + (legs.length ? legs.map((leg,i) => {
       const market = leg.market || {}, event = market.event || {}, label = leg.leg_outcome_label || market.outcome || (leg.leg_outcome_index ?? "Unknown outcome");
       return '<div class="combo-leg"><strong>Leg ' + (num(leg.leg_index) ?? i+1) + ': ' + esc(market.question || market.title || event.event_title || "Untitled market") + '</strong><br><span class="side-tag ' + (String(label).toLowerCase()==="no"?"no":"") + '">' + esc(label) + '</span> <small class="subtitle">· ' + esc(String(leg.leg_status || "UNKNOWN").replaceAll("_"," ")) + '</small>' + (event.event_slug ? '<br><a href="https://polymarket.com/event/' + encodeURIComponent(event.event_slug) + '" target="_blank" rel="noopener noreferrer">Open market ↗</a>' : '') + '</div>';
     }).join("") : '<div class="empty">No leg details were returned.</div>') + '</div>' : '';
-    return '<div class="combo-card"><div><div class="combo-title">' + esc(nameOf(trader)) + ' · ' + legs.length + '-leg combo</div><div>' + esc(summary || "Combo market details unavailable") + '</div><div class="combo-meta"><span class="side-tag">' + esc(status) + '</span><span>' + (num(entry) !== null && num(entry) > 0 ? cash(entry) + ' entry' : 'Entry unavailable') + '</span><span>' + (realizedPayout !== null && realizedPayout > 0 ? 'Realized payout: ' + cash(realizedPayout) : (payout === null ? 'Estimated payout: N/A' : 'Est. payout if combo settles successfully: ' + cash(payout))) + (potentialProfit === null ? '' : '<span>' + (potentialProfit >= 0 ? '+' : '') + cash(potentialProfit) + ' est. profit</span>') + '</span><span class="trade-time">' + esc(timing.label) + '</span><span>' + (num(combo.legs_resolved) ?? 0) + '/' + (num(combo.legs_total) ?? legs.length) + ' legs resolved</span></div><button class="link-button" onclick="toggleCombo(&quot;' + esc(id) + '&quot;)">' + (expanded ? 'Hide legs ↑' : 'Show legs ↓') + '</button></div>' + detail + '<div class="trade-user">' + profileButton(trader, nameOf(trader)) + '</div></div>';
+    return '<div class="combo-card"><div><div class="combo-title">' + esc(nameOf(trader)) + ' · ' + legs.length + '-leg combo</div><div>' + esc(summary || "Combo market details unavailable") + '</div><div class="combo-meta"><span class="side-tag">' + esc(status) + '</span><span>' + (num(entry) !== null && num(entry) > 0 ? cash(entry) + ' entry' : 'Entry unavailable') + '</span><span>' + (realizedPayout !== null && realizedPayout > 0 ? 'Realized payout: ' + cash(realizedPayout) : (payout === null ? 'Potential payout unavailable' : 'Potential payout if successful: ' + cash(payout))) + (potentialProfit === null ? '' : '<span>' + (potentialProfit >= 0 ? '+' : '') + cash(potentialProfit) + ' est. profit</span>') + '</span><span class="trade-time">' + esc(timing.label) + '</span><span>' + (num(combo.legs_resolved) ?? 0) + '/' + (num(combo.legs_total) ?? legs.length) + ' legs resolved</span></div><button class="link-button" onclick="toggleCombo(&quot;' + esc(id) + '&quot;)">' + (expanded ? 'Hide legs ↑' : 'Show legs ↓') + '</button></div>' + detail + '<div class="trade-user">' + profileButton(trader, nameOf(trader)) + '</div></div>';
   }).join("");
   $("comboMore").textContent = allCombos ? "Show fewer ↑" : "View more combos →";
   $("comboMore").style.display = rows.length > 12 ? "inline-block" : "none";
@@ -866,11 +866,11 @@ async function loadTraderCombos(wallet) {
     for (const a of activities) {
       const id = String(a.combo_position_id || "");
       if (!id) continue;
-      const rec = byId.get(id) || {entry:0,payout:0,hasEntry:false,hasPayout:false,legs:a.legs || []};
+      const rec = byId.get(id) || {entry:0,payout:0,hasEntry:false,hasPayout:false,legs:a.legs || [],resolvedAt:null};
       const type = String(a.type || "").toUpperCase(), amount = num(a.amount_usdc), payout = num(a.payout_usdc);
       if (type === "SPLIT" && amount !== null) { rec.entry += amount; rec.hasEntry=true; }
       if (type === "MERGE" && amount !== null) { rec.entry -= amount; rec.hasEntry=true; }
-      if (type === "REDEEM" && payout !== null) { rec.payout += payout; rec.hasPayout=true; }
+      if (type === "REDEEM" && payout !== null) { rec.payout += payout; rec.hasPayout=true; rec.resolvedAt = a.timestamp ?? rec.resolvedAt; }
       if (!rec.legs?.length && a.legs) rec.legs=a.legs;
       byId.set(id,rec);
     }
@@ -878,14 +878,17 @@ async function loadTraderCombos(wallet) {
     const resolvedThisWeek = positions.filter(c => {
       const status = String(c.status || "").toUpperCase();
       const rawTime = c.resolved_at ?? c.resolvedAt;
-      const time = rawTime == null ? NaN : Date.parse(rawTime);
-      return ["RESOLVED_WIN","RESOLVED_LOSS","RESOLVED_PARTIAL"].includes(status) && Number.isFinite(time) && time >= weekCutoff && time <= Date.now();
+      const activity = byId.get(String(c.combo_position_id || ""));
+      const time = timestamp(rawTime ?? activity?.resolvedAt);
+      return ["RESOLVED_WIN","RESOLVED_LOSS","RESOLVED_PARTIAL"].includes(status) && time !== null && time*1000 >= weekCutoff && time*1000 <= Date.now();
     });
     const weeklyWins = resolvedThisWeek.filter(c => String(c.status).toUpperCase() === "RESOLVED_WIN").length;
     const weeklyLosses = resolvedThisWeek.filter(c => String(c.status).toUpperCase() === "RESOLVED_LOSS").length;
     const weeklyPartial = resolvedThisWeek.filter(c => String(c.status).toUpperCase() === "RESOLVED_PARTIAL").length;
     const knownFinancials = resolvedThisWeek.map(c => {
-      const entry = num(c.gross_entry_cost_usdc ?? c.entry_cost_usdc), payout = num(c.realized_payout_usdc);
+      const activity = byId.get(String(c.combo_position_id || ""));
+      const entry = (num(c.gross_entry_cost_usdc ?? c.entry_cost_usdc) > 0 ? num(c.gross_entry_cost_usdc ?? c.entry_cost_usdc) : null) ?? (activity?.hasEntry && activity.entry > 0 ? activity.entry : null);
+      const payout = num(c.realized_payout_usdc) ?? (activity?.hasPayout ? activity.payout : null);
       return entry !== null && entry >= 0 && payout !== null ? payout - entry : null;
     }).filter(v => v !== null);
     const summaryBox = $("profileComboSummary");
@@ -915,7 +918,7 @@ function renderProfileCombo(combo, isClosed) {
     const m = leg.market || {};
     return 'Leg ' + (num(leg.leg_index) ?? i+1) + ': ' + esc(m.question || m.title || m.event?.event_title || "Market details unavailable") + ' — ' + esc(leg.leg_outcome_label || m.outcome || "Outcome unavailable");
   }).join("<br>");
-  const entry = num(combo.gross_entry_cost_usdc ?? combo.entry_cost_usdc);
+  const entry = (num(combo.gross_entry_cost_usdc ?? combo.entry_cost_usdc) > 0 ? num(combo.gross_entry_cost_usdc ?? combo.entry_cost_usdc) : null) ?? (num(combo._activityEntryCost) > 0 ? num(combo._activityEntryCost) : null);
   const payout = num(combo.realized_payout_usdc ?? combo._activityPayout);
   const profit = entry !== null && payout !== null ? payout - entry : null;
   const status = String(combo.status || (isClosed ? "RESOLVED" : "OPEN")).replaceAll("_"," ");
