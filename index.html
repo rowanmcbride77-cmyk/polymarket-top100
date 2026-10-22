@@ -619,18 +619,17 @@ function renderConsensus() {
         const wallet = walletOf(member);
         if (wallet) consensusMemberCache.set(wallet, member);
         const key = String(market.conditionId || "").toLowerCase() + "|" + String(side).toLowerCase();
-        const buys = forwardTradesByMarket.get(key) || [];
-        const buy = buys.find(t => String(t.wallet || "").toLowerCase() === wallet);
+        const events = (forwardTradesByMarket.get(key) || []).filter(t => String(t.wallet || "").toLowerCase() === wallet);
+        const buy = events.find(t => String(t.side || "").toUpperCase() === "BUY");
+        const sell = events.find(t => String(t.side || "").toUpperCase() === "SELL" && (!buy || (timestamp(t.timestamp)||0) > (timestamp(buy.timestamp)||0)));
         const memberEntry = num(member.amount), memberValue = num(member.currentValue);
-        const memberTime = buy?.timestamp ?? member.buyTime ?? null;
-        const buyPrice = buy?._price, currentPrice = buy?._currentPrice, shares = buy?._shares, bought = buy?._cost;
-        const currentValue = currentPrice !== null && currentPrice !== undefined && shares !== null && shares !== undefined ? currentPrice * shares : null;
-        const pnl = bought !== null && bought !== undefined && currentValue !== null ? currentValue-bought : null;
-        return `<div class="member member-compact">
-          <div class="member-identity"><strong>${profileButton(member, memberName)}</strong><small>${buy ? "Recent BUY observed" : "No recent BUY print matched"} · ${esc(dateText(memberTime))}</small></div>
-          <div><strong>${buyPrice === null || buyPrice === undefined ? "—" : (buyPrice*100).toFixed(1)+"¢"}</strong><small>${buy ? "Observed buy price" : "Buy price unavailable"}</small><small>${bought === null || bought === undefined ? (memberEntry !== null ? "Position amount "+cash(memberEntry) : "Entry amount unavailable") : "Observed buy "+cash(bought)+(shares !== null ? " · "+shares.toFixed(1)+" shares" : "")}</small></div>
-          <div><strong>${currentPrice === null || currentPrice === undefined ? "—" : (currentPrice*100).toFixed(1)+"¢"}</strong><small>Market price now</small><small>${currentValue === null ? (memberValue !== null ? "Position value "+cash(memberValue) : "Current value unavailable") : "Buy shares now "+cash(currentValue)}</small><small class="${pnl === null ? "" : pnl >= 0 ? "positive" : "negative"}">${pnl === null ? "P&L not verified" : (pnl >= 0 ? "+" : "")+cash(pnl)+" if those shares remain held"}</small></div>
-        </div>`;
+        const latestEvent = events[0], currentPrice = latestEvent?._currentPrice, buyPrice = buy?._price, shares = buy?._shares, bought = buy?._cost;
+        const sellCost = sell?._cost;
+        return '<div class="member member-compact">' +
+          '<div class="member-identity"><strong>' + profileButton(member, memberName) + '</strong><small>' + (buy ? "BUY observed · "+esc(dateText(buy.timestamp)) : "No matching BUY print in recent history") + '</small><small>' + (sell ? "⚠ SELL print observed · "+esc(dateText(sell.timestamp))+" — review your position" : "No later SELL print observed") + '</small></div>' +
+          '<div><strong>' + (buyPrice === null || buyPrice === undefined ? "—" : (buyPrice*100).toFixed(1)+"¢") + '</strong><small>Observed buy price</small><small>' + (bought === null || bought === undefined ? (memberEntry !== null ? "Position amount "+cash(memberEntry) : "Buy amount unavailable") : "Buy transaction "+cash(bought)+(shares !== null ? " · "+shares.toFixed(1)+" shares" : "")) + '</small></div>' +
+          '<div><strong>' + (currentPrice === null || currentPrice === undefined ? "—" : (currentPrice*100).toFixed(1)+"¢") + '</strong><small>Market price now</small><small>' + (sell ? "Latest observed SELL "+(sell._price === null ? "price unavailable" : (sell._price*100).toFixed(1)+"¢")+(sellCost === null ? "" : " · "+cash(sellCost)) : "No later sell detected") + '</small><small>' + (memberValue !== null ? "Position value reported "+cash(memberValue) : "Current held value not verified") + '</small></div>' +
+        '</div>';
       }).join("")}</div>` : `<div class="empty">No trader-level position details were supplied for this market.</div>`}
     </td></tr>` : "";
 
@@ -1063,7 +1062,7 @@ async function loadForwardTest() {
       if (!condition || !side) continue;
       const key = condition + "|" + side;
       const observations = Array.isArray(signal.exitObservations) ? signal.exitObservations : [];
-      const buys = observations.filter(t => String(t.side || "").toUpperCase() === "BUY" &&
+      const buys = observations.filter(t => ["BUY","SELL"].includes(String(t.side || "").toUpperCase()) &&
         String(t.outcome || "").toLowerCase() === side).map(t => {
           const price = num(t.price), shares = num(t.size);
           return {...t, _price:price, _shares:shares, _cost:price !== null && shares !== null ? price*shares : null,
