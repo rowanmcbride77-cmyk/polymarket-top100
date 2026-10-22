@@ -348,6 +348,15 @@ function timestamp(value) {
 function relative(value) {
   const n = timestamp(value);
   if (!n) return "Time unavailable";
+  const seconds = Math.max(0, Math.floor(Date.now() / 1000 - n));
+  if (seconds < 60) return `${seconds}s ago`;
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+  return `${Math.floor(seconds / 86400)}d ago`;
+}
+function timeUntil(value) {
+  const n = timestamp(value);
+  if (!n) return "Time unavailable";
   const delta = Math.floor(n - Date.now() / 1000);
   if (delta >= 0) {
     if (delta < 60) return "in under 1m";
@@ -646,7 +655,7 @@ function renderConsensus() {
       <td><span class="${sideClass}">${esc(side)}</span></td>
       <td><strong>${count}</strong></td>
       <td class="money">${cash(amount)}</td>
-      <td title="${esc(dateText(marketEndTime(market)))}">${esc(relative(marketEndTime(market)))}</td>
+      <td title="${esc(dateText(marketEndTime(market)))}">${esc(timeUntil(marketEndTime(market)))}</td>
     </tr>`;
 
     const detail = expanded ? `<tr class="expand-row"><td colspan="6">
