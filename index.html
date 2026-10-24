@@ -511,7 +511,7 @@ function comboPayout(combo) {
   const activity = num(combo?._activityPayout);
   // A resolved win with a zero-valued position field but a positive REDEEM event
   // must show the actual cash redemption rather than the stale zero.
-  if (status === "RESOLVED_WIN" && !(direct > 0) && activity > 0) return activity;
+  if (["RESOLVED_WIN","RESOLVED_PARTIAL"].includes(status) && !(direct > 0) && activity > 0) return activity;
   return direct !== null ? direct : activity;
 }
 function comboResolvedMs(combo) {
@@ -1097,7 +1097,7 @@ async function loadTraderCombos(wallet) {
       const activityPayout = activity?.hasPayout ? activity.payout : null;
       // Some API rows report 0 for a winning combo despite a recorded REDEEM. Prefer
       // positive redemption cash in that case; keep zero as a valid payout for losses.
-      const payout = status === "RESOLVED_WIN" && !(directPayout > 0) && activityPayout > 0
+      const payout = ["RESOLVED_WIN","RESOLVED_PARTIAL"].includes(status) && !(directPayout > 0) && activityPayout > 0
         ? activityPayout
         : (directPayout !== null ? directPayout : activityPayout);
       const entry = (num(combo.entry_cost_usdc) > 0 ? num(combo.entry_cost_usdc) : null) ??
