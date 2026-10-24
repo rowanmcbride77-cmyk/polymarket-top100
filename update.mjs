@@ -1033,10 +1033,17 @@ async function getSettlementStats(wallet, period, nowMs, limit = 250) {
     settlementPositionsChecked: positions.length
   };
 }
+const settlementStatsCache = new Map();
 async function attachSettlementStats(traders, period, nowMs) {
   return await mapLimit(traders, 4, async trader => {
     try {
-      const stats = await getSettlementStats(trader.wallet, period, nowMs, 250);
+      const wallet = String(trader.wallet || "").toLowerCase();
+      let pending = settlementStatsCache.get(wallet);
+      if (!pending) {
+        pending = getSettlementStats(wallet, period, nowMs, 250);
+        settlementStatsCache.set(wallet, pending);
+      }
+      const stats = await pending;
       return {...trader, ...stats};
     } catch (error) {
       console.warn("Settlement record unavailable for " + trader.wallet + ":", error.message);
