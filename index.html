@@ -227,7 +227,7 @@ dialog::backdrop{background:#000b}
         <div class="filters">
           <label>Minimum entry <select id="minComboEntry" onchange="renderCombos()"><option value="0">Any amount</option><option value="100">$100+</option><option value="500">$500+</option><option value="1000">$1,000+</option><option value="5000">$5,000+</option></select></label>
           <label>Position <select id="comboStatus" onchange="renderCombos()"><option value="held">Open only</option><option value="all">Open + resolved</option></select></label>
-          <label>Event timing <select id="comboTiming" onchange="renderCombos()"><option value="all">Any timing</option><option value="upcoming" selected>Not started yet</option><option value="unknown">Timing unknown</option><option value="started">Already started</option></select></label>
+          <label>Event timing <select id="comboTiming" onchange="renderCombos()"><option value="all" selected>Any timing</option><option value="upcoming">Not started yet</option><option value="unknown">Timing unknown</option><option value="started">Already started</option></select></label>
         </div>
         <div id="comboList" class="recent-list"><div class="loading">Loading actual combo positions…</div></div>
         <button class="link-button" id="comboMore" onclick="toggleCombos()">View more combos →</button>
@@ -689,100 +689,153 @@ function renderConsensus() {
 }
 
 async function loadComboPositions() {
-  // Use all exported qualified traders, not only the visible Top 100.
+  // Scan a broader leaderboard-derived wallet pool. Combo endpoints are user-anchored;
+  // this is broader coverage, not a claim to enumerate every Polymarket wallet.
   const source = Array.isArray(data?.comboCandidates) && data.comboCandidates.length
     ? data.comboCandidates
     : rankedLeaders();
   const seenWallets = new Set();
-  // Avoid thousands of simultaneous public-API requests from every browser session.
-  // This is still broader than the visible Top 100; profiles remain individually queryable.
   const candidates = source.filter(t => {
     const wallet = walletOf(t);
     if (!/^0x[a-f0-9]{40}$/i.test(wallet) || seenWallets.has(wallet)) return false;
     seenWallets.add(wallet);
     return true;
-  }).slice(0, 250);
+  }).slice(0, 500);
+
   traderAliases.clear();
   candidates.forEach((t, i) => traderAliases.set(walletOf(t).toLowerCase(), "Trader " + (i + 1)));
-  comboRows = []; comboLoadFinished = false;
-  if (!candidates.length) { $("comboList").innerHTML = '<div class="empty">No valid trader wallets were found in the loaded leaderboard.</div>'; return; }
-  $("comboList").innerHTML = '<div class="loading">Checking combo positions for ' + candidates.length + ' traders (fast scan)…</div>';
-  let next = 0, completed = 0;
+  comboRows = [];
+  comboLoadFinished = false;
+  if (!candidates.length) {
+    $("comboList").innerHTML = '<div class="empty">No valid trader wallets were found in the loaded leaderboard.</div>';
+    comboLoadFinished = true;
+    return;
+  }
+  $("comboList").innerHTML = '<div class="loading">Checking actual combo positions for ' + candidates.length + ' traders…</div>';
+  let next = 0, completed = 0, failed = 0;
+  const terminal = new Set(["RESOLVED_WIN", "RESOLVED_LOSS", "RESOLVED_PARTIAL"]);
+
+  async function fetchComboPages(baseUrl, maxPages = 3) {
+    const all = [], seenIds = new Set();
+    let cursor = null;
+    for (let pageNo = 0; pageNo < maxPages; pageNo++) {
+      const url = baseUrl + (baseUrl.includes("?") ? "&" : "?") + "limit=1000" +
+        (cursor ? "&cursor=" + encodeURIComponent(cursor) : "");
+      const response = await fetch(url, {cache:"no-store", signal:AbortSignal.timeout(12000)});
+      if (!response.ok) throw new Error("Combo API HTTP " + response.status);
+      const json = await response.json();
+      const rows = Array.isArray(json?.data) ? json.data : Array.isArray(json?.combos) ? json.combos : Array.isArray(json) ? json : [];
+      for (const row of rows) {
+        const id = String(row.combo_position_id || row.combo_condition_id || "");
+        if (!id) continue;
+        if (!seenIds.has(id)) { seenIds.add(id); all.push(row); }
+      }
+      cursor = json?.pagination?.next_cursor || null;
+      if (!json?.pagination?.has_more || !cursor || !rows.length) break;
+    }
+    return all;
+  }
+
   const worker = async () => {
     while (next < candidates.length) {
       const trader = candidates[next++], wallet = walletOf(trader);
       try {
-        const endpoint = "https://data-api.polymarket.com/v2/positions/combos?user=" + encodeURIComponent(wallet);
-        let response = await fetch(endpoint + "&status=OPEN,PARTIAL,RESOLVED_WIN,RESOLVED_LOSS,RESOLVED_PARTIAL&sort_by=UPDATED&sort_direction=DESC&limit=250", {cache:"no-store", signal:AbortSignal.timeout(6000)});
-        let json = response.ok ? await response.json() : null;
-        let rows = Array.isArray(json?.data) ? json.data : Array.isArray(json?.combos) ? json.combos : Array.isArray(json) ? json : [];
-        // Defensive fallback: some API deployments reject combined status filters.
-        // Query held and resolved cohorts separately instead of silently losing all combos.
-        if (!response.ok || rows.length === 0) {
-          const fallbackUrls = [
-            endpoint + "&sort_by=UPDATED&sort_direction=DESC&limit=250",
-            "https://data-api.polymarket.com/v1/positions/combos?user=" + encodeURIComponent(wallet) + "&limit=250"
-          ];
-          for (const fallbackUrl of fallbackUrls) {
-            try {
-              const fallbackResponse = await fetch(fallbackUrl, {cache:"no-store", signal:AbortSignal.timeout(12000)});
-              if (!fallbackResponse.ok) continue;
-              const fallbackJson = await fallbackResponse.json();
-              const fallbackRows = Array.isArray(fallbackJson?.data) ? fallbackJson.data : Array.isArray(fallbackJson?.combos) ? fallbackJson.combos : Array.isArray(fallbackJson) ? fallbackJson : [];
-              rows.push(...fallbackRows);
-            } catch (fallbackError) { console.warn("Combo fallback lookup failed for " + wallet + ": " + fallbackError.message); }
-          }
-          const uniqueRows = new Map();
-          for (const row of rows) {
-            const rowId = String(row.combo_position_id || row.combo_condition_id || "");
-            if (rowId) uniqueRows.set(rowId, row);
-          }
-          rows = [...uniqueRows.values()];
+        const root = "https://data-api.polymarket.com/v2/positions/combos?user=" + encodeURIComponent(wallet);
+        const [heldResult, closedResult] = await Promise.allSettled([
+          fetchComboPages(root + "&sort_by=UPDATED&sort_direction=DESC", 2),
+          fetchComboPages(root + "&status=RESOLVED_WIN,RESOLVED_LOSS,RESOLVED_PARTIAL&sort_by=UPDATED&sort_direction=DESC", 2)
+        ]);
+        let rows = [];
+        if (heldResult.status === "fulfilled") rows.push(...heldResult.value);
+        if (closedResult.status === "fulfilled") rows.push(...closedResult.value);
+        if (heldResult.status === "rejected" && closedResult.status === "rejected") {
+          // Legacy endpoint is a last-resort compatibility path.
+          const legacy = await fetch("https://data-api.polymarket.com/v1/positions/combos?user=" + encodeURIComponent(wallet) + "&limit=500", {
+            cache:"no-store", signal:AbortSignal.timeout(12000)
+          });
+          if (legacy.ok) {
+            const lj = await legacy.json();
+            rows.push(...(Array.isArray(lj?.data) ? lj.data : Array.isArray(lj?.combos) ? lj.combos : Array.isArray(lj) ? lj : []));
+          } else failed++;
         }
-        const terminal = new Set(["RESOLVED_WIN","RESOLVED_LOSS","RESOLVED_PARTIAL"]);
-        const needsActivity = rows.some(c =>
-          comboEntryCost(c) === null ||
-          (terminal.has(String(c.status || "").toUpperCase()) && num(c.realized_payout_usdc) === null)
+        const unique = new Map();
+        for (const row of rows) {
+          const id = String(row.combo_position_id || row.combo_condition_id || "");
+          if (id) unique.set(id, row);
+        }
+        rows = [...unique.values()];
+
+        const needsActivity = rows.some(combo =>
+          comboEntryCost(combo) === null ||
+          (terminal.has(String(combo.status || "").toUpperCase()) && num(combo.realized_payout_usdc) === null)
         );
-        let activityById = new Map();
+        const activityById = new Map();
         if (needsActivity) {
           try {
-            const ar = await fetch("https://data-api.polymarket.com/v2/activity/combos?user=" + encodeURIComponent(wallet) + "&limit=250", {cache:"no-store", signal:AbortSignal.timeout(12000)});
+            const ar = await fetch("https://data-api.polymarket.com/v2/activity/combos?user=" + encodeURIComponent(wallet) + "&limit=1000", {
+              cache:"no-store", signal:AbortSignal.timeout(12000)
+            });
             if (ar.ok) {
-              const aj = await ar.json(), events = Array.isArray(aj?.data) ? aj.data : Array.isArray(aj) ? aj : [];
-              for (const a of events) {
-                const id = String(a.combo_position_id || "");
+              const aj = await ar.json();
+              const events = Array.isArray(aj?.data) ? aj.data : Array.isArray(aj) ? aj : [];
+              for (const event of events) {
+                const id = String(event.combo_position_id || "");
                 if (!id) continue;
-                const rec = activityById.get(id) || {entry:0,payout:0,hasEntry:false,hasPayout:false,resolvedAt:null};
-                const type = String(a.type || "").toUpperCase(), amount = num(a.amount_usdc), payout = num(a.payout_usdc);
+                const rec = activityById.get(id) || {entry:0,payout:0,hasEntry:false,hasPayout:false,resolvedAt:null,legs:event.legs || []};
+                const type = String(event.type || "").toUpperCase();
+                const amount = num(event.amount_usdc), payout = num(event.payout_usdc);
                 if (type === "SPLIT" && amount !== null) { rec.entry += amount; rec.hasEntry = true; }
                 if (type === "MERGE" && amount !== null) { rec.entry -= amount; rec.hasEntry = true; }
-                if (type === "REDEEM" && payout !== null) { rec.payout += payout; rec.hasPayout = true; rec.resolvedAt = a.timestamp ?? rec.resolvedAt; }
+                if (type === "REDEEM" && payout !== null) { rec.payout += payout; rec.hasPayout = true; rec.resolvedAt = event.timestamp ?? rec.resolvedAt; }
+                if (!rec.legs?.length && event.legs) rec.legs = event.legs;
                 activityById.set(id, rec);
               }
             }
-          } catch (activityError) { console.warn("Combo activity lookup failed for " + wallet + ": " + activityError.message); }
+          } catch (error) { console.warn("Combo activity unavailable for " + wallet + ": " + error.message); }
         }
         for (const combo of rows) {
-          const a = activityById.get(String(combo.combo_position_id || ""));
-          comboRows.push({...combo,
-            _activityEntryCost: (num(combo.entry_cost_usdc) > 0 ? num(combo.entry_cost_usdc) : null) ?? (a?.hasEntry && a.entry > 0 ? a.entry : null) ?? (num(combo.gross_entry_cost_usdc) > 0 ? num(combo.gross_entry_cost_usdc) : null),
-            _activityPayout: num(combo.realized_payout_usdc) ?? (a?.hasPayout ? a.payout : null),
-            _activityResolvedAt: a?.resolvedAt ?? null,
-            _trader:trader, _wallet:wallet
+          const activity = activityById.get(String(combo.combo_position_id || ""));
+          comboRows.push({
+            ...combo,
+            _activityEntryCost: (num(combo.entry_cost_usdc) > 0 ? num(combo.entry_cost_usdc) : null) ??
+              (activity?.hasEntry && activity.entry > 0 ? activity.entry : null) ??
+              (num(combo.gross_entry_cost_usdc) > 0 ? num(combo.gross_entry_cost_usdc) : null),
+            _activityPayout: num(combo.realized_payout_usdc) ?? (activity?.hasPayout ? activity.payout : null),
+            _activityResolvedAt: activity?.resolvedAt ?? null,
+            legs: Array.isArray(combo.legs) && combo.legs.length ? combo.legs : (activity?.legs || []),
+            _trader: trader,
+            _wallet: wallet
           });
         }
-      } catch (error) { console.warn("Combo lookup failed for " + wallet + ": " + error.message); }
+      } catch (error) {
+        failed++;
+        console.warn("Combo lookup failed for " + wallet + ": " + error.message);
+      }
       completed++;
-      if (completed % 10 === 0) {
-        $("comboList").innerHTML = '<div class="loading">Checked ' + completed + ' of ' + candidates.length + ' traders · ' + comboRows.length + ' combo rows found…</div>';
-        if (($("leaderMode")?.value || "all") === "combos") renderLeaders();
+      if (completed % 10 === 0 || completed === candidates.length) {
+        $("comboList").innerHTML = '<div class="loading">Checked ' + completed + ' of ' + candidates.length +
+          ' traders · ' + comboRows.length + ' combo records found…</div>';
+        if (($( "leaderMode")?.value || "all") === "combos") renderLeaders();
         renderCombos();
       }
     }
   };
   await Promise.all(Array.from({length:8}, () => worker()));
-  comboLoadFinished = true; renderCombos(); renderLeaders();
+  // De-duplicate overlapping held/resolved responses by wallet + position ID.
+  const uniqueRows = new Map();
+  for (const combo of comboRows) {
+    const id = String(combo.combo_position_id || combo.combo_condition_id || "");
+    const key = String(combo._wallet || walletOf(combo._trader || {})).toLowerCase() + ":" + id;
+    if (id) uniqueRows.set(key, combo);
+  }
+  comboRows = [...uniqueRows.values()];
+  comboLoadFinished = true;
+  renderCombos();
+  renderLeaders();
+  if (!comboRows.length) {
+    $("comboList").innerHTML = '<div class="empty">No combo positions were returned for the ' + candidates.length +
+      ' wallets scanned. ' + failed + ' wallet lookups failed. This is an API coverage result, not proof that Polymarket has no combos.</div>';
+  }
 }
 
 function comboLegStartMs(leg) {
