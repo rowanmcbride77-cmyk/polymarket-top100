@@ -863,13 +863,21 @@ function buildConsensus(holderGroups, candidates, records = {}) {
         const settlementLosses = num(record.settlementLosses);
         const resolvedMarkets = settlementWins !== null && settlementLosses !== null ? settlementWins + settlementLosses : null;
         const winRate = resolvedMarkets > 0 ? settlementWins / resolvedMarkets * 100 : null;
+        const earlyExits = num(record.earlyExitPositions) ?? 0;
+        // Keep a settlement-hold preference without requiring a literally
+        // perfect lifetime record (which made the live consensus list empty).
+        // A trader must have at least 10 classifiable settled markets, 90%+
+        // wins on that sample, and no more than 20% observed early exits among
+        // classified closed positions. Completeness is shown as metadata,
+        // not used to silently erase otherwise valid sampled evidence.
+        const observedClassified = resolvedMarkets + earlyExits;
+        const earlyExitRate = observedClassified > 0 ? earlyExits / observedClassified : 1;
         if (
-          record.settlementRecordComplete !== true ||
-          num(record.earlyExitPositions) !== 0 ||
           winRate === null ||
           winRate < MIN_CONSENSUS_WIN_RATE ||
           resolvedMarkets === null ||
-          resolvedMarkets < MIN_TRADER_RESOLVED_MARKETS
+          resolvedMarkets < MIN_TRADER_RESOLVED_MARKETS ||
+          earlyExitRate > 0.20
         ) return [];
         return [{
           ...holder,
@@ -883,8 +891,10 @@ function buildConsensus(holderGroups, candidates, records = {}) {
           losses: settlementLosses,
           winRate,
           resolvedMarkets,
-          earlyExitPositions: record.earlyExitPositions,
-          recordBasis: "Verified settled-market outcomes only; requires complete scanned closed-position history and zero observed early exits"
+          earlyExitPositions: earlyExits,
+          earlyExitRate,
+          settlementRecordComplete: record.settlementRecordComplete === true,
+          recordBasis: "Classifiable settled-market outcomes; 90%+ win rate, 10+ settlements, and at most 20% observed early exits"
         }];
       });
       const totalValue = traders.reduce((sum, trader) => sum + (num(trader.amount) ?? 0), 0);
@@ -1024,13 +1034,18 @@ async function getSettlementStats(wallet, period, nowMs, limit = 250) {
     else settlementLosses++;
   }
   const allPositionsClassified = classified === positions.length && (earlyExitPositions + settlementWins + settlementLosses) === positions.length;
+  // Preserve every individually classifiable settled result even when the
+  // trader has a long history, missing market metadata, or more pages than the
+  // scan cap. Consensus can use the verified sample without pretending it is
+  // a complete lifetime record.
   return {
-    settlementWins: allPositionsClassified ? settlementWins : null,
-    settlementLosses: allPositionsClassified ? settlementLosses : null,
+    settlementWins,
+    settlementLosses,
     earlyExitMarkets: earlyKeys.size,
     earlyExitPositions,
     settlementRecordComplete: allPositionsClassified && pagination.has_more !== true,
-    settlementPositionsChecked: positions.length
+    settlementPositionsChecked: positions.length,
+    settlementPositionsClassified: classified
   };
 }
 const settlementStatsCache = new Map();
