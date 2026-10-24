@@ -8,11 +8,11 @@ const PERIODS = [
   { key: "month", api: "MONTH" }
 ];
 
-const CANDIDATE_COUNT = 5000;
-const PROCESS_CANDIDATE_COUNT = 5000;
+const CANDIDATE_COUNT = 7500;
+const PROCESS_CANDIDATE_COUNT = 7500;
 // Full closed-position history lookups are much more expensive than wallet discovery.
 // Keep the 5,000-wallet position/consensus pool, but bound per-period history enrichment.
-const RECORD_SCAN_CANDIDATE_COUNT = 1000;
+const RECORD_SCAN_CANDIDATE_COUNT = 1500;
 const LEADERBOARD_PAGE_COUNT = 1000;
 const MIN_CONSENSUS_WIN_RATE = 90;
 const LEADER_COUNT = 100;
@@ -27,7 +27,7 @@ const CONSENSUS_WINDOW_HOURS = 24;
 const CONSENSUS_HOLDERS_PER_MARKET = 1000;
 const MIN_CONSENSUS_POSITION_VALUE = 5;
 const CONSENSUS_ENTRY_WINDOW_MINUTES = 60;
-const MIN_TRADER_RESOLVED_MARKETS = 15;
+const MIN_TRADER_RESOLVED_MARKETS = 10;
 const TRADERS_PER_MARKET = 100;
 const TRADE_LIMIT = 10;
 const MAX_JSON_BYTES = 5 * 1024 * 1024;
@@ -859,10 +859,13 @@ function buildConsensus(holderGroups, candidates, records = {}) {
         const candidate = candidateMap.get(wallet);
         if (!candidate) return [];
         const record = records[wallet] || records[candidate.wallet] || candidate;
-        const winRate = num(record.winRate);
-        const resolvedMarkets = num(record.resolvedMarkets);
+        const settlementWins = num(record.settlementWins);
+        const settlementLosses = num(record.settlementLosses);
+        const resolvedMarkets = settlementWins !== null && settlementLosses !== null ? settlementWins + settlementLosses : null;
+        const winRate = resolvedMarkets > 0 ? settlementWins / resolvedMarkets * 100 : null;
         if (
-          record.recordComplete !== true ||
+          record.settlementRecordComplete !== true ||
+          num(record.earlyExitPositions) !== 0 ||
           winRate === null ||
           winRate < MIN_CONSENSUS_WIN_RATE ||
           resolvedMarkets === null ||
@@ -876,11 +879,12 @@ function buildConsensus(holderGroups, candidates, records = {}) {
           overallRank: candidate.rank ?? null,
           pnl: candidate.pnl ?? holder.pnl ?? null,
           volume: candidate.volume ?? holder.volume ?? null,
-          wins: record.wins ?? null,
-          losses: record.losses ?? null,
+          wins: settlementWins,
+          losses: settlementLosses,
           winRate,
           resolvedMarkets,
-          recordBasis: record.recordBasis ?? "Realized-P&L proxy; not verified settlement accuracy"
+          earlyExitPositions: record.earlyExitPositions,
+          recordBasis: "Verified settled-market outcomes only; requires complete scanned closed-position history and zero observed early exits"
         }];
       });
       const totalValue = traders.reduce((sum, trader) => sum + (num(trader.amount) ?? 0), 0);
@@ -924,11 +928,9 @@ function timeMs(value) {
   return Number.isFinite(ms) && ms > 0 ? ms : null;
 }
 async function getSettlementStats(wallet, period, nowMs, limit = 250) {
-  const periodDays = String(period?.api || period || "").toUpperCase() === "MONTH" ? 30 : 7;
-  const cutoffMs = nowMs - periodDays * 24 * 60 * 60 * 1000;
   const baseParams = {
     user: wallet, limit: String(limit), status: "CLOSED",
-    sort_by: "TIMESTAMP", sort_direction: "DESC", start: String(Math.floor(cutoffMs / 1000))
+    sort_by: "TIMESTAMP", sort_direction: "DESC"
   };
   // The API's default page is capped at 250 positions. Follow its opaque cursor
   // so busy traders aren't automatically marked N/A just because they exceed one page.
@@ -1043,7 +1045,7 @@ async function attachSettlementStats(traders, period, nowMs) {
   });
 }
 
-function makeOutput(period, ranked, sportsRanked, activePositions, tradeRows, nowMs, consensusCandidates, records, leaderRecords, consensusGroups) {
+function makeOutput(period, ranked, sportsRanked, activePositions, tradeRows, nowMs, consensusCandidates, records, leaderRecords, consensusGroups, settlementRecords) {
   // Preserve the exact period-scoped record used to rank this list.
   // Full-history enrichment must never overwrite weekly/monthly wins, losses,
   // win rate, or resolved-market count, otherwise the displayed numbers no
@@ -1102,7 +1104,7 @@ function makeOutput(period, ranked, sportsRanked, activePositions, tradeRows, no
     })),
     traderActiveTrades: Object.fromEntries(tradeRows.filter(Boolean)),
     traderActivePositions: leaderPositions,
-    consensus: buildConsensus(consensusGroups, consensusCandidates || ranked, records)
+    consensus: buildConsensus(consensusGroups, consensusCandidates || ranked, settlementRecords || {})
   };
 }
 
@@ -1164,6 +1166,9 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
   const recordCandidates = candidates.slice(0, RECORD_SCAN_CANDIDATE_COUNT);
   console.log(`Discovered ${discoveredCandidates.length} ${period.key} candidates; loading closed-position records for ${recordCandidates.length} of ${candidates.length} wallets to keep the workflow within runtime limits...`);
   const records = await attachRecords(recordCandidates, period, nowMs, RANKING_RECORD_LIMIT);
+  console.log(`${period.key}: verifying settlement outcomes for ${recordCandidates.length} wallets for consensus qualification...`);
+  const settlementRows = await attachSettlementStats(recordCandidates, period, nowMs);
+  const settlementRecords = Object.fromEntries(settlementRows.map(trader => [String(trader.wallet || "").toLowerCase(), trader]));
   const ranked = rankCandidates(candidates, records);
   const sportsRanked = rankSportsCandidates(candidates, records);
   const leaders = ranked.slice(0, LEADER_COUNT);
@@ -1190,7 +1195,8 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     consensusCandidates,
     records,
     leaderRecords,
-    consensusGroups
+    consensusGroups,
+    settlementRecords
   );
   // Enrich only the visible Top 100 with verified settlement outcomes and a
   // separate count of positions whose last event preceded market resolution.
@@ -1199,23 +1205,23 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
   await writeJsonUnderLimit(`${period.key}.json`, output);
 
   // Keep consensus data independent from the Top 100 period tabs. These
-  // files reflect the actual fetched candidate pool; do not label them as
-  // 10,000-trader pools until 10,000 candidates are fetched and validated.
+  // files reflect the actual fetched candidate pool; label the exact discovered pool size and the smaller settlement-verified sample separately.
   await writeJsonUnderLimit(`consensus-${period.key}.json`, {
     generatedAt: new Date(nowMs).toISOString(),
     pool: period.key,
     qualificationWindowDays: period.key === "month" ? 30 : 7,
     minimumWinRate: MIN_CONSENSUS_WIN_RATE,
     minimumResolvedMarkets: MIN_TRADER_RESOLVED_MARKETS,
+    qualificationBasis: "Lifetime verified settled-market outcomes only; requires at least 10 fully classified resolved markets, 90%+ settlement win rate, complete scanned closed-position history, and zero observed early exits.",
     minimumSameSideTraders: 2,
     entryWindowMinutes: CONSENSUS_ENTRY_WINDOW_MINUTES,
     candidateCount: ranked.length,
     discoveredCandidateCount: discoveredCandidates.length,
     scanDiagnostics: lastConsensusDiagnostics,
-    candidatePoolBasis: "Unique traders collected from Polymarket public Data API v1 overall PnL and volume leaderboards, paginating each board through its supported offset ceiling (0–1,000). This is the largest accessible leaderboard-derived candidate pool from these endpoints, not all platform traders. Records remain a realized-PnL proxy, not verified settlement prediction accuracy.",
+    candidatePoolBasis: "Unique traders collected from Polymarket public Data API v1 overall PnL and volume leaderboards, paginating each board through its supported offset ceiling (0–1,000). This is the largest accessible leaderboard-derived candidate pool from these endpoints, not all platform traders. Consensus qualification uses verified settled outcomes for the settlement-history sample, not realized-P&L proxies.",
     resolutionWindowHours: null,
     entryActivityWindowHours: null,
-    recordBasis: "90% threshold applies to profitable-close rate based on realized P&L, NOT verified market settlement outcomes. Do not interpret this as a verified prediction win rate.",
+    recordBasis: "90% threshold is based on verified resolved-market outcomes in the complete scanned closed-position history; traders with observed early exits are excluded.",
     consensus: output.consensus
   });
 
