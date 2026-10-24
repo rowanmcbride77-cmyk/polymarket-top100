@@ -330,10 +330,10 @@ function avatar(trader) {
   return `<span class="avatar">${esc(initials)}</span>`;
 }
 
-function profileButton(trader, label = nameOf(trader)) {
-  const wallet = walletOf(trader);
-  if (!wallet) return `<span>${esc(label)}</span>`;
-  return `<button class="trader-link" onclick="openProfile('${esc(wallet)}')">${esc(label)}</button>`;
+function profileButton(trader, label = nameOf(trader), walletOverride = "") {
+  const wallet = walletOf(trader) || String(walletOverride || "").toLowerCase();
+  if (!/^0x[a-f0-9]{40}$/i.test(wallet)) return `<span>${esc(label)}</span>`;
+  return `<button class="trader-link" onclick="openProfile('${wallet}')">${esc(label)}</button>`;
 }
 
 function timestamp(value) {
@@ -610,8 +610,8 @@ function renderLeaders() {
       ? "<th>#</th><th>Trader</th><th>Upcoming combo</th><th>Entry</th><th>Est. payout</th><th>Est. profit</th><th>Est. return</th>"
       : "<th>#</th><th>Trader</th><th>Wins–losses</th><th>Win rate</th><th>Period P&amp;L</th><th>Volume</th>";
   $("leadersBody").innerHTML = visible.length ? visible.map((trader,index) => {
-    if (comboMode) return `<tr><td class="rank">${index+1}</td><td><div class="trader-name">${avatar(trader.trader)}<span class="name-text">${profileButton(trader.trader, nameOf(trader.trader))}</span></div></td><td class="record">${trader.wins}</td><td class="record">${trader.losses}</td><td class="record">${trader.partial}</td><td class="${trader.pnlKnown && trader.profit < 0 ? "negative" : "positive"}">${trader.pnlKnown ? (trader.pnlMissing ? "Partial: " : "") + (trader.profit > 0 ? "+" : "") + cash(trader.profit) : "N/A"}</td><td class="record">${trader.pnlKnown}/${trader.combos} combos</td></tr>`;
-    if (efficiencyMode) return `<tr><td class="rank">${index+1}</td><td><div class="trader-name">${avatar(trader.trader)}<span class="name-text">${profileButton(trader.trader, nameOf(trader.trader))}</span></div></td><td class="combo-title" title="${esc(trader.title || "Combo details unavailable")}">${esc(trader.title || "Combo details unavailable")}<br><small class="subtitle">${esc(trader.timingLabel || "Start time unverified")}</small></td><td class="money">${cash(trader.entry)}</td><td class="money">${cash(trader.payout)}</td><td class="positive">~${cash(trader.profit)}</td><td class="record">~${trader.multiple.toFixed(1)}×</td></tr>`;
+    if (comboMode) return `<tr><td class="rank">${index+1}</td><td><div class="trader-name">${avatar(trader.trader)}<span class="name-text">${profileButton({...trader.trader, wallet:trader.wallet}, nameOf(trader.trader))}</span></div></td><td class="record">${trader.wins}</td><td class="record">${trader.losses}</td><td class="record">${trader.partial}</td><td class="${trader.pnlKnown && trader.profit < 0 ? "negative" : "positive"}">${trader.pnlKnown ? (trader.pnlMissing ? "Partial: " : "") + (trader.profit > 0 ? "+" : "") + cash(trader.profit) : "N/A"}</td><td class="record">${trader.pnlKnown}/${trader.combos} combos</td></tr>`;
+    if (efficiencyMode) return `<tr><td class="rank">${index+1}</td><td><div class="trader-name">${avatar(trader.trader)}<span class="name-text">${profileButton({...trader.trader, wallet:trader.wallet}, nameOf(trader.trader))}</span></div></td><td class="combo-title" title="${esc(trader.title || "Combo details unavailable")}">${esc(trader.title || "Combo details unavailable")}<br><small class="subtitle">${esc(trader.timingLabel || "Start time unverified")}</small></td><td class="money">${cash(trader.entry)}</td><td class="money">${cash(trader.payout)}</td><td class="positive">~${cash(trader.profit)}</td><td class="record">~${trader.multiple.toFixed(1)}×</td></tr>`;
     const pnl = num(trader.pnl ?? trader.profit), volume = num(trader.volume ?? trader.vol), pnlClass = pnl !== null && pnl < 0 ? "negative" : "positive";
     return `<tr><td class="rank">${trader.displayRank}</td><td><div class="trader-name">${avatar(trader)}<span class="name-text">${profileButton(trader)}</span></div></td><td class="record">${recordText(trader)}</td><td class="record">${recordOf(trader)?.rate == null ? "N/A" : recordOf(trader).rate.toFixed(1) + "%"}</td><td class="${pnlClass}">${pnl === null ? "N/A" : (pnl > 0 ? "+" : "") + cash(pnl)}</td><td class="money">${cash(volume)}</td></tr>`;
   }).join("") : `<tr><td colspan="${comboMode || efficiencyMode ? 7 : 6}" class="empty">${comboMode ? (comboLoadFinished ? "No resolved combos with usable entry and payout data were found for the last 7 days." : "Scanning combo positions…") : efficiencyMode ? (comboLoadFinished ? "No open combos with a positive estimated return and no resolved legs were found in the checked traders." : "Scanning combo positions…") : "No leaderboard data available. Check that the updater has created " + esc(FILES[period]) + "."}</td></tr>`;
@@ -905,7 +905,7 @@ function renderCombos() {
       const market = leg.market || {}, event = market.event || {}, label = leg.leg_outcome_label || market.outcome || (leg.leg_outcome_index ?? "Unknown outcome");
       return '<div class="combo-leg"><strong>Leg ' + (num(leg.leg_index) ?? i+1) + ': ' + esc(market.question || market.title || event.event_title || "Untitled market") + '</strong><br><span class="side-tag ' + (String(label).toLowerCase()==="no"?"no":"") + '">' + esc(label) + '</span> <small class="subtitle">· ' + esc(String(leg.leg_status || "UNKNOWN").replaceAll("_"," ")) + '</small>' + (event.event_slug ? '<br><a href="https://polymarket.com/event/' + encodeURIComponent(event.event_slug) + '" target="_blank" rel="noopener noreferrer">Open market ↗</a>' : '') + '</div>';
     }).join("") : '<div class="empty">No leg details were returned.</div>') + '</div>' : '';
-    return '<div class="combo-card"><div><div class="combo-title">' + esc(nameOf(trader)) + ' · ' + legs.length + '-leg combo</div><div>' + esc(summary || "Combo market details unavailable") + '</div><div class="combo-meta"><span class="side-tag">' + esc(status) + '</span><span>' + (num(entry) !== null && num(entry) > 0 ? cash(entry) + ' entry' : 'Entry unavailable') + '</span><span>' + (realizedPayout !== null && ["RESOLVED_WIN","RESOLVED_LOSS","RESOLVED_PARTIAL"].includes(String(combo.status || "").toUpperCase()) ? 'Realized payout: ' + cash(realizedPayout) : (payout === null ? 'Potential payout unavailable' : 'Potential payout if successful: ' + cash(payout))) + (potentialProfit === null ? '' : '<span>' + (potentialProfit >= 0 ? '+' : '') + cash(potentialProfit) + ' est. profit</span>') + '</span><span class="trade-time">' + esc(timing.label) + '</span><span>' + (num(combo.legs_resolved) ?? 0) + '/' + (num(combo.legs_total) ?? legs.length) + ' legs resolved</span></div><button class="link-button" onclick="toggleCombo(&quot;' + esc(id) + '&quot;)">' + (expanded ? 'Hide legs ↑' : 'Show legs ↓') + '</button></div>' + detail + '<div class="trade-user">' + profileButton(trader, nameOf(trader)) + '</div></div>';
+    return '<div class="combo-card"><div><div class="combo-title">' + esc(nameOf(trader)) + ' · ' + legs.length + '-leg combo</div><div>' + esc(summary || "Combo market details unavailable") + '</div><div class="combo-meta"><span class="side-tag">' + esc(status) + '</span><span>' + (num(entry) !== null && num(entry) > 0 ? cash(entry) + ' entry' : 'Entry unavailable') + '</span><span>' + (realizedPayout !== null && ["RESOLVED_WIN","RESOLVED_LOSS","RESOLVED_PARTIAL"].includes(String(combo.status || "").toUpperCase()) ? 'Realized payout: ' + cash(realizedPayout) : (payout === null ? 'Potential payout unavailable' : 'Potential payout if successful: ' + cash(payout))) + (potentialProfit === null ? '' : '<span>' + (potentialProfit >= 0 ? '+' : '') + cash(potentialProfit) + ' est. profit</span>') + '</span><span class="trade-time">' + esc(timing.label) + '</span><span>' + (num(combo.legs_resolved) ?? 0) + '/' + (num(combo.legs_total) ?? legs.length) + ' legs resolved</span></div><button class="link-button" onclick="toggleCombo(&quot;' + esc(id) + '&quot;)">' + (expanded ? 'Hide legs ↑' : 'Show legs ↓') + '</button></div>' + detail + '<div class="trade-user">' + profileButton({...trader, wallet:combo._wallet || walletOf(trader)}, nameOf(trader)) + '</div></div>';
   }).join("");
   $("comboMore").textContent = allCombos ? "Show fewer ↑" : "View more combos →";
   $("comboMore").style.display = rows.length > 12 ? "inline-block" : "none";
@@ -946,16 +946,22 @@ function selectPeriod(nextPeriod) {
 
 function openProfile(wallet) {
   const normalizedWallet = String(wallet).toLowerCase();
-  const trader = rankedLeaders().find(item => walletOf(item) === normalizedWallet)
+  const comboMatch = comboRows.find(combo =>
+    String(combo._wallet || walletOf(combo._trader || {})).toLowerCase() === normalizedWallet
+  );
+  const knownTrader = rankedLeaders().find(item => walletOf(item) === normalizedWallet)
     || consensusMemberCache.get(normalizedWallet)
-    || comboRows.find(combo => String(combo._wallet || walletOf(combo._trader || {})).toLowerCase() === normalizedWallet)?._trader;
-  if (!trader) return;
+    || comboMatch?._trader
+    || {};
+  // Combo API records may keep the wallet on the combo wrapper, not inside _trader.
+  // Always carry the clicked wallet into the profile and all profile API requests.
+  const traderWallet = walletOf(knownTrader) || normalizedWallet;
+  const trader = {...knownTrader, wallet:traderWallet, proxyWallet:knownTrader.proxyWallet || traderWallet};
 
   const pnl = num(trader.pnl ?? trader.profit);
   const volume = num(trader.volume ?? trader.vol);
   const positions = activePositions(trader);
   const record = recordOf(trader);
-  const traderWallet = walletOf(trader);
   const recentTrades = Array.isArray(data?.traderActiveTrades?.[traderWallet])
     ? data.traderActiveTrades[traderWallet]
     : [];
