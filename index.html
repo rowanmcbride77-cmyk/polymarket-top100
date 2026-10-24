@@ -640,6 +640,68 @@ function renderSportsLeaders() {
   }).join('') : '<tr><td colspan="5" class="empty">No traders have five or more classifiable closed sports positions in this candidate pool yet.</td></tr>';
 }
 
+const consensusTradeCache = new Map();
+const consensusTradePending = new Map();
+
+async function loadConsensusTradeHistory(wallet, conditionId, outcome) {
+  const cacheKey = [String(wallet || "").toLowerCase(), String(conditionId || "").toLowerCase(), String(outcome || "").toLowerCase()].join("|");
+  if (consensusTradeCache.has(cacheKey)) return consensusTradeCache.get(cacheKey);
+  if (consensusTradePending.has(cacheKey)) return consensusTradePending.get(cacheKey);
+
+  const pending = (async () => {
+    if (!wallet || !conditionId) {
+      consensusTradeCache.set(cacheKey, []);
+      return [];
+    }
+    const fetchRows = async (withMarket) => {
+      const params = new URLSearchParams({ user: wallet, limit: withMarket ? "100" : "500" });
+      if (withMarket) params.set("market", conditionId);
+      const response = await fetch("https://data-api.polymarket.com/trades?" + params.toString(), { cache: "no-store" });
+      if (!response.ok) throw new Error("Trade history HTTP " + response.status);
+      const payload = await response.json();
+      return Array.isArray(payload) ? payload : [];
+    };
+    let rows = [];
+    try {
+      rows = await fetchRows(true);
+      rows = rows.filter(row => {
+        const id = String(row.conditionId || row.condition_id || row.market || "").toLowerCase();
+        return !id || id === String(conditionId).toLowerCase();
+      });
+      if (!rows.length) {
+        const allRows = await fetchRows(false);
+        rows = allRows.filter(row => String(row.conditionId || row.condition_id || row.market || "").toLowerCase() === String(conditionId).toLowerCase());
+      }
+    } catch (error) {
+      console.warn("Consensus trader trade history unavailable", wallet, conditionId, error);
+    }
+    const wantedOutcome = String(outcome || "").trim().toLowerCase();
+    const mapped = rows.map(row => {
+      const price = num(row.price);
+      const shares = num(row.size ?? row.shares);
+      const amount = num(row.usdcSize ?? row.usdc_size ?? row.amount);
+      return {
+        ...row,
+        wallet: String(row.proxyWallet || row.wallet || row.user || wallet).toLowerCase(),
+        side: String(row.side || "").toUpperCase(),
+        outcome: row.outcome || row.outcome_name || "",
+        timestamp: row.timestamp ?? row.createdAt ?? row.time,
+        _price: price,
+        _shares: shares,
+        _cost: amount !== null ? amount : (price !== null && shares !== null ? price * shares : null),
+        _currentPrice: null
+      };
+    }).filter(row => {
+      const rowOutcome = String(row.outcome || "").trim().toLowerCase();
+      return (!wantedOutcome || !rowOutcome || rowOutcome === wantedOutcome) && ["BUY", "SELL"].includes(row.side);
+    }).sort((a, b) => (timestamp(b.timestamp) || 0) - (timestamp(a.timestamp) || 0));
+    consensusTradeCache.set(cacheKey, mapped);
+    return mapped;
+  })().finally(() => consensusTradePending.delete(cacheKey));
+  consensusTradePending.set(cacheKey, pending);
+  return pending;
+}
+
 function renderConsensus() {
   const minCount = Number($("minTraders").value || 2);
   const hours = Number($("recency").value || 168);
@@ -682,17 +744,21 @@ function renderConsensus() {
         const memberName = member.name || member.username || member.userName || "Trader";
         const wallet = walletOf(member);
         if (wallet) consensusMemberCache.set(wallet, member);
-        const key = String(market.conditionId || "").toLowerCase() + "|" + String(side).toLowerCase();
-        const events = (forwardTradesByMarket.get(key) || []).filter(t => String(t.wallet || "").toLowerCase() === wallet);
-        const buy = events.find(t => String(t.side || "").toUpperCase() === "BUY");
-        const sell = events.find(t => String(t.side || "").toUpperCase() === "SELL" && (!buy || (timestamp(t.timestamp)||0) > (timestamp(buy.timestamp)||0)));
+        const key = [String(wallet || "").toLowerCase(), String(market.conditionId || "").toLowerCase(), String(side).toLowerCase()].join("|");
+        const events = consensusTradeCache.get(key);
+        if (expanded && wallet && market.conditionId && !consensusTradeCache.has(key)) {
+          loadConsensusTradeHistory(wallet, market.conditionId, side).then(() => renderConsensus());
+        }
+        const matchedEvents = (events || []).filter(t => !t.outcome || String(t.outcome).trim().toLowerCase() === String(side).trim().toLowerCase());
+        const buy = matchedEvents.find(t => String(t.side || "").toUpperCase() === "BUY");
+        const sell = matchedEvents.find(t => String(t.side || "").toUpperCase() === "SELL" && (!buy || (timestamp(t.timestamp)||0) > (timestamp(buy.timestamp)||0)));
         const memberEntry = num(member.amount), memberValue = num(member.currentValue);
-        const latestEvent = events[0], currentPrice = latestEvent?._currentPrice, buyPrice = buy?._price, shares = buy?._shares, bought = buy?._cost;
+        const buyPrice = buy?._price, shares = buy?._shares, bought = buy?._cost;
         const sellCost = sell?._cost;
         return '<div class="member member-compact">' +
-          '<div class="member-identity"><strong>' + profileButton(member, memberName) + '</strong><small>' + (buy ? "BUY observed · "+esc(dateText(buy.timestamp)) : "No matching BUY print in recent history") + '</small><small>' + (sell ? "⚠ SELL print observed · "+esc(dateText(sell.timestamp))+" — review your position" : "No later SELL print observed") + '</small></div>' +
-          '<div><strong>' + (buyPrice === null || buyPrice === undefined ? "—" : (buyPrice*100).toFixed(1)+"¢") + '</strong><small>Observed buy price</small><small>' + (bought === null || bought === undefined ? (memberEntry !== null ? "Position amount "+cash(memberEntry) : "Buy amount unavailable") : "Buy transaction "+cash(bought)+(shares !== null ? " · "+shares.toFixed(1)+" shares" : "")) + '</small></div>' +
-          '<div><strong>' + (currentPrice === null || currentPrice === undefined ? "—" : (currentPrice*100).toFixed(1)+"¢") + '</strong><small>Market price now</small><small>' + (sell ? "Latest observed SELL "+(sell._price === null ? "price unavailable" : (sell._price*100).toFixed(1)+"¢")+(sellCost === null ? "" : " · "+cash(sellCost)) : "No later sell detected") + '</small><small>' + (memberValue !== null ? "Position value reported "+cash(memberValue) : "Current held value not verified") + '</small></div>' +
+          '<div class="member-identity"><strong>' + profileButton(member, memberName) + '</strong><small>' + (buy ? "BUY observed · "+esc(dateText(buy.timestamp)) : (!events ? "Loading exact market trade history…" : "No matching BUY found in returned market history")) + '</small><small>' + (sell ? "SELL observed · "+esc(dateText(sell.timestamp)) : (!events ? "Checking later SELL trades…" : "No matching SELL found in returned market history")) + '</small></div>' +
+          '<div><strong>' + (buyPrice === null || buyPrice === undefined ? "—" : (buyPrice*100).toFixed(1)+"¢") + '</strong><small>Observed buy price</small><small>' + (bought === null || bought === undefined ? (memberEntry !== null ? "Reported position amount "+cash(memberEntry)+" · transaction cost unavailable" : "Buy transaction amount unavailable") : "Buy transaction "+cash(bought)+(shares !== null ? " · "+shares.toFixed(1)+" shares" : "")) + '</small></div>' +
+          '<div><strong>' + (sell && sell._price !== null ? (sell._price*100).toFixed(1)+"¢" : "—") + '</strong><small>Observed sell price</small><small>' + (sell ? "SELL transaction "+(sellCost === null ? "amount unavailable" : cash(sellCost)) : (!events ? "Loading transaction history" : "No matching SELL found")) + '</small><small>' + (memberValue !== null ? "Position value reported "+cash(memberValue) : "Current held value unavailable") + '</small></div>' +
         '</div>';
       }).join("")}</div>` : `<div class="empty">No trader-level position details were supplied for this market.</div>`}
     </td></tr>` : "";
