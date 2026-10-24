@@ -1001,87 +1001,136 @@ async function loadSellMarketCount(wallet) {
 async function loadTraderCombos(wallet) {
   const activeBox = $("profileActiveCombos"), closedBox = $("profileClosedCombos");
   if (!activeBox || !closedBox) return;
-  activeBox.textContent = "Loading active combos…";
-  closedBox.textContent = "Loading resolved combos…";
+  activeBox.textContent = "Loading all available combo positions…";
+  closedBox.textContent = "Loading all resolved combos and payouts…";
+
+  async function fetchAllPages(url, maxPages = 100) {
+    const output = [], seen = new Set();
+    let cursor = null;
+    for (let page = 0; page < maxPages; page++) {
+      const pageUrl = url + (url.includes("?") ? "&" : "?") + "limit=1000" +
+        (cursor ? "&cursor=" + encodeURIComponent(cursor) : "");
+      const response = await fetch(pageUrl, {cache:"no-store", signal:AbortSignal.timeout(20000)});
+      if (!response.ok) throw new Error("Polymarket combo API returned HTTP " + response.status);
+      const json = await response.json();
+      const rows = Array.isArray(json?.data) ? json.data : Array.isArray(json?.combos) ? json.combos : Array.isArray(json) ? json : [];
+      for (const row of rows) {
+        const id = String(row.combo_position_id || row.combo_condition_id || row.id || "");
+        const key = id || JSON.stringify(row);
+        if (!seen.has(key)) { seen.add(key); output.push(row); }
+      }
+      cursor = json?.pagination?.next_cursor || null;
+      if (!json?.pagination?.has_more || !cursor || !rows.length) break;
+    }
+    return output;
+  }
+
   try {
-    const base = "https://data-api.polymarket.com/v2/positions/combos?user=" + encodeURIComponent(wallet);
-    const [positionsResponse, activityResponse] = await Promise.all([
-      fetch(base + "&status=OPEN,PARTIAL,RESOLVED_WIN,RESOLVED_LOSS,RESOLVED_PARTIAL&sort_by=UPDATED&sort_direction=DESC&limit=1000", {cache:"no-store"}),
-      fetch("https://data-api.polymarket.com/v2/activity/combos?user=" + encodeURIComponent(wallet) + "&limit=1000", {cache:"no-store"})
+    const root = "https://data-api.polymarket.com/v2/positions/combos?user=" + encodeURIComponent(wallet);
+    // The API documents these as separate visibility cohorts. Fetch both so resolved
+    // records aren't lost when the held/default cohort is returned successfully.
+    const [heldResult, resolvedResult, activityResult] = await Promise.allSettled([
+      fetchAllPages(root + "&sort_by=UPDATED&sort_direction=DESC", 30),
+      fetchAllPages(root + "&status=RESOLVED_WIN,RESOLVED_LOSS,RESOLVED_PARTIAL&sort_by=UPDATED&sort_direction=DESC", 100),
+      fetchAllPages("https://data-api.polymarket.com/v2/activity/combos?user=" + encodeURIComponent(wallet) + "&start=1&sort_by=TIMESTAMP&sort_direction=ASC", 100)
     ]);
-    let positions = [];
-    if (positionsResponse.ok) {
-      const positionsJson = await positionsResponse.json();
-      positions = Array.isArray(positionsJson?.data) ? positionsJson.data : Array.isArray(positionsJson) ? positionsJson : [];
-    }
-    if (!positionsResponse.ok || !positions.length) {
-      const fallbackResponse = await fetch(base + "&sort_by=UPDATED&sort_direction=DESC&limit=1000", {cache:"no-store"});
-      if (fallbackResponse.ok) {
-        const fallbackJson = await fallbackResponse.json();
-        positions = Array.isArray(fallbackJson?.data) ? fallbackJson.data : Array.isArray(fallbackJson) ? fallbackJson : [];
-      }
-      const resolvedResponse = await fetch(base + "&status=RESOLVED_WIN,RESOLVED_LOSS,RESOLVED_PARTIAL&sort_by=UPDATED&sort_direction=DESC&limit=1000", {cache:"no-store"});
-      if (resolvedResponse.ok) {
-        const resolvedJson = await resolvedResponse.json();
-        const resolvedRows = Array.isArray(resolvedJson?.data) ? resolvedJson.data : Array.isArray(resolvedJson) ? resolvedJson : [];
-        const byKey = new Map(positions.map(c => [String(c.combo_position_id || c.combo_condition_id || ""), c]));
-        for (const row of resolvedRows) {
-          const key = String(row.combo_position_id || row.combo_condition_id || "");
-          if (key) byKey.set(key, row);
-        }
-        positions = [...byKey.values()];
+
+    const positionsById = new Map();
+    for (const result of [heldResult, resolvedResult]) {
+      if (result.status !== "fulfilled") continue;
+      for (const row of result.value) {
+        const id = String(row.combo_position_id || row.combo_condition_id || "");
+        if (!id) continue;
+        const prior = positionsById.get(id) || {};
+        positionsById.set(id, {...prior, ...row});
       }
     }
-    const activities = activityResponse.ok ? ((j => Array.isArray(j?.data) ? j.data : Array.isArray(j) ? j : [])(await activityResponse.json())) : [];
-    const byId = new Map();
-    for (const a of activities) {
-      const id = String(a.combo_position_id || "");
+    if (!positionsById.size && heldResult.status === "rejected" && resolvedResult.status === "rejected") {
+      throw heldResult.reason || resolvedResult.reason || new Error("Combo position lookup failed");
+    }
+
+    const activityById = new Map();
+    const activityRows = activityResult.status === "fulfilled" ? activityResult.value : [];
+    for (const event of activityRows) {
+      const id = String(event.combo_position_id || "");
       if (!id) continue;
-      const rec = byId.get(id) || {entry:0,payout:0,hasEntry:false,hasPayout:false,legs:a.legs || [],resolvedAt:null};
-      const type = String(a.type || "").toUpperCase(), amount = num(a.amount_usdc), payout = num(a.payout_usdc);
-      if (type === "SPLIT" && amount !== null) { rec.entry += amount; rec.hasEntry=true; }
-      if (type === "MERGE" && amount !== null) { rec.entry -= amount; rec.hasEntry=true; }
-      if (type === "REDEEM" && payout !== null) { rec.payout += payout; rec.hasPayout=true; rec.resolvedAt = a.timestamp ?? rec.resolvedAt; }
-      if (!rec.legs?.length && a.legs) rec.legs=a.legs;
-      byId.set(id,rec);
+      const rec = activityById.get(id) || {
+        entryNet:0, hasEntry:false, payout:0, hasPayout:false,
+        legs:event.legs || [], resolvedAt:null, lastEventAt:null
+      };
+      const type = String(event.type || "").toUpperCase();
+      const amount = num(event.amount_usdc), payout = num(event.payout_usdc);
+      // Cash movements are only a fallback for entry basis. REDEEM is the authoritative
+      // activity-level cash payout; don't confuse missing values with $0.
+      if (type === "SPLIT" && amount !== null) { rec.entryNet += amount; rec.hasEntry = true; }
+      if (type === "MERGE" && amount !== null) { rec.entryNet -= amount; rec.hasEntry = true; }
+      if (type === "REDEEM" && payout !== null) {
+        rec.payout += payout; rec.hasPayout = true;
+        rec.resolvedAt = event.timestamp ?? rec.resolvedAt;
+      }
+      if (!rec.legs?.length && event.legs) rec.legs = event.legs;
+      rec.lastEventAt = event.timestamp ?? rec.lastEventAt;
+      activityById.set(id, rec);
     }
-    const weekCutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
-    const resolvedThisWeek = positions.filter(c => {
-      const status = String(c.status || "").toUpperCase();
-      const activity = byId.get(String(c.combo_position_id || ""));
-      const timeMs = comboResolvedMs({...c, _activityResolvedAt: activity?.resolvedAt});
-      return ["RESOLVED_WIN","RESOLVED_LOSS","RESOLVED_PARTIAL"].includes(status) && timeMs !== null && timeMs >= weekCutoff && timeMs <= Date.now();
+
+    const positions = [...positionsById.values()].map(combo => {
+      const id = String(combo.combo_position_id || combo.combo_condition_id || "");
+      const activity = activityById.get(id);
+      const status = String(combo.status || "").toUpperCase();
+      const directPayout = num(combo.realized_payout_usdc);
+      const activityPayout = activity?.hasPayout ? activity.payout : null;
+      // Some API rows report 0 for a winning combo despite a recorded REDEEM. Prefer
+      // positive redemption cash in that case; keep zero as a valid payout for losses.
+      const payout = status === "RESOLVED_WIN" && !(directPayout > 0) && activityPayout > 0
+        ? activityPayout
+        : (directPayout !== null ? directPayout : activityPayout);
+      const entry = (num(combo.entry_cost_usdc) > 0 ? num(combo.entry_cost_usdc) : null) ??
+        (activity?.hasEntry && activity.entryNet > 0 ? activity.entryNet : null) ??
+        (num(combo.gross_entry_cost_usdc) > 0 ? num(combo.gross_entry_cost_usdc) : null);
+      return {
+        ...combo,
+        _activityEntryCost: entry,
+        _activityPayout: payout,
+        _activityResolvedAt: activity?.resolvedAt ?? null,
+        _activityLastEventAt: activity?.lastEventAt ?? null,
+        legs: Array.isArray(combo.legs) && combo.legs.length ? combo.legs : (activity?.legs || [])
+      };
     });
-    const weeklyWins = resolvedThisWeek.filter(c => String(c.status).toUpperCase() === "RESOLVED_WIN").length;
-    const weeklyLosses = resolvedThisWeek.filter(c => String(c.status).toUpperCase() === "RESOLVED_LOSS").length;
-    const weeklyPartial = resolvedThisWeek.filter(c => String(c.status).toUpperCase() === "RESOLVED_PARTIAL").length;
-    const knownFinancials = resolvedThisWeek.map(c => {
-      const activity = byId.get(String(c.combo_position_id || ""));
-      const entry = comboEntryCost(c) ?? (activity?.hasEntry && activity.entry > 0 ? activity.entry : null);
-      const payout = num(c.realized_payout_usdc) ?? (activity?.hasPayout ? activity.payout : null);
+
+    const terminal = new Set(["RESOLVED_WIN","RESOLVED_LOSS","RESOLVED_PARTIAL"]);
+    const closed = positions.filter(c => terminal.has(String(c.status || "").toUpperCase()));
+    const active = positions.filter(c => ["OPEN","REDEEMABLE","PARTIAL"].includes(String(c.status || "").toUpperCase()));
+
+    // Keep all-time record and weekly financial performance distinct. This avoids
+    // comparing a 7-day chart against the full lifetime list of combos.
+    const allWins = closed.filter(c => String(c.status).toUpperCase() === "RESOLVED_WIN").length;
+    const allLosses = closed.filter(c => String(c.status).toUpperCase() === "RESOLVED_LOSS").length;
+    const allPartial = closed.filter(c => String(c.status).toUpperCase() === "RESOLVED_PARTIAL").length;
+    const weekCutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
+    const resolvedThisWeek = closed.filter(c => {
+      const ts = comboResolvedMs(c);
+      return ts !== null && ts >= weekCutoff && ts <= Date.now();
+    });
+    const knownWeeklyPnL = resolvedThisWeek.map(c => {
+      const entry = comboEntryCost(c), payout = num(c._activityPayout);
       return entry !== null && entry >= 0 && payout !== null ? payout - entry : null;
-    }).filter(v => v !== null);
+    }).filter(value => value !== null);
     const summaryBox = $("profileComboSummary");
     if (summaryBox) {
-      const net = knownFinancials.reduce((sum,v)=>sum+v,0);
-      summaryBox.innerHTML = '<strong>Last 7 days: ' + weeklyWins + ' won · ' + weeklyLosses + ' lost · ' + weeklyPartial + ' partial</strong><br>' +
-        '<span class="' + (net < 0 ? 'negative' : 'positive') + '">Verified net P&amp;L: ' + (knownFinancials.length ? (net > 0 ? '+' : '') + cash(net) : 'N/A') + '</span><br>' +
-        '<small class="subtitle">Financial data available for ' + knownFinancials.length + ' of ' + resolvedThisWeek.length + ' resolved combos. Missing entry or payout is not treated as $0.</small>';
+      const weeklyNet = knownWeeklyPnL.reduce((sum,value)=>sum+value,0);
+      summaryBox.innerHTML =
+        '<strong>All-time resolved combos: ' + allWins + ' won · ' + allLosses + ' lost · ' + allPartial + ' partial</strong><br>' +
+        '<strong>Last 7 days: ' + resolvedThisWeek.length + ' resolved combos</strong><br>' +
+        '<span class="' + (weeklyNet < 0 ? 'negative' : 'positive') + '">Verified weekly combo P&amp;L: ' +
+        (knownWeeklyPnL.length ? (weeklyNet > 0 ? '+' : '') + cash(weeklyNet) : 'N/A') + '</span><br>' +
+        '<small class="subtitle">Weekly entry/payout data available for ' + knownWeeklyPnL.length + ' of ' + resolvedThisWeek.length +
+        ' resolved combos. Payout means actual recorded redemption cash, not a projected payout.</small>' +
+        (activityResult.status === "rejected" ? '<br><small class="subtitle">Combo activity history could not be fully loaded; payout coverage may be incomplete.</small>' : '');
     }
-    const active = positions.filter(c => ["OPEN","REDEEMABLE","PARTIAL"].includes(String(c.status || "").toUpperCase()));
-    activeBox.innerHTML = active.length ? active.map(c => renderProfileCombo(c, false)).join("") : '<div class="empty">No active combos.</div>';
-    const terminal = new Set(["RESOLVED_WIN","RESOLVED_LOSS","RESOLVED_PARTIAL"]);
-    const closed = positions.filter(c => terminal.has(String(c.status || "").toUpperCase())).map(c => {
-      const a = byId.get(String(c.combo_position_id || ""));
-      return {...c, _activityEntryCost: ((num(c.entry_cost_usdc) > 0 ? num(c.entry_cost_usdc) : null) ?? (a?.hasEntry && a.entry > 0 ? a.entry : null) ?? (num(c.gross_entry_cost_usdc) > 0 ? num(c.gross_entry_cost_usdc) : null)), _activityPayout: (num(c.realized_payout_usdc) ?? (a?.hasPayout ? a.payout : null)), _activityResolvedAt: a?.resolvedAt ?? null, legs: c.legs?.length ? c.legs : (a?.legs || [])};
-    }).sort((a,b) => Date.parse(b.resolved_at || b.updated_at || 0) - Date.parse(a.resolved_at || a.updated_at || 0));
-    closedBox.innerHTML = closed.length ? closed.map(c => renderProfileCombo(c, true)).join("") : '<div class="empty">No resolved combo positions returned.</div>';
-    if (summaryBox) {
-      const allWins = closed.filter(c => String(c.status || "").toUpperCase() === "RESOLVED_WIN").length;
-      const allLosses = closed.filter(c => String(c.status || "").toUpperCase() === "RESOLVED_LOSS").length;
-      const allPartial = closed.filter(c => String(c.status || "").toUpperCase() === "RESOLVED_PARTIAL").length;
-      summaryBox.innerHTML += '<br><strong>All loaded resolved combos: ' + allWins + ' won · ' + allLosses + ' lost · ' + allPartial + ' partial</strong>';
-    }
+    activeBox.innerHTML = active.length ? active.map(c => renderProfileCombo(c, false)).join("") : '<div class="empty">No active combos returned by the public API.</div>';
+    closedBox.innerHTML = closed.length ? closed
+      .sort((a,b) => (comboResolvedMs(b) || 0) - (comboResolvedMs(a) || 0))
+      .map(c => renderProfileCombo(c, true)).join("") : '<div class="empty">No resolved combo positions returned.</div>';
   } catch (error) {
     activeBox.innerHTML = '<div class="error">Could not load combo positions: ' + esc(error.message) + '</div>';
     closedBox.innerHTML = '<div class="error">Could not load resolved combos: ' + esc(error.message) + '</div>';
