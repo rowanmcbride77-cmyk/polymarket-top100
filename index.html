@@ -713,7 +713,11 @@ function renderConsensus() {
     .filter(market => traderCount(market) >= minCount)
     .filter(market => {
       const endTime = timestamp(marketEndTime(market));
-      return endTime !== null && endTime > now && endTime <= cutoff;
+      // Some live markets omit a parseable end date in the public API.
+      // Include those in the default 7-day view instead of hiding otherwise
+      // valid consensus entirely; shorter windows still require a known date.
+      if (endTime === null) return hours === 168;
+      return endTime > now && endTime <= cutoff;
     })
     .sort((a, b) => traderCount(b) - traderCount(a));
 
