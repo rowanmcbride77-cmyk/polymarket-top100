@@ -752,12 +752,20 @@ function renderConsensus() {
         const matchedEvents = (events || []).filter(t => !t.outcome || String(t.outcome).trim().toLowerCase() === String(side).trim().toLowerCase());
         const buy = matchedEvents.find(t => String(t.side || "").toUpperCase() === "BUY");
         const sell = matchedEvents.find(t => String(t.side || "").toUpperCase() === "SELL" && (!buy || (timestamp(t.timestamp)||0) > (timestamp(buy.timestamp)||0)));
-        const memberEntry = num(member.amount), memberValue = num(member.currentValue);
-        const buyPrice = buy?._price, shares = buy?._shares, bought = buy?._cost;
+        // The consensus scan is built from live position records. Keep those
+        // reported entry fields as a fallback when the separate trade feed
+        // omits or delays the corresponding print for a wallet/condition.
+        const memberEntry = num(member.entryValue ?? member.amount), memberValue = num(member.currentValue);
+        const reportedAvgPrice = num(member.avgPrice ?? member.averagePrice ?? member.avg_price);
+        const buyPrice = buy?._price ?? reportedAvgPrice;
+        const shares = buy?._shares ?? num(member.shares ?? member.size);
+        const bought = buy?._cost ?? (reportedAvgPrice !== null && shares !== null ? reportedAvgPrice * shares : memberEntry);
+        const buyTime = buy?.timestamp ?? member.buyTime ?? member.firstEntryAt ?? member.first_entry_at ?? member.lastEventAt;
+        const hasReportedEntry = !buy && reportedAvgPrice !== null;
         const sellCost = sell?._cost;
         return '<div class="member member-compact">' +
-          '<div class="member-identity"><strong>' + profileButton(member, memberName) + '</strong><small>' + (buy ? "BUY observed · "+esc(dateText(buy.timestamp)) : (!events ? "Loading exact market trade history…" : "No matching BUY found in returned market history")) + '</small><small>' + (sell ? "SELL observed · "+esc(dateText(sell.timestamp)) : (!events ? "Checking later SELL trades…" : "No matching SELL found in returned market history")) + '</small></div>' +
-          '<div><strong>' + (buyPrice === null || buyPrice === undefined ? "—" : (buyPrice*100).toFixed(1)+"¢") + '</strong><small>Observed buy price</small><small>' + (bought === null || bought === undefined ? (memberEntry !== null ? "Reported position amount "+cash(memberEntry)+" · transaction cost unavailable" : "Buy transaction amount unavailable") : "Buy transaction "+cash(bought)+(shares !== null ? " · "+shares.toFixed(1)+" shares" : "")) + '</small></div>' +
+          '<div class="member-identity"><strong>' + profileButton(member, memberName) + '</strong><small>' + (buy ? "BUY trade observed · "+esc(dateText(buy.timestamp)) : (hasReportedEntry ? "Consensus position entry reported · "+esc(dateText(buyTime)) : (!events ? "Loading exact market trade history…" : "Trade print unavailable; consensus position is still reported"))) + '</small><small>' + (sell ? "SELL observed · "+esc(dateText(sell.timestamp)) : (!events ? "Checking later SELL trades…" : (member.isStillHolding === true || String(member.positionStatus || "").toUpperCase() === "OPEN" ? "Still listed as an open position; no SELL required" : "No matching SELL found in returned trade history"))) + '</small></div>' +
+          '<div><strong>' + (buyPrice === null || buyPrice === undefined ? "—" : (buyPrice*100).toFixed(1)+"¢") + '</strong><small>' + (buy ? "Observed buy price" : (reportedAvgPrice !== null ? "Reported position average entry" : "Observed buy price")) + '</small><small>' + (bought === null || bought === undefined ? (memberEntry !== null ? "Reported position entry value "+cash(memberEntry)+" · exact trade cost unavailable" : "Buy transaction amount unavailable") : (buy ? "Buy transaction "+cash(bought) : "Estimated entry value "+cash(bought))+(shares !== null ? " · "+shares.toFixed(1)+" shares" : "")) + '</small></div>' +
           '<div><strong>' + (sell && sell._price !== null ? (sell._price*100).toFixed(1)+"¢" : "—") + '</strong><small>Observed sell price</small><small>' + (sell ? "SELL transaction "+(sellCost === null ? "amount unavailable" : cash(sellCost)) : (!events ? "Loading transaction history" : "No matching SELL found")) + '</small><small>' + (memberValue !== null ? "Position value reported "+cash(memberValue) : "Current held value unavailable") + '</small></div>' +
         '</div>';
       }).join("")}</div>` : `<div class="empty">No trader-level position details were supplied for this market.</div>`}
