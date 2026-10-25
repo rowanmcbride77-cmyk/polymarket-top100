@@ -225,9 +225,9 @@ dialog::backdrop{background:#000b}
         <div class="panel-heading"><div class="heading-left"><span class="heading-icon">🧩</span><h2>Polymarket Combos</h2></div><span class="pill">Live API</span></div>
         
         <div class="filters">
-          <label>Maximum entry <select id="minComboEntry" onchange="renderCombos()"><option value="25">$25 or less</option><option value="50">$50 or less</option><option value="100" selected>$100 or less</option><option value="250">$250 or less</option><option value="999999999">Any amount</option></select></label>
+          <label>Entry range <select id="minComboEntry" onchange="renderCombos()"><option value="25">$5–$25</option><option value="50">$5–$50</option><option value="100" selected>$5–$100</option></select></label>
           <label>Minimum multiplier <select id="comboMultiplier" onchange="renderCombos()"><option value="5">5×+</option><option value="10" selected>10×+</option><option value="20">20×+</option><option value="50">50×+</option></select></label>
-          <label>Position <select id="comboStatus" onchange="renderCombos()"><option value="held">Open only</option><option value="all" selected>Open + resolved</option></select></label>
+          <label>Position <select id="comboStatus" disabled><option value="held" selected>Active only</option></select></label>
           <label>Event timing <select id="comboTiming" onchange="renderCombos()"><option value="all" selected>Any timing</option><option value="upcoming">Not started yet</option><option value="unknown">Timing unknown</option><option value="started">Already started</option></select></label>
         </div>
         <div id="comboList" class="recent-list"><div class="loading">Loading actual combo positions…</div></div>
@@ -990,18 +990,21 @@ function comboTraderRecord(wallet) {
 function renderCombos() {
   const container = $("comboList"); if (!container) return;
   if (!comboLoadFinished && !comboRows.length) { if (!container.innerHTML.includes("Checking combo positions")) container.innerHTML = '<div class="loading">Loading actual combo positions…</div>'; return; }
-  const maximum = Number($("minComboEntry")?.value || 100), minMultiplier = Number($("comboMultiplier")?.value || 10), allStatuses = $("comboStatus")?.value === "all";
+  const maximum = Number($("minComboEntry")?.value || 100), minMultiplier = Number($("comboMultiplier")?.value || 10);
   const timingFilter = $("comboTiming")?.value || "all";
   const rows = comboRows.filter(combo => {
     const status = String(combo.status || "").toUpperCase(), entry = comboEntryCost(combo), multiplier = comboMultiplier(combo);
     const held = ["OPEN","REDEEMABLE","PARTIAL"].includes(status) || (!status && (num(combo.current_size) ?? 0) > 0);
     const timing = comboTimingState(combo);
-    return entry !== null && entry > 0 && entry <= maximum && multiplier !== null && multiplier >= minMultiplier &&
-      (allStatuses || held) && (timingFilter === "all" || timing.key === timingFilter);
+    // Only show active combos with a reliable positive entry in the requested $5–$100 range.
+    // Resolved wins/losses belong in history, not the live combo opportunity feed.
+    return held && entry !== null && entry >= 5 && entry <= Math.min(100, maximum) &&
+      multiplier !== null && multiplier >= minMultiplier &&
+      (timingFilter === "all" || timing.key === timingFilter);
   }).sort((a,b) => (comboMultiplier(b) ?? -Infinity) - (comboMultiplier(a) ?? -Infinity) ||
     (comboEntryCost(a) ?? Infinity) - (comboEntryCost(b) ?? Infinity));
   const visible = allCombos ? rows : rows.slice(0,12);
-  if (!visible.length) container.innerHTML = comboLoadFinished ? '<div class="empty">No combos matched among the qualified traders whose positions were checked. Coverage depends on available complete records; this is not a platform-wide scan.</div>' : '<div class="loading">Checking combo positions…</div>';
+  if (!visible.length) container.innerHTML = comboLoadFinished ? '<div class="empty">No active combos matched the filters among checked traders. Only open positions with a verified entry of $5–$100 are shown; resolved combos are excluded. Coverage depends on the available trader sample.</div>' : '<div class="loading">Checking combo positions…</div>';
   else container.innerHTML = visible.map((combo,index) => {
     const trader = combo._trader || {}, id = String(combo.combo_position_id || combo.combo_condition_id || combo._wallet + "-" + index);
     const expanded = expandedCombos.has(id), status = String(combo.status || "UNKNOWN").replaceAll("_"," ");
