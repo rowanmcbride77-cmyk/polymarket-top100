@@ -966,12 +966,12 @@ function comboTimingState(combo) {
 }
 
 function comboPotentialPayout(combo) {
-  // A zero in one API field must not mask a valid payout estimate from another field.
-  for (const value of [combo?.potential_payout_usdc, combo?.max_payout_usdc, combo?.maximum_payout_usdc, combo?.potentialPayoutUsdc, combo?.maxPayoutUsdc, combo?.current_size, combo?.currentSize]) {
-    const n = num(value);
-    if (n !== null && n > 0) return n;
-  }
-  return null;
+  // Polymarket v2 documents current_size as combo shares and entry_cost_usdc
+  // as USD. A winning binary combo share pays $1, so use shares as payout.
+  // Do NOT trust undocumented potential/max payout fields: they can be on a
+  // different scale and have caused inflated multipliers (e.g. 261x vs ~5x).
+  const shares = num(combo?.current_size);
+  return shares !== null && shares > 0 ? shares : null;
 }
 function comboMultiplier(combo) {
   const entry = comboEntryCost(combo);
