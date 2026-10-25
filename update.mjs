@@ -862,8 +862,11 @@ function buildConsensus(holderGroups, candidates, records = {}) {
         const candidate = candidateMap.get(wallet);
         if (!candidate) return [];
         const record = records[wallet] || records[candidate.wallet] || candidate;
-        const settlementWins = num(record.settlementWins);
-        const settlementLosses = num(record.settlementLosses);
+        // Prefer verified settlement results, but fall back to the period-scoped closed-position proxy when market metadata is missing.
+        const verifiedWins = num(record.settlementWins), verifiedLosses = num(record.settlementLosses);
+        const hasSettlementSample = verifiedWins !== null && verifiedLosses !== null;
+        const settlementWins = hasSettlementSample ? verifiedWins : num(record.wins);
+        const settlementLosses = hasSettlementSample ? verifiedLosses : num(record.losses);
         const resolvedMarkets = settlementWins !== null && settlementLosses !== null ? settlementWins + settlementLosses : null;
         const winRate = resolvedMarkets > 0 ? settlementWins / resolvedMarkets * 100 : null;
         const earlyExits = num(record.earlyExitPositions) ?? 0;
@@ -896,7 +899,7 @@ function buildConsensus(holderGroups, candidates, records = {}) {
           earlyExitPositions: earlyExits,
           earlyExitRate,
           settlementRecordComplete: record.settlementRecordComplete === true,
-          recordBasis: "Verified settled-market outcomes; 90%+ win rate and 10+ settlements. Early exits are disclosed separately."
+          recordBasis: hasSettlementSample ? "Verified settled-market outcomes where metadata is available; early exits disclosed separately." : "Period-scoped closed-position profitability proxy when settlement metadata is unavailable; not verified settlement accuracy."
         }];
       });
       const totalValue = traders.reduce((sum, trader) => sum + (num(trader.amount) ?? 0), 0);      return { ...group, traders, sameSide: traders.length, totalValue };
@@ -920,7 +923,10 @@ function buildConsensus(holderGroups, candidates, records = {}) {
     .filter(group => {
       const conditionId = String(group.conditionId || "").toLowerCase();
       const outcomes = outcomesByCondition.get(conditionId);
-      return outcomes?.size === 1;
+      if (!outcomes || outcomes.size <= 1) return true;
+      const sameConditionGroups = qualifiedGroups.filter(item => String(item.conditionId || "").toLowerCase() === conditionId);
+      // A lone opposing holder should not erase a valid 2+ trader consensus.
+      return sameConditionGroups.filter(item => item.sameSide >= 2).length <= 1;
     })
     .sort((a, b) => b.sameSide - a.sameSide || b.totalValue - a.totalValue || (b.newestBuy || 0) - (a.newestBuy || 0))
     .slice(0, CONSENSUS_LIMIT);
@@ -1127,7 +1133,7 @@ function makeOutput(period, ranked, sportsRanked, activePositions, tradeRows, no
     })),
     traderActiveTrades: Object.fromEntries(tradeRows.filter(Boolean)),
     traderActivePositions: leaderPositions,
-    consensus: buildConsensus(consensusGroups, consensusCandidates || ranked, settlementRecords || {})
+    consensus: buildConsensus(consensusGroups, consensusCandidates || ranked, { ...(records || {}), ...(settlementRecords || {}) })
   };
 }
 
