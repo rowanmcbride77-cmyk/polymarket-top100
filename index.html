@@ -512,7 +512,10 @@ function comboPayout(combo) {
   const activity = num(combo?._activityPayout);
   // A resolved win with a zero-valued position field but a positive REDEEM event
   // must show the actual cash redemption rather than the stale zero.
-  if (["RESOLVED_WIN","RESOLVED_PARTIAL"].includes(status) && !(direct > 0) && activity > 0) return activity;
+  const terminal = ["RESOLVED_WIN","RESOLVED_LOSS","RESOLVED_PARTIAL"].includes(status);
+  // An active position's zero realized payout is not its potential payout.
+  if (!terminal) return activity !== null && activity > 0 ? activity : null;
+  if (!(direct > 0) && activity > 0) return activity;
   return direct !== null ? direct : activity;
 }
 function comboResolvedMs(combo) {
