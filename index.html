@@ -962,16 +962,25 @@ function comboTimingState(combo) {
   return {key:"upcoming", label:"All events not started"};
 }
 
+function comboPotentialPayout(combo) {
+  // A zero in one API field must not mask a valid payout estimate from another field.
+  for (const value of [combo?.potential_payout_usdc, combo?.max_payout_usdc, combo?.maximum_payout_usdc, combo?.potentialPayoutUsdc, combo?.maxPayoutUsdc, combo?.current_size, combo?.currentSize]) {
+    const n = num(value);
+    if (n !== null && n > 0) return n;
+  }
+  return null;
+}
 function comboMultiplier(combo) {
   const entry = comboEntryCost(combo);
   if (entry === null || entry <= 0) return null;
   const status = String(combo.status || "").toUpperCase();
   const terminal = ["RESOLVED_WIN","RESOLVED_LOSS","RESOLVED_PARTIAL"].includes(status);
-  let payout = terminal ? comboPayout(combo) : num(combo.potential_payout_usdc ?? combo.max_payout_usdc ?? combo.maximum_payout_usdc);
-  if (!terminal && (payout === null || payout <= 0)) payout = num(combo.current_size ?? combo.currentSize);
+  const payout = terminal ? comboPayout(combo) : comboPotentialPayout(combo);
   return payout !== null && payout >= 0 ? payout / entry : null;
 }
 function comboTraderRecord(wallet) {
+  // Rolling 7-day record only; lifetime results and active positions are excluded.
+  const now = Date.now(), cutoff = now - 7 * 24 * 60 * 60 * 1000;
   const seen = new Set();
   let wins = 0, losses = 0, partial = 0;
   for (const combo of comboRows) {
@@ -980,6 +989,10 @@ function comboTraderRecord(wallet) {
     if (comboWallet !== String(wallet || "").toLowerCase() || !id || seen.has(id)) continue;
     seen.add(id);
     const status = String(combo.status || "").toUpperCase();
+    if (!["RESOLVED_WIN","RESOLVED_LOSS","RESOLVED_PARTIAL"].includes(status)) continue;
+    const resolvedAt = comboResolvedMs(combo);
+    if (resolvedAt === null || resolvedAt < cutoff || resolvedAt > now) continue;
+    seen.add(id);
     if (status === "RESOLVED_WIN") wins++;
     else if (status === "RESOLVED_LOSS") losses++;
     else if (status === "RESOLVED_PARTIAL") partial++;
@@ -1008,13 +1021,13 @@ function renderCombos() {
   else container.innerHTML = visible.map((combo,index) => {
     const trader = combo._trader || {}, id = String(combo.combo_position_id || combo.combo_condition_id || combo._wallet + "-" + index);
     const expanded = expandedCombos.has(id), status = String(combo.status || "UNKNOWN").replaceAll("_"," ");
-    const entry = comboEntryCost(combo), realizedPayout = comboPayout(combo), potentialPayout = num(combo.potential_payout_usdc ?? combo.max_payout_usdc ?? combo.maximum_payout_usdc ?? combo.current_size ?? combo.currentSize), payout = realizedPayout !== null ? realizedPayout : (potentialPayout !== null && potentialPayout > 0 ? potentialPayout : null), potentialProfit = realizedPayout === null && payout !== null && entry !== null ? payout - entry : null, multiplier = comboMultiplier(combo), traderRecord = comboTraderRecord(combo._wallet || walletOf(trader)), legs = Array.isArray(combo.legs) ? combo.legs : [], timing = comboTimingState(combo);
+    const entry = comboEntryCost(combo), realizedPayout = comboPayout(combo), potentialPayout = comboPotentialPayout(combo), payout = realizedPayout !== null ? realizedPayout : potentialPayout, potentialProfit = realizedPayout === null && payout !== null && entry !== null ? payout - entry : null, multiplier = comboMultiplier(combo), traderRecord = comboTraderRecord(combo._wallet || walletOf(trader)), legs = Array.isArray(combo.legs) ? combo.legs : [], timing = comboTimingState(combo);
     const summary = legs.slice(0,3).map(leg => leg.market?.question || leg.market?.title || leg.market?.event?.event_title || "Market leg").join(" · ");
     const detail = expanded ? '<div class="combo-legs">' + (legs.length ? legs.map((leg,i) => {
       const market = leg.market || {}, event = market.event || {}, label = leg.leg_outcome_label || market.outcome || (leg.leg_outcome_index ?? "Unknown outcome");
       return '<div class="combo-leg"><strong>Leg ' + (num(leg.leg_index) ?? i+1) + ': ' + esc(market.question || market.title || event.event_title || "Untitled market") + '</strong><br><span class="side-tag ' + (String(label).toLowerCase()==="no"?"no":"") + '">' + esc(label) + '</span> <small class="subtitle">· ' + esc(String(leg.leg_status || "UNKNOWN").replaceAll("_"," ")) + '</small>' + (event.event_slug ? '<br><a href="https://polymarket.com/event/' + encodeURIComponent(event.event_slug) + '" target="_blank" rel="noopener noreferrer">Open market ↗</a>' : '') + '</div>';
     }).join("") : '<div class="empty">No leg details were returned.</div>') + '</div>' : '';
-    return '<div class="combo-card"><div><div class="combo-title">' + esc(nameOf(trader)) + ' · ' + legs.length + '-leg combo</div><div>' + esc(summary || "Combo market details unavailable") + '</div><div class="combo-meta"><span class="side-tag">' + esc(status) + '</span><span>' + cash(entry) + ' entry</span><span><strong>' + (multiplier === null ? 'Multiplier unavailable' : multiplier.toFixed(1) + '× potential payout') + '</strong></span><span>' + (realizedPayout !== null && ["RESOLVED_WIN","RESOLVED_LOSS","RESOLVED_PARTIAL"].includes(String(combo.status || "").toUpperCase()) ? 'Realized payout: ' + cash(realizedPayout) : (payout === null ? 'Potential payout unavailable' : 'Potential payout if successful: ' + cash(payout))) + (potentialProfit === null ? '' : '<span>' + (potentialProfit >= 0 ? '+' : '') + cash(potentialProfit) + ' est. profit</span>') + '</span><span class="trade-time">' + esc(timing.label) + '</span><span>' + (num(combo.legs_resolved) ?? 0) + '/' + (num(combo.legs_total) ?? legs.length) + ' legs resolved</span><span>Trader combo record: ' + traderRecord.wins + 'W–' + traderRecord.losses + 'L' + (traderRecord.rate === null ? '' : ' · ' + traderRecord.rate.toFixed(1) + '%') + ' (' + traderRecord.resolved + ' resolved)</span></div><button class="link-button" onclick="toggleCombo(&quot;' + esc(id) + '&quot;)">' + (expanded ? 'Hide legs ↑' : 'Show legs ↓') + '</button></div>' + detail + '<div class="trade-user">' + profileButton({...trader, wallet:combo._wallet || walletOf(trader)}, nameOf(trader)) + '</div></div>';
+    return '<div class="combo-card"><div><div class="combo-title">' + esc(nameOf(trader)) + ' · ' + legs.length + '-leg combo</div><div>' + esc(summary || "Combo market details unavailable") + '</div><div class="combo-meta"><span class="side-tag">' + esc(status) + '</span><span>' + cash(entry) + ' entry</span><span><strong>' + (multiplier === null ? 'Multiplier unavailable' : multiplier.toFixed(1) + '× potential payout') + '</strong></span><span>' + (realizedPayout !== null && ["RESOLVED_WIN","RESOLVED_LOSS","RESOLVED_PARTIAL"].includes(String(combo.status || "").toUpperCase()) ? 'Realized payout: ' + cash(realizedPayout) : (payout === null ? 'Potential payout unavailable' : 'Potential payout if successful: ' + cash(payout))) + (potentialProfit === null ? '' : '<span>' + (potentialProfit >= 0 ? '+' : '') + cash(potentialProfit) + ' est. profit</span>') + '</span><span class="trade-time">' + esc(timing.label) + '</span><span>' + (num(combo.legs_resolved) ?? 0) + '/' + (num(combo.legs_total) ?? legs.length) + ' legs resolved</span><span>7-day combo record: ' + traderRecord.wins + 'W–' + traderRecord.losses + 'L' + (traderRecord.rate === null ? '' : ' · ' + traderRecord.rate.toFixed(1) + '%') + ' (' + traderRecord.resolved + ' resolved)</span></div><button class="link-button" onclick="toggleCombo(&quot;' + esc(id) + '&quot;)">' + (expanded ? 'Hide legs ↑' : 'Show legs ↓') + '</button></div>' + detail + '<div class="trade-user">' + profileButton({...trader, wallet:combo._wallet || walletOf(trader)}, nameOf(trader)) + '</div></div>';
   }).join("");
   $("comboMore").textContent = allCombos ? "Show fewer ↑" : "View more combos →";
   $("comboMore").style.display = rows.length > 12 ? "inline-block" : "none";
