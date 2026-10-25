@@ -23,7 +23,8 @@ const RANKING_RECORD_LIMIT = 1000;
 const LEADER_RECORD_LIMIT = RANKING_RECORD_LIMIT;
 const CONSENSUS_LIMIT = 50;
 const CONSENSUS_MARKET_SCAN_LIMIT = 1000;
-const CONSENSUS_WINDOW_HOURS = 24;
+// Keep upcoming markets in the data so the UI can filter 24h / 3d / 7d accurately.
+const CONSENSUS_WINDOW_HOURS = 168;
 const CONSENSUS_HOLDERS_PER_MARKET = 1000;
 const MIN_CONSENSUS_POSITION_VALUE = 5;
 const CONSENSUS_ENTRY_WINDOW_MINUTES = 60;
@@ -297,8 +298,7 @@ async function getCandidates(period) {
   const byWallet = new Map();
   const categories = [
     "OVERALL", "SPORTS", "POLITICS", "CRYPTO", "ESPORTS", "CULTURE",
-    "MENTIONS", "WEATHER", "ECONOMICS", "TECH", "FINANCE"
-  ];
+    "MENTIONS", "WEATHER", "ECONOMICS", "TECH", "FINANCE"  ];
   const timePeriods = [...new Set([period.api, "DAY", "WEEK", "MONTH", "ALL"])];
   const target = PROCESS_CANDIDATE_COUNT;
 
@@ -597,8 +597,7 @@ async function getMarketConsensus(market, knownNames) {
         entryValueKnownCount: 0,
         newestBuy: null,
         oldestBuy: null,
-        traders: [],
-        walletsSeen: new Set()
+        traders: [],        walletsSeen: new Set()
       });
     }
 
@@ -849,8 +848,12 @@ function buildConsensus(holderGroups, candidates, records = {}) {
   const qualifiedGroups = holderGroups
     .filter(group => {
       const nowMs = Date.now();
+      // Include upcoming markets; the old negated isResolvingSoon() check
+      // accidentally removed markets resolving within 24 hours.
+      const end = marketEndDate(group);
+      const hasEnd = end !== null && end !== undefined && end !== "";
       return !hasExpiredEndDate(group, nowMs) &&
-        !isResolvingSoon(group, nowMs) &&
+        (!hasEnd || isResolvingSoon(group, nowMs)) &&
         (num(group.totalValue) ?? 0) > 0;
     })
     .map(group => {
@@ -876,8 +879,7 @@ function buildConsensus(holderGroups, candidates, records = {}) {
           winRate === null ||
           winRate < MIN_CONSENSUS_WIN_RATE ||
           resolvedMarkets === null ||
-          resolvedMarkets < MIN_TRADER_RESOLVED_MARKETS ||
-          earlyExitRate > 0.20
+          resolvedMarkets < MIN_TRADER_RESOLVED_MARKETS
         ) return [];
         return [{
           ...holder,
@@ -894,11 +896,10 @@ function buildConsensus(holderGroups, candidates, records = {}) {
           earlyExitPositions: earlyExits,
           earlyExitRate,
           settlementRecordComplete: record.settlementRecordComplete === true,
-          recordBasis: "Classifiable settled-market outcomes; 90%+ win rate, 10+ settlements, and at most 20% observed early exits"
+          recordBasis: "Verified settled-market outcomes; 90%+ win rate and 10+ settlements. Early exits are disclosed separately."
         }];
       });
-      const totalValue = traders.reduce((sum, trader) => sum + (num(trader.amount) ?? 0), 0);
-      return { ...group, traders, sameSide: traders.length, totalValue };
+      const totalValue = traders.reduce((sum, trader) => sum + (num(trader.amount) ?? 0), 0);      return { ...group, traders, sameSide: traders.length, totalValue };
     })
     .filter(group => group.sameSide >= 2);
 
@@ -1197,7 +1198,6 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
   console.log(`${period.key}: ${leaders.length} traders qualify with at least ${MIN_TRADER_RESOLVED_MARKETS} classifiable closed positions and ${MIN_CONSENSUS_WIN_RATE}%+ profitable-close rate`);
   // Reuse the period-scoped record sample used for ranking; avoid a second history scan.
   const leaderRecords = records;
-
   const tradeRows = await mapLimit(
     leaders,
     CONCURRENCY,
@@ -1234,7 +1234,7 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     qualificationWindowDays: period.key === "month" ? 30 : 7,
     minimumWinRate: MIN_CONSENSUS_WIN_RATE,
     minimumResolvedMarkets: MIN_TRADER_RESOLVED_MARKETS,
-    qualificationBasis: "Lifetime verified settled-market outcomes only; requires at least 10 fully classified resolved markets, 90%+ settlement win rate, complete scanned closed-position history, and zero observed early exits.",
+    qualificationBasis: "Verified settled-market outcomes in the scanned history; requires at least 10 classifiable resolved markets and 90%+ settlement win rate. Early exits are disclosed separately and do not automatically disqualify a trader.",
     minimumSameSideTraders: 2,
     entryWindowMinutes: CONSENSUS_ENTRY_WINDOW_MINUTES,
     candidateCount: ranked.length,
@@ -1242,9 +1242,9 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     settlementRecordCandidateCount: recordCandidates.length,
     scanDiagnostics: lastConsensusDiagnostics,
     candidatePoolBasis: "Unique traders collected from Polymarket public Data API v1 overall PnL and volume leaderboards, paginating each board through its supported offset ceiling (0–1,000). This is the largest accessible leaderboard-derived candidate pool from these endpoints, not all platform traders. Consensus qualification uses verified settled outcomes for the settlement-history sample, not realized-P&L proxies.",
-    resolutionWindowHours: null,
+    resolutionWindowHours: 168,
     entryActivityWindowHours: null,
-    recordBasis: "90% threshold is based on verified resolved-market outcomes in the complete scanned closed-position history; traders with observed early exits are excluded.",
+    recordBasis: "90% threshold is based on verified resolved-market outcomes in the available scanned closed-position sample; early exits are reported separately.",
     consensus: output.consensus
   });
 
