@@ -864,7 +864,7 @@ function buildConsensus(holderGroups, candidates, records = {}) {
         const record = records[wallet] || records[candidate.wallet] || candidate;
         // Prefer verified settlement results, but fall back to the period-scoped closed-position proxy when market metadata is missing.
         const verifiedWins = num(record.settlementWins), verifiedLosses = num(record.settlementLosses);
-        const hasSettlementSample = verifiedWins !== null && verifiedLosses !== null;
+        const hasSettlementSample = verifiedWins !== null && verifiedLosses !== null && (verifiedWins + verifiedLosses) > 0;
         const settlementWins = hasSettlementSample ? verifiedWins : num(record.wins);
         const settlementLosses = hasSettlementSample ? verifiedLosses : num(record.losses);
         const resolvedMarkets = settlementWins !== null && settlementLosses !== null ? settlementWins + settlementLosses : null;
