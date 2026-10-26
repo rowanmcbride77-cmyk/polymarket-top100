@@ -539,35 +539,35 @@ function comboProfitRows() {
     const wallet = String(combo._wallet || walletOf(combo._trader || {})).toLowerCase();
     const status = String(combo.status || "").toUpperCase();
     const comboId = String(combo.combo_position_id || combo.combo_condition_id || "");
-    const uniqueKey = wallet + ":" + comboId;
-    if (!wallet || !comboId || seenCombos.has(uniqueKey) ||
+    const ts = comboResolvedMs(combo);
+    // This view is strictly a rolling 7-day report: exclude combos resolved
+    // outside the week before counting wins, losses, partials, or profit.
+    if (!wallet || !comboId || ts === null || ts < weekAgo || ts > now ||
         !["RESOLVED_WIN","RESOLVED_LOSS","RESOLVED_PARTIAL"].includes(status)) continue;
+    const uniqueKey = wallet + ":" + comboId;
+    if (seenCombos.has(uniqueKey)) continue;
     seenCombos.add(uniqueKey);
     const current = byWallet.get(wallet) || {
       wallet, trader:combo._trader || {}, profit:0, combos:0, wins:0, losses:0,
       partial:0, volume:0, pnlKnown:0, pnlMissing:0, weeklyCombos:0
     };
     current.combos++;
+    current.weeklyCombos++;
     if (status === "RESOLVED_WIN") current.wins++;
     else if (status === "RESOLVED_LOSS") current.losses++;
     else current.partial++;
 
-    // The record is lifetime; only the financial column is a rolling 7-day figure.
-    const ts = comboResolvedMs(combo);
-    if (ts !== null && ts >= weekAgo && ts <= now) {
-      current.weeklyCombos++;
-      const entry = comboEntryCost(combo), payout = comboPayout(combo);
-      if (entry !== null && entry >= 0 && payout !== null) {
-        current.profit += payout - entry;
-        current.volume += entry;
-        current.pnlKnown++;
-      } else current.pnlMissing++;
-    }
+    const entry = comboEntryCost(combo), payout = comboPayout(combo);
+    if (entry !== null && entry >= 0 && payout !== null) {
+      current.profit += payout - entry;
+      current.volume += entry;
+      current.pnlKnown++;
+    } else current.pnlMissing++;
     byWallet.set(wallet,current);
   }
   return [...byWallet.values()].sort((a,b) =>
     (b.pnlKnown ? b.profit : -Infinity) - (a.pnlKnown ? a.profit : -Infinity) ||
-    b.combos-a.combos
+    b.weeklyCombos-a.weeklyCombos
   ).map((row,index)=>({...row,displayRank:index+1}));
 }
 function comboEfficiencyRows() {
@@ -609,7 +609,7 @@ function renderLeaders() {
   const visible = allLeaders ? list : list.slice(0, 10);
   $("leaderModeNote").textContent = efficiencyMode ? "Open combos only · start times are verified where available; unknown start times are flagged. Estimates assume each winning combo share pays $1 and are not guaranteed profit." : "";
   $("leaderHeader").innerHTML = comboMode
-    ? "<th>#</th><th>Trader</th><th>All-time won</th><th>All-time lost</th><th>Partial</th><th>Weekly combo P&amp;L</th><th>Weekly P&amp;L coverage</th>"
+    ? "<th>#</th><th>Trader</th><th>Weekly wins</th><th>Weekly losses</th><th>Weekly partial</th><th>Weekly combo P&amp;L</th><th>Weekly P&amp;L coverage</th>"
     : efficiencyMode
       ? "<th>#</th><th>Trader</th><th>Upcoming combo</th><th>Entry</th><th>Est. payout</th><th>Est. profit</th><th>Est. return</th>"
       : "<th>#</th><th>Trader</th><th>Wins–losses</th><th>Win rate</th><th>Period P&amp;L</th><th>Volume</th>";
