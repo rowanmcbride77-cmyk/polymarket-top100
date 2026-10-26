@@ -69,12 +69,18 @@ jobs:
               const invalidGroups = groups.filter(group => {
                 const traders = Array.isArray(group.traders) ? group.traders : [];
                 const wallets = new Set(traders.map(row => String(row.wallet || "").toLowerCase()).filter(Boolean));
-                return wallets.size < 2 || wallets.size !== traders.length || group.sameSide !== traders.length;
+                const invalidRecord = traders.some(row =>
+                  row.settlementRecordComplete !== true ||
+                  Number(row.wins) / (Number(row.wins) + Number(row.losses)) !== 1 ||
+                  Number(row.resolvedMarkets) < 15
+                );
+                return wallets.size < 2 || wallets.size !== traders.length ||
+                  group.sameSide !== traders.length || invalidRecord;
               });
               if (invalidGroups.length) {
-                throw new Error(`${file} contains ${invalidGroups.length} consensus groups without at least two distinct, unique wallets`);
+                throw new Error(`${file} contains ${invalidGroups.length} consensus groups without distinct wallets and complete 100% settlement records`);
               }
-              console.log(`${file}: ${groups.length} consensus groups passed distinct-wallet checks`);
+              console.log(`${file}: ${groups.length} consensus groups passed distinct-wallet and verified-100%-record checks`);
             }
 
             console.log(`${file}: ${(stat.size / 1024 / 1024).toFixed(2)} MB; valid JSON`);
