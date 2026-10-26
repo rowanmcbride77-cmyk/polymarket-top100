@@ -1326,7 +1326,7 @@ function renderClosedPositionHistory(wallet) {
     const time = position._activityFirstBuyAt ?? position.first_entry_at ?? position.firstEntryAt ?? position.last_event_at ?? position.lastEventAt;
     const condition = position.condition_id ?? position.conditionId ?? "";
     const sideClass = String(outcome).toLowerCase() === "no" ? "no" : "";
-    const returnedLabel = activityReturn === null ? "Cash returned N/A" : "Cash returned " + cash(activityReturn);
+    const returnedLabel = activityReturn === null ? "Payout / cash returned N/A" : "Payout / cash returned " + cash(activityReturn);
     return '<div class="member"><div><strong>' + esc(position.title || position.name || "Untitled market") +
       '</strong><small><span class="side-tag ' + sideClass + '">' + esc(outcome) + '</span> · ' +
       esc(condition ? condition.slice(0, 12) + "…" : "Market ID unavailable") +
@@ -1409,15 +1409,19 @@ async function loadClosedPositionHistory(wallet) {
           keys.push("condition:" + condition);
         }
         for (const key of keys) {
-          const rec = activityByKey.get(key) || {buyCost:0, hasBuy:false, firstBuyAt:null, returned:0, hasReturn:false};
+          const rec = activityByKey.get(key) || {buyCost:0, hasBuy:false, firstBuyAt:null, sellProceeds:0, hasSell:false, redeemPayout:0, hasRedeem:false};
           if (type === "TRADE" && String(event.side || "").toUpperCase() === "BUY" && amount !== null) {
             rec.buyCost += amount;
             rec.hasBuy = true;
             if (timestamp !== null && (rec.firstBuyAt === null || timestamp < rec.firstBuyAt)) rec.firstBuyAt = timestamp;
           }
-          if ((type === "REDEEM" || (type === "TRADE" && String(event.side || "").toUpperCase() === "SELL")) && amount !== null) {
-            rec.returned += amount;
-            rec.hasReturn = true;
+          if (type === "REDEEM" && amount !== null) {
+            rec.redeemPayout += amount;
+            rec.hasRedeem = true;
+          }
+          if (type === "TRADE" && String(event.side || "").toUpperCase() === "SELL" && amount !== null) {
+            rec.sellProceeds += amount;
+            rec.hasSell = true;
           }
           activityByKey.set(key, rec);
         }
@@ -1440,14 +1444,18 @@ async function loadClosedPositionHistory(wallet) {
       const condition = String(position.condition_id ?? position.conditionId ?? "").toLowerCase();
       const rawIndex = position.outcome_index ?? position.outcomeIndex;
       const outcome = String(rawIndex ?? position.outcome ?? "unknown").toLowerCase();
-      let rec = token ? activityByKey.get("token:" + token) : null;
-      if (!rec && condition) rec = activityByKey.get("market:" + condition + "|" + outcome);
-      if (!rec && condition && conditionCounts.get(position.condition_id ?? position.conditionId) === 1) {
-        rec = activityByKey.get("condition:" + condition);
-      }
-      position._activityBuyCost = rec?.hasBuy ? rec.buyCost : null;
-      position._activityCashReturned = rec?.hasReturn ? rec.returned : null;
-      position._activityFirstBuyAt = rec?.firstBuyAt ?? null;
+      const tokenRec = token ? activityByKey.get("token:" + token) : null;
+      const marketRec = condition ? activityByKey.get("market:" + condition + "|" + outcome) : null;
+      const conditionRec = condition && conditionCounts.get(position.condition_id ?? position.conditionId) === 1
+        ? activityByKey.get("condition:" + condition) : null;
+      const rec = tokenRec || marketRec || conditionRec;
+      const buyRec = (tokenRec?.hasBuy ? tokenRec : null) || (marketRec?.hasBuy ? marketRec : null) || (conditionRec?.hasBuy ? conditionRec : null);
+      const sellRec = (tokenRec?.hasSell ? tokenRec : null) || (marketRec?.hasSell ? marketRec : null) || (conditionRec?.hasSell ? conditionRec : null);
+      const redeemRec = (tokenRec?.hasRedeem ? tokenRec : null) || (marketRec?.hasRedeem ? marketRec : null) || (conditionRec?.hasRedeem ? conditionRec : null);
+      position._activityBuyCost = buyRec?.hasBuy ? buyRec.buyCost : null;
+      position._activityCashReturned = (sellRec?.hasSell || redeemRec?.hasRedeem)
+        ? (sellRec?.sellProceeds || 0) + (redeemRec?.redeemPayout || 0) : null;
+      position._activityFirstBuyAt = buyRec?.firstBuyAt ?? null;
     }
     rows._activityComplete = activityComplete;
     closedPositionCache.set(wallet, rows);
