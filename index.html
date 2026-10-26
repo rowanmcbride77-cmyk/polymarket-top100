@@ -445,6 +445,26 @@ async function loadConsensusData() {
         if (!response.ok) throw new Error("HTTP " + response.status);
         const parsed = await response.json();
         if (!parsed || !Array.isArray(parsed.consensus)) throw new Error("Invalid consensus file");
+        // Guard against stale JSON: every displayed consensus trader must have
+        // a complete, verified 100% settlement record across at least 15 results.
+        parsed.consensus = parsed.consensus.map(market => {
+          const sourceMembers = Array.isArray(market.traders) ? market.traders :
+            Array.isArray(market.members) ? market.members : [];
+          const traders = sourceMembers.filter(trader =>
+            trader?.settlementRecordComplete === true &&
+            num(trader.wins) >= 15 &&
+            num(trader.losses) === 0 &&
+            num(trader.resolvedMarkets) >= 15 &&
+            num(trader.winRate) === 100
+          );
+          const totalValue = traders.reduce((sum, trader) => sum + (num(trader.amount) ?? 0), 0);
+          return {...market, traders, members:traders, traderCount:traders.length,
+            tradersCount:traders.length, sameSide:traders.length, totalValue};
+        }).filter(market => {
+          const traders = Array.isArray(market.traders) ? market.traders : [];
+          return traders.length >= 2 &&
+            new Set(traders.map(trader => String(trader.wallet || "").toLowerCase()).filter(Boolean)).size === traders.length;
+        });
         result = parsed; break;
       } catch (_) {}
     }
