@@ -311,7 +311,7 @@ function walletOf(trader) {
 function recordOf(trader) {
   // Show only complete, verified market-settlement outcomes. Never present a
   // profitable early exit as a settled win or a closed-position P&L proxy.
-  if (trader?.settlementRecordComplete !== true) return null;
+  if (trader?.settlementRecordComplete !== true || trader?.settlementRecordCoverage !== "complete" || !String(trader?.settlementRecordBasis || "").toLowerCase().includes("market outcome at resolution")) return null;
   const wins = num(trader?.settlementWins);
   const losses = num(trader?.settlementLosses);
   if (wins === null || losses === null || wins < 0 || losses < 0 || wins + losses === 0) return null;
@@ -452,6 +452,8 @@ async function loadConsensusData() {
             Array.isArray(market.members) ? market.members : [];
           const traders = sourceMembers.filter(trader =>
             trader?.settlementRecordComplete === true &&
+            trader?.settlementRecordCoverage === "complete" &&
+            String(trader?.settlementRecordBasis || "").toLowerCase().includes("market outcome at resolution") &&
             num(trader.wins) >= 15 &&
             num(trader.losses) === 0 &&
             num(trader.resolvedMarkets) >= 15 &&
@@ -627,6 +629,8 @@ function renderLeaders() {
   const baseList = rankedLeaders();
   const perfectList = baseList.filter(trader =>
     trader?.settlementRecordComplete === true &&
+    trader?.settlementRecordCoverage === "complete" &&
+    String(trader?.settlementRecordBasis || "").toLowerCase().includes("market outcome at resolution") &&
     num(trader.settlementWins) >= 15 &&
     num(trader.settlementLosses) === 0
   );
