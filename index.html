@@ -150,7 +150,7 @@ dialog::backdrop{background:#000b}
           <span class="pill" id="leaderPeriod">Week</span>
         </div>
         <div class="filters" style="margin:0 0 12px">
-          <label>Leaderboard <select id="leaderMode" onchange="renderLeaders()"><option value="all">All traders</option><option value="efficiency">High-return combos</option><option value="combos">Weekly combo profits</option></select></label>
+          <label>Leaderboard <select id="leaderMode" onchange="renderLeaders()"><option value="all">All traders</option><option value="perfect">100% settled record</option><option value="efficiency">High-return combos</option><option value="combos">Weekly combo profits</option></select></label>
         </div>
         <div id="leaderModeNote" style="display:none"></div>
         <div class="table-wrap">
@@ -603,21 +603,33 @@ function renderLeaders() {
   const mode = $("leaderMode")?.value || "all";
   const comboMode = mode === "combos";
   const efficiencyMode = mode === "efficiency";
+  const perfectMode = mode === "perfect";
   const baseList = rankedLeaders();
-  const list = comboMode ? comboProfitRows() : efficiencyMode ? comboEfficiencyRows() : baseList;
+  const perfectList = baseList.filter(trader =>
+    trader?.settlementRecordComplete === true &&
+    num(trader.settlementWins) >= 15 &&
+    num(trader.settlementLosses) === 0
+  );
+  const list = comboMode ? comboProfitRows() : efficiencyMode ? comboEfficiencyRows() : perfectMode ? perfectList : baseList;
   const visible = allLeaders ? list : list.slice(0, 10);
-  $("leaderModeNote").textContent = efficiencyMode ? "Open combos only · start times are verified where available; unknown start times are flagged. Estimates assume each winning combo share pays $1 and are not guaranteed profit." : "";
+  $("leaderModeNote").textContent = efficiencyMode
+    ? "Open combos only · start times are verified where available; unknown start times are flagged. Estimates assume each winning combo share pays $1 and are not guaranteed profit."
+    : perfectMode
+      ? "Verified 100% settled record only · complete settlement history · at least 15 settled positions · early cash-outs do not count as wins."
+      : "";
   $("leaderHeader").innerHTML = comboMode
     ? "<th>#</th><th>Trader</th><th>Weekly wins</th><th>Weekly losses</th><th>Weekly partial</th><th>Weekly combo P&amp;L</th><th>Weekly P&amp;L coverage</th>"
     : efficiencyMode
       ? "<th>#</th><th>Trader</th><th>Upcoming combo</th><th>Entry</th><th>Est. payout</th><th>Est. profit</th><th>Est. return</th>"
-      : "<th>#</th><th>Trader</th><th>Wins–losses</th><th>Win rate</th><th>Period P&amp;L</th><th>Volume</th>";
+      : perfectMode
+        ? "<th>#</th><th>Trader</th><th>Verified wins–losses</th><th>Settlement win rate</th><th>Period P&amp;L</th><th>Volume</th>"
+        : "<th>#</th><th>Trader</th><th>Wins–losses</th><th>Win rate</th><th>Period P&amp;L</th><th>Volume</th>";
   $("leadersBody").innerHTML = visible.length ? visible.map((trader,index) => {
     if (comboMode) return `<tr><td class="rank">${index+1}</td><td><div class="trader-name">${avatar(trader.trader)}<span class="name-text">${profileButton({...trader.trader, wallet:trader.wallet}, nameOf(trader.trader))}</span></div></td><td class="record">${trader.wins}</td><td class="record">${trader.losses}</td><td class="record">${trader.partial}</td><td class="${trader.pnlKnown && trader.profit < 0 ? "negative" : "positive"}">${trader.pnlKnown ? (trader.pnlMissing ? "Partial: " : "") + (trader.profit > 0 ? "+" : "") + cash(trader.profit) : "N/A"}</td><td class="record">${trader.pnlKnown}/${trader.combos} combos</td></tr>`;
     if (efficiencyMode) return `<tr><td class="rank">${index+1}</td><td><div class="trader-name">${avatar(trader.trader)}<span class="name-text">${profileButton({...trader.trader, wallet:trader.wallet}, nameOf(trader.trader))}</span></div></td><td class="combo-title" title="${esc(trader.title || "Combo details unavailable")}">${esc(trader.title || "Combo details unavailable")}<br><small class="subtitle">${esc(trader.timingLabel || "Start time unverified")}</small></td><td class="money">${cash(trader.entry)}</td><td class="money">${cash(trader.payout)}</td><td class="positive">~${cash(trader.profit)}</td><td class="record">~${trader.multiple.toFixed(1)}×</td></tr>`;
     const pnl = num(trader.pnl ?? trader.profit), volume = num(trader.volume ?? trader.vol), pnlClass = pnl !== null && pnl < 0 ? "negative" : "positive";
-    return `<tr><td class="rank">${trader.displayRank}</td><td><div class="trader-name">${avatar(trader)}<span class="name-text">${profileButton(trader)}</span></div></td><td class="record">${recordText(trader)}</td><td class="record">${recordOf(trader)?.rate == null ? "N/A" : recordOf(trader).rate.toFixed(1) + "%"}</td><td class="${pnlClass}">${pnl === null ? "N/A" : (pnl > 0 ? "+" : "") + cash(pnl)}</td><td class="money">${cash(volume)}</td></tr>`;
-  }).join("") : `<tr><td colspan="${comboMode || efficiencyMode ? 7 : 6}" class="empty">${comboMode ? (comboLoadFinished ? "No resolved combos with usable entry and payout data were found for the last 7 days." : "Scanning combo positions…") : efficiencyMode ? (comboLoadFinished ? "No open combos with a positive estimated return and no resolved legs were found in the checked traders." : "Scanning combo positions…") : "No leaderboard data available. Check that the updater has created " + esc(FILES[period]) + "."}</td></tr>`;
+    return `<tr><td class="rank">${perfectMode ? index+1 : trader.displayRank}</td><td><div class="trader-name">${avatar(trader)}<span class="name-text">${profileButton(trader)}</span></div></td><td class="record">${recordText(trader)}</td><td class="record">${recordOf(trader)?.rate == null ? "N/A" : recordOf(trader).rate.toFixed(1) + "%"}</td><td class="${pnlClass}">${pnl === null ? "N/A" : (pnl > 0 ? "+" : "") + cash(pnl)}</td><td class="money">${cash(volume)}</td></tr>`;
+  }).join("") : `<tr><td colspan="${comboMode || efficiencyMode ? 7 : 6}" class="empty">${comboMode ? (comboLoadFinished ? "No resolved combos with usable entry and payout data were found for the last 7 days." : "Scanning combo positions…") : perfectMode ? "No complete, verified 100% settlement records with at least 15 settled positions are available in this leaderboard sample." : efficiencyMode ? (comboLoadFinished ? "No open combos with a positive estimated return and no resolved legs were found in the checked traders." : "Scanning combo positions…") : "No leaderboard data available. Check that the updater has created " + esc(FILES[period]) + "."}</td></tr>`;
   $("leadersMore").textContent = allLeaders ? "Show fewer ↑" : "View all traders →";
   $("leadersMore").style.display = list.length > 10 ? "inline-block" : "none";
   const overviewList = comboMode ? list : efficiencyMode ? [] : baseList;
