@@ -895,6 +895,8 @@ function buildConsensus(holderGroups, candidates, records = {}) {
           earlyExitPositions: earlyExits,
           earlyExitRate,
           settlementRecordComplete: record.settlementRecordComplete === true,
+          settlementRecordCoverage: record.settlementRecordCoverage ?? "partial",
+          settlementRecordBasis: record.settlementRecordBasis ?? "",
           recordBasis: "Fully classified market outcomes at resolution; early exits excluded from settled wins/losses."
         }];
       });
