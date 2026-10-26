@@ -14,7 +14,7 @@ const PROCESS_CANDIDATE_COUNT = 7500;
 // Keep the 5,000-wallet position/consensus pool, but bound per-period history enrichment.
 const RECORD_SCAN_CANDIDATE_COUNT = 1500;
 const LEADERBOARD_PAGE_COUNT = 1000;
-const MIN_CONSENSUS_WIN_RATE = 90;
+const MIN_CONSENSUS_WIN_RATE = 100;
 const LEADER_COUNT = 100;
 const PAGE_SIZE = 50;
 const POSITION_FETCH_LIMIT = 100;
@@ -28,7 +28,7 @@ const CONSENSUS_WINDOW_HOURS = 168;
 const CONSENSUS_HOLDERS_PER_MARKET = 1000;
 const MIN_CONSENSUS_POSITION_VALUE = 5;
 const CONSENSUS_ENTRY_WINDOW_MINUTES = 60;
-const MIN_TRADER_RESOLVED_MARKETS = 10;
+const MIN_TRADER_RESOLVED_MARKETS = 15;
 const TRADERS_PER_MARKET = 100;
 const TRADE_LIMIT = 10;
 const MAX_JSON_BYTES = 5 * 1024 * 1024;
@@ -861,27 +861,23 @@ function buildConsensus(holderGroups, candidates, records = {}) {
         const wallet = String(holder.wallet || "").toLowerCase();
         const candidate = candidateMap.get(wallet);
         if (!candidate) return [];
-        const record = records[wallet] || records[candidate.wallet] || candidate;
-        // Prefer verified settlement results, but fall back to the period-scoped closed-position proxy when market metadata is missing.
-        const verifiedWins = num(record.settlementWins), verifiedLosses = num(record.settlementLosses);
-        const hasSettlementSample = verifiedWins !== null && verifiedLosses !== null && (verifiedWins + verifiedLosses) > 0;
-        const settlementWins = hasSettlementSample ? verifiedWins : num(record.wins);
-        const settlementLosses = hasSettlementSample ? verifiedLosses : num(record.losses);
-        const resolvedMarkets = settlementWins !== null && settlementLosses !== null ? settlementWins + settlementLosses : null;
-        const winRate = resolvedMarkets > 0 ? settlementWins / resolvedMarkets * 100 : null;
+        const record = records[wallet] || records[candidate.wallet] || null;
+        // Never substitute profitable exits for settled wins. For a copy signal,
+        // require a fully classified settlement record and a perfect observed
+        // settlement record with a meaningful sample size.
+        if (!record || record.settlementRecordComplete !== true) return [];
+        const settlementWins = num(record.settlementWins);
+        const settlementLosses = num(record.settlementLosses);
+        const hasSettlementSample = settlementWins !== null && settlementLosses !== null &&
+          settlementWins + settlementLosses > 0;
+        if (!hasSettlementSample) return [];
+        const resolvedMarkets = settlementWins + settlementLosses;
+        const winRate = settlementWins / resolvedMarkets * 100;
         const earlyExits = num(record.earlyExitPositions) ?? 0;
-        // Keep a settlement-hold preference without requiring a literally
-        // perfect lifetime record (which made the live consensus list empty).
-        // A trader must have at least 10 classifiable settled markets, 90%+
-        // wins on that sample, and no more than 20% observed early exits among
-        // classified closed positions. Completeness is shown as metadata,
-        // not used to silently erase otherwise valid sampled evidence.
         const observedClassified = resolvedMarkets + earlyExits;
-        const earlyExitRate = observedClassified > 0 ? earlyExits / observedClassified : 1;
+        const earlyExitRate = observedClassified > 0 ? earlyExits / observedClassified : 0;
         if (
-          winRate === null ||
-          winRate < MIN_CONSENSUS_WIN_RATE ||
-          resolvedMarkets === null ||
+          winRate !== 100 ||
           resolvedMarkets < MIN_TRADER_RESOLVED_MARKETS
         ) return [];
         return [{
@@ -899,7 +895,7 @@ function buildConsensus(holderGroups, candidates, records = {}) {
           earlyExitPositions: earlyExits,
           earlyExitRate,
           settlementRecordComplete: record.settlementRecordComplete === true,
-          recordBasis: hasSettlementSample ? "Verified settled-market outcomes where metadata is available; early exits disclosed separately." : "Period-scoped closed-position profitability proxy when settlement metadata is unavailable; not verified settlement accuracy."
+          recordBasis: "Fully classified market outcomes at resolution; early exits excluded from settled wins/losses."
         }];
       });
       const totalValue = traders.reduce((sum, trader) => sum + (num(trader.amount) ?? 0), 0);      return { ...group, traders, sameSide: traders.length, totalValue };
