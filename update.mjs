@@ -989,6 +989,7 @@ async function getSettlementStats(wallet, period, nowMs, limit = 250) {
   ]);
   const allPagesComplete = cohorts.every(cohort => cohort.complete);
   const uniqueRows = new Map();
+  let unkeyedRows = 0;
   const priority = status => status === "CLOSED" ? 0 : 1;
   for (const cohort of cohorts) {
     for (const row of cohort.rows) {
@@ -996,7 +997,7 @@ async function getSettlementStats(wallet, period, nowMs, limit = 250) {
       const rawIndex = row.outcome_index ?? row.outcomeIndex;
       const outcome = String(rawIndex ?? row.outcome ?? "").trim().toLowerCase();
       const key = condition ? condition + "|" + outcome : "";
-      if (!key) continue;
+      if (!key) { unkeyedRows++; continue; }
       const prior = uniqueRows.get(key);
       if (!prior || priority(row._scanStatus) > priority(prior._scanStatus)) uniqueRows.set(key, row);
     }
@@ -1024,7 +1025,7 @@ async function getSettlementStats(wallet, period, nowMs, limit = 250) {
   }
 
   let settlementWins = 0, settlementLosses = 0, earlyExitMarkets = 0;
-  let classified = 0, earlyExitPositions = 0, unclassified = 0;
+  let classified = 0, earlyExitPositions = 0, unclassified = unkeyedRows;
   const earlyKeys = new Set();
   for (const position of positions) {
     const condition = String(position.condition_id ?? position.conditionId ?? "").toLowerCase();
@@ -1276,7 +1277,7 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     qualificationWindowDays: period.key === "month" ? 30 : 7,
     minimumWinRate: MIN_CONSENSUS_WIN_RATE,
     minimumResolvedMarkets: MIN_TRADER_RESOLVED_MARKETS,
-    qualificationBasis: "Verified settled-market outcomes in the scanned history; requires at least 10 classifiable resolved markets and 90%+ settlement win rate. Early exits are disclosed separately and do not automatically disqualify a trader.",
+    qualificationBasis: "Requires a complete classified settlement record, at least 15 settled positions, and a 100% win rate on those verified market outcomes. Early exits are excluded from settled wins/losses and shown separately; the 7/30-day field describes candidate discovery, not settlement-record age.",
     minimumSameSideTraders: 2,
     entryWindowMinutes: CONSENSUS_ENTRY_WINDOW_MINUTES,
     candidateCount: ranked.length,
