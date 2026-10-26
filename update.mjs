@@ -945,114 +945,154 @@ function timeMs(value) {
   return Number.isFinite(ms) && ms > 0 ? ms : null;
 }
 async function getSettlementStats(wallet, period, nowMs, limit = 250) {
-  const baseParams = {
-    user: wallet, limit: String(limit), status: "CLOSED",
-    sort_by: "TIMESTAMP", sort_direction: "DESC"
-  };
-  // The API's default page is capped at 250 positions. Follow its opaque cursor
-  // so busy traders aren't automatically marked N/A just because they exceed one page.
-  const rows = [];
-  let pagination = {};
-  let cursor = null;
-  let pagesFetched = 0;
-  const maxPages = 5;
-  do {
-    const params = new URLSearchParams(baseParams);
-    if (cursor) params.set("cursor", cursor);
-    const response = await getJson(`${API}/v2/positions?${params}`);
-    rows.push(...asArray(response));
-    pagination = response?.pagination ?? {};
-    pagesFetched++;
-    const nextCursor = pagination.next_cursor ?? pagination.nextCursor ?? pagination.cursor ?? null;
-    if (pagination.has_more !== true) {
-      cursor = null;
-      break;
-    }
-    if (!nextCursor || pagesFetched >= maxPages) {
-      cursor = null;
-      pagination = {...pagination, has_more: true};
-      break;
-    }
-    cursor = String(nextCursor);
-  } while (cursor);
+  // A CLOSED position means the wallet exited that position; it does not
+  // mean the market settled. Include held positions too, because the API's
+  // OPEN cohort contains settled winners that have not been redeemed and
+  // REDEEMABLE_LOST exposes settled losing positions still held by the wallet.
+  async function fetchPositionCohort(status, maxPages) {
+    const rows = [];
+    let cursor = null;
+    let complete = true;
+    let pagesFetched = 0;
+    do {
+      const params = new URLSearchParams({
+        user: wallet,
+        limit: String(limit),
+        status,
+        sort_by: "TIMESTAMP",
+        sort_direction: "DESC"
+      });
+      if (cursor) params.set("cursor", cursor);
+      const response = await getJson(`${API}/v2/positions?${params}`);
+      const page = asArray(response);
+      rows.push(...page.map(row => ({...row, _scanStatus: status})));
+      const pagination = response?.pagination ?? {};
+      pagesFetched++;
+      const nextCursor = pagination.next_cursor ?? pagination.nextCursor ?? null;
+      if (pagination.has_more !== true) {
+        cursor = null;
+        break;
+      }
+      if (!nextCursor || pagesFetched >= maxPages) {
+        complete = false;
+        cursor = null;
+        break;
+      }
+      cursor = String(nextCursor);
+    } while (cursor);
+    return {rows, complete};
+  }
+
+  // CLOSED can be much larger than a wallet's currently held book, so it gets
+  // the existing five-page cap. Held winner/loss cohorts usually fit in one
+  // page; if they do not, the record is explicitly marked incomplete.
+  const cohorts = await Promise.all([
+    fetchPositionCohort("CLOSED", 5),
+    fetchPositionCohort("OPEN", 2),
+    fetchPositionCohort("REDEEMABLE_LOST", 2)
+  ]);
+  const allPagesComplete = cohorts.every(cohort => cohort.complete);
   const uniqueRows = new Map();
-  for (const row of rows) {
-    const token = String(row.token_id ?? row.tokenId ?? row.asset ?? "");
-    const condition = String(row.condition_id ?? row.conditionId ?? "");
-    const outcome = String(row.outcome_index ?? row.outcomeIndex ?? row.outcome ?? "");
-    const key = token || (condition ? condition + "|" + outcome : "");
-    if (key) uniqueRows.set(key, row);
+  const priority = status => status === "CLOSED" ? 0 : 1;
+  for (const cohort of cohorts) {
+    for (const row of cohort.rows) {
+      const condition = String(row.condition_id ?? row.conditionId ?? "").toLowerCase();
+      const rawIndex = row.outcome_index ?? row.outcomeIndex;
+      const outcome = String(rawIndex ?? row.outcome ?? "").trim().toLowerCase();
+      const key = condition ? condition + "|" + outcome : "";
+      if (!key) continue;
+      const prior = uniqueRows.get(key);
+      if (!prior || priority(row._scanStatus) > priority(prior._scanStatus)) uniqueRows.set(key, row);
+    }
   }
+
   const positions = [...uniqueRows.values()];
-  if (!positions.length) {
-    return {settlementWins: 0, settlementLosses: 0, earlyExitMarkets: 0, settlementRecordComplete: pagination.has_more !== true, settlementPositionsChecked: 0};
-  }
-  const conditions = [...new Set(positions.map(row => String(row.condition_id ?? row.conditionId ?? "").toLowerCase()).filter(Boolean))];
+  const conditions = [...new Set(positions
+    .map(row => String(row.condition_id ?? row.conditionId ?? "").toLowerCase())
+    .filter(Boolean))];
   const conditionChunks = [];
   for (let i = 0; i < conditions.length; i += 40) conditionChunks.push(conditions.slice(i, i + 40));
   const marketPages = await mapLimit(conditionChunks, CONCURRENCY, async ids => {
     const q = new URLSearchParams({condition_ids: ids.join(",")});
-    try { return asArray(await getJson(`${GAMMA_API}/markets?${q.toString()}`)); }
-    catch (error) { console.warn("Settlement market metadata lookup failed:", error.message); return []; }
+    try {
+      return {rows:asArray(await getJson(`${GAMMA_API}/markets?${q.toString()}`)), ok:true};
+    } catch (error) {
+      console.warn("Settlement market metadata lookup failed:", error.message);
+      return {rows:[], ok:false};
+    }
   });
   const markets = new Map();
-  for (const page of marketPages) for (const market of page) {
+  for (const page of marketPages) for (const market of page.rows) {
     const condition = String(market.conditionId ?? market.condition_id ?? "").toLowerCase();
     if (condition) markets.set(condition, market);
   }
-  let settlementWins = 0, settlementLosses = 0, earlyExitMarkets = 0, classified = 0, earlyExitPositions = 0;
+
+  let settlementWins = 0, settlementLosses = 0, earlyExitMarkets = 0;
+  let classified = 0, earlyExitPositions = 0, unclassified = 0;
   const earlyKeys = new Set();
   for (const position of positions) {
     const condition = String(position.condition_id ?? position.conditionId ?? "").toLowerCase();
     const market = markets.get(condition);
+    const scanStatus = String(position._scanStatus || position.status || "").toUpperCase();
     const lastEventAt = timeMs(position.last_event_at ?? position.lastEventAt ?? position.timestamp ?? position.updated_at ?? position.updatedAt);
-    if (!market || lastEventAt === null) continue;
-    // /positions?status=CLOSED means the trader's position is closed, not
-    // necessarily that the market settled. If Gamma still reports the market
-    // open, count this as an early exit rather than excluding it and making
-    // every trader's record incomplete.
+    if (!market) { unclassified++; continue; }
+
+    // An active-market holding is neither a win nor a loss. A closed position
+    // on a market that is still open is an early exit and must not count as a win.
     if (market.closed !== true) {
-      classified++;
-      earlyExitPositions++;
-      const rawIndex = position.outcome_index ?? position.outcomeIndex ?? position.outcome;
-      earlyKeys.add(condition + "|" + String(rawIndex ?? "unknown"));
+      if (scanStatus === "CLOSED") {
+        if (lastEventAt === null) { unclassified++; continue; }
+        classified++;
+        earlyExitPositions++;
+        const rawIndex = position.outcome_index ?? position.outcomeIndex ?? position.outcome;
+        earlyKeys.add(condition + "|" + String(rawIndex ?? "unknown"));
+      }
       continue;
     }
+
     const outcomes = parseArrayField(market.outcomes);
     const prices = parseArrayField(market.outcomePrices).map(num);
     const winnerIndex = prices.findIndex(price => price !== null && price >= 0.999);
     const resolvedAt = timeMs(market.closedTime ?? market.closed_time ?? market.resolvedAt ?? market.resolved_at);
-    if (winnerIndex < 0 || resolvedAt === null) continue;
+    if (winnerIndex < 0 || resolvedAt === null) { unclassified++; continue; }
+
     const rawIndex = position.outcome_index ?? position.outcomeIndex;
     let positionIndex = rawIndex === null || rawIndex === undefined ? -1 : Number(rawIndex);
     if (!Number.isInteger(positionIndex) || positionIndex < 0) {
       const outcome = String(position.outcome ?? "").trim().toLowerCase();
       positionIndex = outcomes.findIndex(label => String(label).trim().toLowerCase() === outcome);
     }
-    if (positionIndex < 0 || positionIndex >= outcomes.length) continue;
-    classified++;
-    if (lastEventAt < resolvedAt) {
-      const key = condition + "|" + positionIndex;
-      earlyKeys.add(key);
+    if (positionIndex < 0 || positionIndex >= outcomes.length) { unclassified++; continue; }
+
+    // If the trader exited before resolution, the P&L of that exit is not a
+    // settlement result. Current held positions and exits at/after resolution
+    // are classified by the actual resolved outcome.
+    if (scanStatus === "CLOSED" && lastEventAt !== null && lastEventAt < resolvedAt) {
+      classified++;
       earlyExitPositions++;
+      earlyKeys.add(condition + "|" + positionIndex);
       continue;
     }
+    if (scanStatus === "CLOSED" && lastEventAt === null) { unclassified++; continue; }
+
+    classified++;
     if (positionIndex === winnerIndex) settlementWins++;
     else settlementLosses++;
   }
-  const allPositionsClassified = classified === positions.length && (earlyExitPositions + settlementWins + settlementLosses) === positions.length;
-  // Preserve every individually classifiable settled result even when the
-  // trader has a long history, missing market metadata, or more pages than the
-  // scan cap. Consensus can use the verified sample without pretending it is
-  // a complete lifetime record.
+
+  const metadataComplete = marketPages.every(page => page.ok);
+  const settlementRecordComplete = allPagesComplete && metadataComplete && unclassified === 0;
   return {
     settlementWins,
     settlementLosses,
     earlyExitMarkets: earlyKeys.size,
     earlyExitPositions,
-    settlementRecordComplete: allPositionsClassified && pagination.has_more !== true,
+    settlementRecordComplete,
     settlementPositionsChecked: positions.length,
-    settlementPositionsClassified: classified
+    settlementPositionsClassified: classified,
+    settlementPositionsUnclassified: unclassified,
+    settlementRecordBasis: "Verified market outcome at resolution; early exits excluded from settled wins/losses",
+    settlementRecordCoverage: settlementRecordComplete ? "complete" : "partial"
   };
 }
 const settlementStatsCache = new Map();
