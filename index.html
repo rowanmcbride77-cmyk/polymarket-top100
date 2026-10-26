@@ -159,7 +159,7 @@ dialog::backdrop{background:#000b}
             <tbody id="leadersBody"><tr><td colspan="6" class="loading">Loading traders…</td></tr></tbody>
           </table>
         </div>
-        <div class="source-note">Resolved win–loss counts include only positions whose last event was at or after market resolution. Positions closed before resolution are tracked separately as early exits. If settlement verification is unavailable, the displayed record falls back to the historical closed-position profitability estimate; it is not guaranteed to equal true settlement wins.</div>
+        <div class="source-note">Win–loss counts use verified market outcomes at resolution, not whether a trader made money on an early sale. Positions exited before resolution are tracked separately and are not counted as settled wins or losses. If the full settlement history cannot be verified, the record shows N/A rather than guessing.</div>
         <button class="link-button" id="leadersMore" onclick="toggleLeaders()">View all traders →</button>
       </section>
 
@@ -309,15 +309,14 @@ function walletOf(trader) {
 }
 
 function recordOf(trader) {
-  // Prefer verified market-settlement results when available; otherwise
-  // restore the existing historical closed-position profitability record.
-  const settled = trader?.settlementRecordComplete === true;
-  const wins = num(settled ? trader?.settlementWins : trader?.wins);
-  const losses = num(settled ? trader?.settlementLosses : trader?.losses);
-  if (wins === null || losses === null || wins < 0 || losses < 0) return null;
+  // Show only complete, verified market-settlement outcomes. Never present a
+  // profitable early exit as a settled win or a closed-position P&L proxy.
+  if (trader?.settlementRecordComplete !== true) return null;
+  const wins = num(trader?.settlementWins);
+  const losses = num(trader?.settlementLosses);
+  if (wins === null || losses === null || wins < 0 || losses < 0 || wins + losses === 0) return null;
   const total = wins + losses;
-  const suppliedRate = num(settled ? null : trader?.winRate);
-  return {wins, losses, total, rate:suppliedRate !== null ? suppliedRate : (total ? wins / total * 100 : null), verified:settled};
+  return {wins, losses, total, rate:wins / total * 100, verified:true};
 }
 
 function recordText(trader) {
