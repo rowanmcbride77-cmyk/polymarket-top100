@@ -150,7 +150,7 @@ dialog::backdrop{background:#000b}
           <span class="pill" id="leaderPeriod">Week</span>
         </div>
         <div class="filters" style="margin:0 0 12px">
-          <label>Leaderboard <select id="leaderMode" onchange="renderLeaders()"><option value="all">All traders</option><option value="perfect">100% settled record</option><option value="efficiency">High-return combos</option><option value="combos">Weekly combo profits</option></select></label>
+          <label>Leaderboard <select id="leaderMode" onchange="renderLeaders()"><option value="all">All traders</option><option value="efficiency">High-return combos</option><option value="combos">Weekly combo profits</option></select></label>
         </div>
         <div id="leaderModeNote" style="display:none"></div>
         <div class="table-wrap">
@@ -159,7 +159,7 @@ dialog::backdrop{background:#000b}
             <tbody id="leadersBody"><tr><td colspan="6" class="loading">Loading traders…</td></tr></tbody>
           </table>
         </div>
-        <div class="source-note">Win–loss counts use verified market outcomes at resolution, not whether a trader made money on an early sale. Positions exited before resolution are tracked separately and are not counted as settled wins or losses. If the full settlement history cannot be verified, the record shows N/A rather than guessing.</div>
+        <div class="source-note">Resolved win–loss counts include only positions whose last event was at or after market resolution. Positions closed before resolution are tracked separately as early exits. If settlement verification is unavailable, the displayed record falls back to the historical closed-position profitability estimate; it is not guaranteed to equal true settlement wins.</div>
         <button class="link-button" id="leadersMore" onclick="toggleLeaders()">View all traders →</button>
       </section>
 
@@ -309,14 +309,15 @@ function walletOf(trader) {
 }
 
 function recordOf(trader) {
-  // Show only complete, verified market-settlement outcomes. Never present a
-  // profitable early exit as a settled win or a closed-position P&L proxy.
-  if (trader?.settlementRecordComplete !== true || trader?.settlementRecordCoverage !== "complete" || !String(trader?.settlementRecordBasis || "").toLowerCase().includes("market outcome at resolution")) return null;
-  const wins = num(trader?.settlementWins);
-  const losses = num(trader?.settlementLosses);
-  if (wins === null || losses === null || wins < 0 || losses < 0 || wins + losses === 0) return null;
+  // Prefer verified market-settlement results when available; otherwise
+  // restore the existing historical closed-position profitability record.
+  const settled = trader?.settlementRecordComplete === true;
+  const wins = num(settled ? trader?.settlementWins : trader?.wins);
+  const losses = num(settled ? trader?.settlementLosses : trader?.losses);
+  if (wins === null || losses === null || wins < 0 || losses < 0) return null;
   const total = wins + losses;
-  return {wins, losses, total, rate:wins / total * 100, verified:true};
+  const suppliedRate = num(settled ? null : trader?.winRate);
+  return {wins, losses, total, rate:suppliedRate !== null ? suppliedRate : (total ? wins / total * 100 : null), verified:settled};
 }
 
 function recordText(trader) {
@@ -445,28 +446,6 @@ async function loadConsensusData() {
         if (!response.ok) throw new Error("HTTP " + response.status);
         const parsed = await response.json();
         if (!parsed || !Array.isArray(parsed.consensus)) throw new Error("Invalid consensus file");
-        // Guard against stale JSON: every displayed consensus trader must have
-        // a complete, verified 100% settlement record across at least 15 results.
-        parsed.consensus = parsed.consensus.map(market => {
-          const sourceMembers = Array.isArray(market.traders) ? market.traders :
-            Array.isArray(market.members) ? market.members : [];
-          const traders = sourceMembers.filter(trader =>
-            trader?.settlementRecordComplete === true &&
-            trader?.settlementRecordCoverage === "complete" &&
-            String(trader?.settlementRecordBasis || "").toLowerCase().includes("market outcome at resolution") &&
-            num(trader.wins) >= 15 &&
-            num(trader.losses) === 0 &&
-            num(trader.resolvedMarkets) >= 15 &&
-            num(trader.winRate) === 100
-          );
-          const totalValue = traders.reduce((sum, trader) => sum + (num(trader.amount) ?? 0), 0);
-          return {...market, traders, members:traders, traderCount:traders.length,
-            tradersCount:traders.length, sameSide:traders.length, totalValue};
-        }).filter(market => {
-          const traders = Array.isArray(market.traders) ? market.traders : [];
-          return traders.length >= 2 &&
-            new Set(traders.map(trader => String(trader.wallet || "").toLowerCase()).filter(Boolean)).size === traders.length;
-        });
         result = parsed; break;
       } catch (_) {}
     }
@@ -625,35 +604,21 @@ function renderLeaders() {
   const mode = $("leaderMode")?.value || "all";
   const comboMode = mode === "combos";
   const efficiencyMode = mode === "efficiency";
-  const perfectMode = mode === "perfect";
   const baseList = rankedLeaders();
-  const perfectList = baseList.filter(trader =>
-    trader?.settlementRecordComplete === true &&
-    trader?.settlementRecordCoverage === "complete" &&
-    String(trader?.settlementRecordBasis || "").toLowerCase().includes("market outcome at resolution") &&
-    num(trader.settlementWins) >= 15 &&
-    num(trader.settlementLosses) === 0
-  );
-  const list = comboMode ? comboProfitRows() : efficiencyMode ? comboEfficiencyRows() : perfectMode ? perfectList : baseList;
+  const list = comboMode ? comboProfitRows() : efficiencyMode ? comboEfficiencyRows() : baseList;
   const visible = allLeaders ? list : list.slice(0, 10);
-  $("leaderModeNote").textContent = efficiencyMode
-    ? "Open combos only · start times are verified where available; unknown start times are flagged. Estimates assume each winning combo share pays $1 and are not guaranteed profit."
-    : perfectMode
-      ? "Verified 100% settled record only · complete settlement history · at least 15 settled positions · early cash-outs do not count as wins."
-      : "";
+  $("leaderModeNote").textContent = efficiencyMode ? "Open combos only · start times are verified where available; unknown start times are flagged. Estimates assume each winning combo share pays $1 and are not guaranteed profit." : "";
   $("leaderHeader").innerHTML = comboMode
     ? "<th>#</th><th>Trader</th><th>Weekly wins</th><th>Weekly losses</th><th>Weekly partial</th><th>Weekly combo P&amp;L</th><th>Weekly P&amp;L coverage</th>"
     : efficiencyMode
       ? "<th>#</th><th>Trader</th><th>Upcoming combo</th><th>Entry</th><th>Est. payout</th><th>Est. profit</th><th>Est. return</th>"
-      : perfectMode
-        ? "<th>#</th><th>Trader</th><th>Verified wins–losses</th><th>Settlement win rate</th><th>Period P&amp;L</th><th>Volume</th>"
-        : "<th>#</th><th>Trader</th><th>Wins–losses</th><th>Win rate</th><th>Period P&amp;L</th><th>Volume</th>";
+      : "<th>#</th><th>Trader</th><th>Wins–losses</th><th>Win rate</th><th>Period P&amp;L</th><th>Volume</th>";
   $("leadersBody").innerHTML = visible.length ? visible.map((trader,index) => {
     if (comboMode) return `<tr><td class="rank">${index+1}</td><td><div class="trader-name">${avatar(trader.trader)}<span class="name-text">${profileButton({...trader.trader, wallet:trader.wallet}, nameOf(trader.trader))}</span></div></td><td class="record">${trader.wins}</td><td class="record">${trader.losses}</td><td class="record">${trader.partial}</td><td class="${trader.pnlKnown && trader.profit < 0 ? "negative" : "positive"}">${trader.pnlKnown ? (trader.pnlMissing ? "Partial: " : "") + (trader.profit > 0 ? "+" : "") + cash(trader.profit) : "N/A"}</td><td class="record">${trader.pnlKnown}/${trader.combos} combos</td></tr>`;
     if (efficiencyMode) return `<tr><td class="rank">${index+1}</td><td><div class="trader-name">${avatar(trader.trader)}<span class="name-text">${profileButton({...trader.trader, wallet:trader.wallet}, nameOf(trader.trader))}</span></div></td><td class="combo-title" title="${esc(trader.title || "Combo details unavailable")}">${esc(trader.title || "Combo details unavailable")}<br><small class="subtitle">${esc(trader.timingLabel || "Start time unverified")}</small></td><td class="money">${cash(trader.entry)}</td><td class="money">${cash(trader.payout)}</td><td class="positive">~${cash(trader.profit)}</td><td class="record">~${trader.multiple.toFixed(1)}×</td></tr>`;
     const pnl = num(trader.pnl ?? trader.profit), volume = num(trader.volume ?? trader.vol), pnlClass = pnl !== null && pnl < 0 ? "negative" : "positive";
-    return `<tr><td class="rank">${perfectMode ? index+1 : trader.displayRank}</td><td><div class="trader-name">${avatar(trader)}<span class="name-text">${profileButton(trader)}</span></div></td><td class="record">${recordText(trader)}</td><td class="record">${recordOf(trader)?.rate == null ? "N/A" : recordOf(trader).rate.toFixed(1) + "%"}</td><td class="${pnlClass}">${pnl === null ? "N/A" : (pnl > 0 ? "+" : "") + cash(pnl)}</td><td class="money">${cash(volume)}</td></tr>`;
-  }).join("") : `<tr><td colspan="${comboMode || efficiencyMode ? 7 : 6}" class="empty">${comboMode ? (comboLoadFinished ? "No resolved combos with usable entry and payout data were found for the last 7 days." : "Scanning combo positions…") : perfectMode ? "No complete, verified 100% settlement records with at least 15 settled positions are available in this leaderboard sample." : efficiencyMode ? (comboLoadFinished ? "No open combos with a positive estimated return and no resolved legs were found in the checked traders." : "Scanning combo positions…") : "No leaderboard data available. Check that the updater has created " + esc(FILES[period]) + "."}</td></tr>`;
+    return `<tr><td class="rank">${trader.displayRank}</td><td><div class="trader-name">${avatar(trader)}<span class="name-text">${profileButton(trader)}</span></div></td><td class="record">${recordText(trader)}</td><td class="record">${recordOf(trader)?.rate == null ? "N/A" : recordOf(trader).rate.toFixed(1) + "%"}</td><td class="${pnlClass}">${pnl === null ? "N/A" : (pnl > 0 ? "+" : "") + cash(pnl)}</td><td class="money">${cash(volume)}</td></tr>`;
+  }).join("") : `<tr><td colspan="${comboMode || efficiencyMode ? 7 : 6}" class="empty">${comboMode ? (comboLoadFinished ? "No resolved combos with usable entry and payout data were found for the last 7 days." : "Scanning combo positions…") : efficiencyMode ? (comboLoadFinished ? "No open combos with a positive estimated return and no resolved legs were found in the checked traders." : "Scanning combo positions…") : "No leaderboard data available. Check that the updater has created " + esc(FILES[period]) + "."}</td></tr>`;
   $("leadersMore").textContent = allLeaders ? "Show fewer ↑" : "View all traders →";
   $("leadersMore").style.display = list.length > 10 ? "inline-block" : "none";
   const overviewList = comboMode ? list : efficiencyMode ? [] : baseList;
@@ -1340,41 +1305,27 @@ function renderClosedPositionHistory(wallet) {
   const container = $("closedPositionsContent");
   if (!container) return;
   const rows = closedPositionCache.get(wallet);
-  if (!rows) { container.textContent = "Loading closed positions and cash-flow history…"; return; }
+  if (!rows) { container.textContent = "Loading all available closed positions…"; return; }
   if (!rows.length) { container.innerHTML = '<div class="empty">No closed positions returned by the public API.</div>'; return; }
   const showAll = expandedClosedMarkets.has(wallet);
   const visible = showAll ? rows : rows.slice(0, 100);
-  const activityComplete = rows._activityComplete === true;
-  let output = '<div class="source-note" style="margin:0 0 10px">Loaded ' + rows.length.toLocaleString() +
-    ' closed positions. Buy times and cash returned are matched from public trade/redemption activity where available. Missing values are shown as N/A, not guessed.' +
-    (activityComplete ? '' : ' Activity history hit its scan limit or could not be fully loaded, so cash-flow coverage may be incomplete.') +
-    '</div><div class="member-list">';
+  let output = '<div class="source-note" style="margin:0 0 10px">Loaded ' + rows.length.toLocaleString() + ' closed positions. Positive/negative realized P&amp;L is used for the record; it is not necessarily a market-settlement outcome.</div><div class="member-list">';
   output += visible.map(position => {
-    const pnl = num(position.realized_pnl ?? position.realizedPnl ?? position.cashPnl ?? position.cash_pnl);
-    const activityBuy = num(position._activityBuyCost);
-    const rawInvested = activityBuy ?? num(position.entry_cost_usdc ?? position.total_cost_usdc ?? position.initialValue ?? position.initial_value ?? position.initial_value_usd ?? position.costBasis ?? position.cost_basis);
-    const activityReturn = num(position._activityCashReturned);
+    const pnl = num(position.realized_pnl ?? position.realizedPnl ?? position.cashPnl ?? position.cash_pnl ?? position.total_pnl ?? position.totalPnl);
+    const rawInvested = num(position.entry_cost_usdc ?? position.total_cost_usdc ?? position.initialValue ?? position.initial_value ?? position.initial_value_usd ?? position.costBasis ?? position.cost_basis);
     const avgPrice = num(position.avgPrice ?? position.avg_price ?? position.averagePrice ?? position.average_price);
     const size = num(position.size ?? position.current_size ?? position.currentSize);
+    // Polymarket may omit initialValue on some rows. avgPrice × size is an estimate, not an exact historical cash-flow total.
     const invested = rawInvested !== null && rawInvested > 0 ? rawInvested : (avgPrice !== null && size !== null && avgPrice >= 0 && size > 0 ? avgPrice * size : null);
-    const investedLabel = activityBuy !== null ? "Total recorded buys" : "Position cost basis";
+    const investedLabel = rawInvested !== null && rawInvested > 0 ? "Amount invested" : "Est. invested";
     const outcome = position.outcome || "Position";
-    const time = position._activityFirstBuyAt ?? position.first_entry_at ?? position.firstEntryAt ?? position.last_event_at ?? position.lastEventAt;
+    const time = position.last_event_at ?? position.lastEventAt;
     const condition = position.condition_id ?? position.conditionId ?? "";
     const sideClass = String(outcome).toLowerCase() === "no" ? "no" : "";
-    const returnedLabel = activityReturn === null ? "Payout / cash returned N/A" : "Payout / cash returned " + cash(activityReturn);
-    return '<div class="member"><div><strong>' + esc(position.title || position.name || "Untitled market") +
-      '</strong><small><span class="side-tag ' + sideClass + '">' + esc(outcome) + '</span> · ' +
-      esc(condition ? condition.slice(0, 12) + "…" : "Market ID unavailable") +
-      '<br>Buy time: ' + esc(dateText(time)) + '</small></div><div>' +
-      (invested === null ? "N/A" : cash(invested)) + '<small>' + investedLabel + '</small></div><div class="' +
-      (pnl !== null && pnl < 0 ? "negative" : "positive") + '">' + (pnl === null ? "P&amp;L N/A" : cash(pnl)) +
-      '<small>Realized P&amp;L · ' + esc(returnedLabel) + '</small></div><div class="member-time"><strong>' +
-      esc(relative(position.last_event_at ?? position.lastEventAt)) + '</strong><small>Last position activity</small></div></div>';
+    return '<div class="member"><div><strong>' + esc(position.title || position.name || "Untitled market") + '</strong><small><span class="side-tag ' + sideClass + '">' + esc(outcome) + '</span> · ' + esc(condition ? condition.slice(0, 12) + "…" : "Market ID unavailable") + '</small></div><div>' + (invested === null ? "N/A" : cash(invested)) + '<small>' + investedLabel + '</small></div><div class="' + (pnl !== null && pnl < 0 ? "negative" : "positive") + '">' + (pnl === null ? "P&amp;L N/A" : cash(pnl)) + '<small>Realized P&amp;L</small></div><div class="member-time"><strong>' + esc(relative(time)) + '</strong><small>' + esc(dateText(time)) + '</small></div></div>';
   }).join("");
   output += "</div>";
-  if (rows.length > 100) output += '<button class="link-button" data-wallet="' + esc(wallet) + '" onclick="toggleClosedMarkets(this.dataset.wallet)">' +
-    (showAll ? "Show first 100 ↑" : "View all " + rows.length.toLocaleString() + " closed positions →") + "</button>";
+  if (rows.length > 100) output += '<button class="link-button" data-wallet="' + esc(wallet) + '" onclick="toggleClosedMarkets(this.dataset.wallet)">' + (showAll ? "Show first 100 ↑" : "View all " + rows.length.toLocaleString() + " closed positions →") + "</button>";
   container.innerHTML = output;
 }
 
@@ -1388,123 +1339,31 @@ async function loadClosedPositionHistory(wallet) {
   if (!wallet) return;
   if (closedPositionCache.has(wallet)) { renderClosedPositionHistory(wallet); return; }
   const container = $("closedPositionsContent");
-  if (container) container.textContent = "Loading closed positions and cash-flow history…";
+  if (container) container.textContent = "Loading all available closed positions…";
   const rows = [];
   const seen = new Set();
   let cursor = null;
-  let activityComplete = true;
-  const activityByKey = new Map();
-  const conditionCounts = new Map();
   try {
     while (true) {
       const params = new URLSearchParams({user:wallet, limit:"1000", status:"CLOSED", sort_by:"TIMESTAMP", sort_direction:"DESC"});
       if (cursor) params.set("cursor", cursor);
       const response = await fetch("https://data-api.polymarket.com/v2/positions?" + params.toString(), {cache:"no-store"});
-      if (!response.ok) throw new Error("Polymarket positions API returned HTTP " + response.status);
+      if (!response.ok) throw new Error("Polymarket API returned HTTP " + response.status);
       const result = await response.json();
       const page = Array.isArray(result) ? result : (Array.isArray(result?.data) ? result.data : []);
       for (const position of page) {
-        const key = String(position.token_id ?? position.tokenId ?? position.asset ??
-          ((position.condition_id ?? position.conditionId ?? "") + "|" + (position.outcome_index ?? position.outcomeIndex ?? position.outcome ?? "")));
-        if (!seen.has(key)) {
-          seen.add(key);
-          rows.push(position);
-          const condition = String(position.condition_id ?? position.conditionId ?? "");
-          if (condition) conditionCounts.set(condition, (conditionCounts.get(condition) || 0) + 1);
-        }
+        const key = String(position.token_id ?? position.tokenId ?? position.asset ?? ((position.condition_id ?? position.conditionId ?? "") + "|" + (position.outcome_index ?? position.outcomeIndex ?? position.outcome ?? "")));
+        if (!seen.has(key)) { seen.add(key); rows.push(position); }
       }
       const pagination = result?.pagination ?? {};
       cursor = pagination.next_cursor || null;
       if (pagination.has_more !== true || !cursor || !page.length) break;
-      if (container) container.textContent = "Loading closed positions… " + rows.length.toLocaleString() + " loaded";
+      if (container) container.textContent = "Loading all available closed positions… " + rows.length.toLocaleString() + " loaded";
     }
-
-    let activityCursor = null;
-    let activityPages = 0;
-    const maxActivityPages = 30;
-    do {
-      const params = new URLSearchParams({user:wallet, type:"TRADE,REDEEM", start:"1", limit:"1000"});
-      if (activityCursor) params.set("cursor", activityCursor);
-      const response = await fetch("https://data-api.polymarket.com/v2/activity?" + params.toString(), {cache:"no-store"});
-      if (!response.ok) throw new Error("Polymarket activity API returned HTTP " + response.status);
-      const result = await response.json();
-      const events = Array.isArray(result?.data) ? result.data : Array.isArray(result) ? result : [];
-      for (const event of events) {
-        const type = String(event.type || "").toUpperCase();
-        if (type !== "TRADE" && type !== "REDEEM") continue;
-        const condition = String(event.condition_id ?? event.conditionId ?? "").toLowerCase();
-        const token = String(event.token_id ?? event.tokenId ?? event.asset ?? "");
-        const rawIndex = event.outcome_index ?? event.outcomeIndex;
-        const outcome = String(rawIndex ?? event.outcome ?? "unknown").toLowerCase();
-        const timestamp = num(event.timestamp);
-        const amount = num(event.usdc_size ?? event.amount_usdc ?? event.payout_usdc);
-        const keys = [];
-        if (token) keys.push("token:" + token);
-        if (condition) {
-          keys.push("market:" + condition + "|" + outcome);
-          keys.push("condition:" + condition);
-        }
-        for (const key of keys) {
-          const rec = activityByKey.get(key) || {buyCost:0, hasBuy:false, firstBuyAt:null, sellProceeds:0, hasSell:false, redeemPayout:0, hasRedeem:false};
-          if (type === "TRADE" && String(event.side || "").toUpperCase() === "BUY" && amount !== null) {
-            rec.buyCost += amount;
-            rec.hasBuy = true;
-            if (timestamp !== null && (rec.firstBuyAt === null || timestamp < rec.firstBuyAt)) rec.firstBuyAt = timestamp;
-          }
-          if (type === "REDEEM" && amount !== null) {
-            rec.redeemPayout += amount;
-            rec.hasRedeem = true;
-          }
-          if (type === "TRADE" && String(event.side || "").toUpperCase() === "SELL" && amount !== null) {
-            rec.sellProceeds += amount;
-            rec.hasSell = true;
-          }
-          activityByKey.set(key, rec);
-        }
-      }
-      const pagination = result?.pagination ?? {};
-      activityCursor = pagination.next_cursor || null;
-      activityPages++;
-      if (pagination.has_more !== true || !activityCursor || !events.length) {
-        activityCursor = null;
-        break;
-      }
-      if (activityPages >= maxActivityPages) {
-        activityComplete = false;
-        activityCursor = null;
-      }
-    } while (activityCursor);
-
-    for (const position of rows) {
-      const token = String(position.token_id ?? position.tokenId ?? position.asset ?? "");
-      const condition = String(position.condition_id ?? position.conditionId ?? "").toLowerCase();
-      const rawIndex = position.outcome_index ?? position.outcomeIndex;
-      const outcome = String(rawIndex ?? position.outcome ?? "unknown").toLowerCase();
-      const tokenRec = token ? activityByKey.get("token:" + token) : null;
-      const marketRec = condition ? activityByKey.get("market:" + condition + "|" + outcome) : null;
-      const conditionRec = condition && conditionCounts.get(position.condition_id ?? position.conditionId) === 1
-        ? activityByKey.get("condition:" + condition) : null;
-      const rec = tokenRec || marketRec || conditionRec;
-      const buyRec = (tokenRec?.hasBuy ? tokenRec : null) || (marketRec?.hasBuy ? marketRec : null) || (conditionRec?.hasBuy ? conditionRec : null);
-      const sellRec = (tokenRec?.hasSell ? tokenRec : null) || (marketRec?.hasSell ? marketRec : null) || (conditionRec?.hasSell ? conditionRec : null);
-      const redeemRec = (tokenRec?.hasRedeem ? tokenRec : null) || (marketRec?.hasRedeem ? marketRec : null) || (conditionRec?.hasRedeem ? conditionRec : null);
-      position._activityBuyCost = buyRec?.hasBuy ? buyRec.buyCost : null;
-      position._activityCashReturned = (sellRec?.hasSell || redeemRec?.hasRedeem)
-        ? (sellRec?.sellProceeds || 0) + (redeemRec?.redeemPayout || 0) : null;
-      position._activityFirstBuyAt = buyRec?.firstBuyAt ?? null;
-    }
-    rows._activityComplete = activityComplete;
     closedPositionCache.set(wallet, rows);
     renderClosedPositionHistory(wallet);
   } catch (error) {
-    rows._activityComplete = false;
-    if (rows.length) {
-      closedPositionCache.set(wallet, rows);
-      renderClosedPositionHistory(wallet);
-      if (container) container.insertAdjacentHTML("afterbegin", '<div class="error">Activity detail lookup was incomplete: ' + esc(error.message) + '</div>');
-    } else if (container) {
-      container.innerHTML = '<div class="error">Could not load closed-position history: ' + esc(error.message) + '. Try again later.</div>';
-    }
+    if (container) container.innerHTML = '<div class="error">Could not load full closed-position history: ' + esc(error.message) + '. Try again later.</div>';
   }
 }
 
