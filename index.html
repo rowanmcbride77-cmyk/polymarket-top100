@@ -146,7 +146,7 @@ dialog::backdrop{background:#000b}
     <div class="column">
       <section class="panel favorite-panel">
         <div class="panel-heading"><div class="heading-left"><span class="heading-icon">⭐</span><h2>Favorite Trader Activity</h2></div><span class="pill" id="favoriteCount">0 saved</span></div>
-        <div class="source-note">Star traders below. This feed checks recent BUY prints for saved wallets about once a minute while this page is open. It is an alert feed, not automatic trade copying.</div>
+        <div class="source-note">Star traders below. This feed checks recent BUY prints for up to 20 saved wallets about once a minute while this page is open. It is an alert feed, not automatic trade copying.</div>
         <div id="favoriteFeed" class="recent-list"><div class="empty">Star a trader to start tracking new buys.</div></div>
       </section>
       <section class="panel">
@@ -347,7 +347,7 @@ function favoriteButton(wallet) {
 }
 function toggleFavorite(wallet) {
   const w=String(wallet||"").toLowerCase(); if(!/^0x[a-f0-9]{40}$/i.test(w)) return;
-  let a=favoriteWallets(); if(a.includes(w)) a=a.filter(x=>x!==w); else if(a.length<50) a.push(w); else { alert("You can save up to 50 favorite traders."); return; }
+  let a=favoriteWallets(); if(a.includes(w)) a=a.filter(x=>x!==w); else if(a.length<20) a.push(w); else { alert("You can save up to 20 favorite traders."); return; }
   try { localStorage.setItem("polymarketFavoriteWallets",JSON.stringify(a)); } catch {}
   renderLeaders(); renderConsensus(); renderCombos(); renderFavoriteFeed();
 }
