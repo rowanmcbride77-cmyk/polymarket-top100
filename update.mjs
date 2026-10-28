@@ -8,11 +8,11 @@ const PERIODS = [
   { key: "month", api: "MONTH" }
 ];
 
-const CANDIDATE_COUNT = 7500;
-const PROCESS_CANDIDATE_COUNT = 1500;
-// Full closed-position history lookups are much more expensive than wallet discovery.
-// Keep the 5,000-wallet position/consensus pool, but bound per-period history enrichment.
-const RECORD_SCAN_CANDIDATE_COUNT = 600;
+const CANDIDATE_COUNT = 600;
+const PROCESS_CANDIDATE_COUNT = 600;
+// Bound live-position and closed-history requests so the scheduled refresh finishes reliably.
+// Only wallets with complete period records can qualify for consensus, so prioritize record quality.
+const RECORD_SCAN_CANDIDATE_COUNT = 300;
 const LEADERBOARD_PAGE_COUNT = 1000;
 const MIN_CONSENSUS_WIN_RATE = 90;
 const LEADER_COUNT = 100;
@@ -711,7 +711,7 @@ function hasExpiredEndDate(market, nowMs) {
 async function getBroadConsensusMarkets(knownTraders, nowMs, activePositions) {
   // Group positions directly from the Data API. Page beyond the first 100
   // holdings so lower-value active markets are not silently omitted.
-  const MAX_POSITION_PAGES_PER_TRADER = 3;
+  const MAX_POSITION_PAGES_PER_TRADER = 2;
   const consensusPositions = await mapLimit(knownTraders, CONCURRENCY, async trader => {
     const wallet = String(trader.wallet || "").toLowerCase();
     if (!wallet) return [wallet, []];
