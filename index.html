@@ -544,6 +544,9 @@ function comboProfitRows() {
     // outside the week before counting wins, losses, partials, or profit.
     if (!wallet || !comboId || ts === null || ts < weekAgo || ts > now ||
         !["RESOLVED_WIN","RESOLVED_LOSS","RESOLVED_PARTIAL"].includes(status)) continue;
+    const entry = comboEntryCost(combo);
+    // Keep the weekly report on the same $5 minimum as the combo feed.
+    if (entry === null || entry < 5) continue;
     const uniqueKey = wallet + ":" + comboId;
     if (seenCombos.has(uniqueKey)) continue;
     seenCombos.add(uniqueKey);
@@ -557,8 +560,8 @@ function comboProfitRows() {
     else if (status === "RESOLVED_LOSS") current.losses++;
     else current.partial++;
 
-    const entry = comboEntryCost(combo), payout = comboPayout(combo);
-    if (entry !== null && entry >= 0 && payout !== null) {
+    const payout = comboPayout(combo);
+    if (payout !== null) {
       current.profit += payout - entry;
       current.volume += entry;
       current.pnlKnown++;
@@ -992,11 +995,11 @@ function comboTraderRecord(wallet) {
     const comboWallet = String(combo._wallet || walletOf(combo._trader || {})).toLowerCase();
     const id = String(combo.combo_position_id || combo.combo_condition_id || "");
     if (comboWallet !== String(wallet || "").toLowerCase() || !id || seen.has(id)) continue;
-    seen.add(id);
     const status = String(combo.status || "").toUpperCase();
     if (!["RESOLVED_WIN","RESOLVED_LOSS","RESOLVED_PARTIAL"].includes(status)) continue;
     const resolvedAt = comboResolvedMs(combo);
-    if (resolvedAt === null || resolvedAt < cutoff || resolvedAt > now) continue;
+    const entry = comboEntryCost(combo);
+    if (resolvedAt === null || resolvedAt < cutoff || resolvedAt > now || entry === null || entry < 5) continue;
     seen.add(id);
     if (status === "RESOLVED_WIN") wins++;
     else if (status === "RESOLVED_LOSS") losses++;
