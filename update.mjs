@@ -9,12 +9,12 @@ const PERIODS = [
 ];
 
 const CANDIDATE_COUNT = 7500;
-const PROCESS_CANDIDATE_COUNT = 7500;
+const PROCESS_CANDIDATE_COUNT = 1500;
 // Full closed-position history lookups are much more expensive than wallet discovery.
 // Keep the 5,000-wallet position/consensus pool, but bound per-period history enrichment.
-const RECORD_SCAN_CANDIDATE_COUNT = 1500;
+const RECORD_SCAN_CANDIDATE_COUNT = 600;
 const LEADERBOARD_PAGE_COUNT = 1000;
-const MIN_CONSENSUS_WIN_RATE = 90;
+const MIN_CONSENSUS_WIN_RATE = 0;
 const LEADER_COUNT = 100;
 const PAGE_SIZE = 50;
 const POSITION_FETCH_LIMIT = 100;
@@ -711,7 +711,7 @@ function hasExpiredEndDate(market, nowMs) {
 async function getBroadConsensusMarkets(knownTraders, nowMs, activePositions) {
   // Group positions directly from the Data API. Page beyond the first 100
   // holdings so lower-value active markets are not silently omitted.
-  const MAX_POSITION_PAGES_PER_TRADER = 5;
+  const MAX_POSITION_PAGES_PER_TRADER = 3;
   const consensusPositions = await mapLimit(knownTraders, CONCURRENCY, async trader => {
     const wallet = String(trader.wallet || "").toLowerCase();
     if (!wallet) return [wallet, []];
@@ -870,20 +870,10 @@ function buildConsensus(holderGroups, candidates, records = {}) {
         const resolvedMarkets = settlementWins !== null && settlementLosses !== null ? settlementWins + settlementLosses : null;
         const winRate = resolvedMarkets > 0 ? settlementWins / resolvedMarkets * 100 : null;
         const earlyExits = num(record.earlyExitPositions) ?? 0;
-        // Keep a settlement-hold preference without requiring a literally
-        // perfect lifetime record (which made the live consensus list empty).
-        // A trader must have at least 10 classifiable settled markets, 90%+
-        // wins on that sample, and no more than 20% observed early exits among
-        // classified closed positions. Completeness is shown as metadata,
-        // not used to silently erase otherwise valid sampled evidence.
-        const observedClassified = resolvedMarkets + earlyExits;
-        const earlyExitRate = observedClassified > 0 ? earlyExits / observedClassified : 1;
-        if (
-          winRate === null ||
-          winRate < MIN_CONSENSUS_WIN_RATE ||
-          resolvedMarkets === null ||
-          resolvedMarkets < MIN_TRADER_RESOLVED_MARKETS
-        ) return [];
+        const observedClassified = (resolvedMarkets ?? 0) + earlyExits;
+        const earlyExitRate = observedClassified > 0 ? earlyExits / observedClassified : null;
+        // Consensus is based on shared positions, not a historical win-rate gate.
+
         return [{
           ...holder,
           wallet,
@@ -1278,9 +1268,9 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     generatedAt: new Date(nowMs).toISOString(),
     pool: period.key,
     qualificationWindowDays: period.key === "month" ? 30 : 7,
-    minimumWinRate: MIN_CONSENSUS_WIN_RATE,
-    minimumResolvedMarkets: MIN_TRADER_RESOLVED_MARKETS,
-    qualificationBasis: "Verified settled-market outcomes in the scanned history; requires at least 10 classifiable resolved markets and 90%+ settlement win rate. Early exits are disclosed separately and do not automatically disqualify a trader.",
+    minimumWinRate: null,
+    minimumResolvedMarkets: 0,
+    qualificationBasis: "Consensus is based on distinct traders holding the exact same market outcome, not a historical win-rate cutoff. Settlement records are contextual and may be incomplete; early exits are disclosed separately.",
     minimumSameSideTraders: 2,
     entryWindowMinutes: CONSENSUS_ENTRY_WINDOW_MINUTES,
     candidateCount: ranked.length,
@@ -1290,7 +1280,7 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     candidatePoolBasis: "Unique traders collected from Polymarket public Data API v1 overall PnL and volume leaderboards, paginating each board through its supported offset ceiling (0–1,000). This is the largest accessible leaderboard-derived candidate pool from these endpoints, not all platform traders. Consensus qualification uses verified settled outcomes for the settlement-history sample, not realized-P&L proxies.",
     resolutionWindowHours: 168,
     entryActivityWindowHours: null,
-    recordBasis: "90% threshold is based on verified resolved-market outcomes in the available scanned closed-position sample; early exits are reported separately.",
+    recordBasis: "No historical win-rate cutoff is used to suppress shared market positions. Settlement records are contextual and may be incomplete; early exits are reported separately.",
     consensus: output.consensus
   });
 
