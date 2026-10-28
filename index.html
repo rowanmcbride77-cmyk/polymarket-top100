@@ -1123,7 +1123,12 @@ function openProfile(wallet) {
   const comboMatch = comboRows.find(combo =>
     String(combo._wallet || walletOf(combo._trader || {})).toLowerCase() === normalizedWallet
   );
-  const knownTrader = rankedLeaders().find(item => walletOf(item) === normalizedWallet)
+  const knownTrader = [
+    ...rankedLeaders(),
+    ...(Array.isArray(data?.leaders) ? data.leaders : []),
+    ...(Array.isArray(data?.sportsLeaders) ? data.sportsLeaders : []),
+    ...(Array.isArray(data?.comboCandidates) ? data.comboCandidates : [])
+  ].find(item => walletOf(item) === normalizedWallet)
     || consensusMemberCache.get(normalizedWallet)
     || comboMatch?._trader
     || {};
@@ -1150,6 +1155,7 @@ function openProfile(wallet) {
       <div class="profile-stat"><small>${period === "week" ? "Weekly" : "Monthly"} market P&amp;L</small><strong class="${pnl !== null && pnl < 0 ? "negative" : "positive"}">${cash(pnl)}</strong></div>
       <div class="profile-stat"><small>Volume</small><strong>${cash(volume)}</strong></div>
     </div>
+    <div class="source-note">Profile numbers are shown only when present in the selected-period leaderboard data. “Not ranked in loaded data” means this wallet was found through combos or consensus but was not in the loaded leaderboard sample; missing P&amp;L and volume are unavailable values, not zero. Market P&amp;L and combo P&amp;L are separate datasets and should not be added together.</div>
     <div class="profile-trades"><h3>Combo results · last 7 days</h3><div id="profileComboSummary" class="empty">Loading resolved combo results…</div></div>
     <div class="profile-trades"><h3>Active combos</h3><div id="profileActiveCombos" class="empty">Loading active combos…</div></div>
     <div class="profile-trades"><h3>Recent buys</h3>
