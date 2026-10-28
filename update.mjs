@@ -865,7 +865,10 @@ function buildConsensus(holderGroups, candidates, records = {}) {
         // record shown in the weekly leaderboard. Do not substitute lifetime
         // settlement counts here; that mismatch allowed 48% lifetime/other
         // period records to appear in the weekly consensus list.
-        const record = records[wallet] || records[candidate.wallet] || candidate;
+        const record = records[wallet] || records[candidate.wallet];
+        // No raw leaderboard/lifetime fallback: without the selected period's
+        // closed-position record, the trader cannot qualify for consensus.
+        if (!record || record.recordComplete !== true) return [];
         const wins = num(record.wins);
         const losses = num(record.losses);
         const resolvedMarkets = num(record.resolvedMarkets) ?? (wins !== null && losses !== null ? wins + losses : null);
