@@ -69,7 +69,20 @@ jobs:
               const invalidGroups = groups.filter(group => {
                 const traders = Array.isArray(group.traders) ? group.traders : [];
                 const wallets = new Set(traders.map(row => String(row.wallet || "").toLowerCase()).filter(Boolean));
-                return wallets.size < 2 || wallets.size !== traders.length || group.sameSide !== traders.length;
+                const invalidTrader = traders.some(row => {
+                  const wins = Number(row.wins);
+                  const losses = Number(row.losses);
+                  const resolved = Number(row.resolvedMarkets);
+                  const rate = Number(row.winRate);
+                  return row.recordComplete !== true ||
+                    !Number.isFinite(wins) || !Number.isFinite(losses) ||
+                    !Number.isFinite(resolved) || resolved < 10 ||
+                    wins + losses !== resolved ||
+                    !Number.isFinite(rate) || rate < 90 ||
+                    Math.abs(rate - (wins / resolved * 100)) > 0.11;
+                });
+                return wallets.size < 2 || wallets.size !== traders.length ||
+                  group.sameSide !== traders.length || invalidTrader;
               });
               if (invalidGroups.length) {
                 throw new Error(`${file} contains ${invalidGroups.length} consensus groups without at least two distinct, unique wallets`);
