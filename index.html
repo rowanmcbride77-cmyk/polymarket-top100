@@ -87,7 +87,7 @@ select{max-width:155px}
 .trade-amount{font-size:15px;font-weight:750}
 .trade-user{color:var(--muted);font-size:12px;margin-top:5px}
 .trade-time{color:var(--muted);font-size:11px}
-.combo-card{padding:12px 0;border-bottom:1px solid #142433;cursor:pointer}.combo-card:last-child{border-bottom:0}.combo-title{font-weight:700;line-height:1.4;margin-bottom:6px;overflow-wrap:anywhere}.combo-meta{display:flex;flex-wrap:wrap;gap:7px;align-items:center;margin-top:7px}.combo-legs{margin-top:10px;padding:10px;background:#0b1825;border-radius:8px}.combo-leg{padding:8px 0;border-bottom:1px solid #203346;line-height:1.45}.combo-leg:last-child{border-bottom:0}
+.combo-card{padding:12px 0;border-bottom:1px solid #142433;cursor:pointer;min-width:0;max-width:100%;overflow-wrap:anywhere}.combo-card:last-child{border-bottom:0}.combo-title{font-weight:700;line-height:1.4;margin-bottom:6px;overflow-wrap:anywhere;word-break:normal;min-width:0;max-width:100%}.combo-meta{display:flex;flex-wrap:wrap;gap:7px;align-items:center;margin-top:7px;min-width:0;max-width:100%}.combo-legs{margin-top:10px;padding:10px;background:#0b1825;border-radius:8px;max-width:100%;min-width:0;overflow-wrap:anywhere}.combo-leg{padding:8px 0;border-bottom:1px solid #203346;line-height:1.45;overflow-wrap:anywhere}.combo-leg:last-child{border-bottom:0}.panel,.column,.layout{min-width:0}.panel *{max-width:100%}.combo-title,.combo-leg{white-space:normal}
 .empty,.loading{text-align:center;color:var(--muted);padding:22px 5px;line-height:1.6}
 .error{color:#ffb4c1;background:#321a24;border:1px solid #663344;padding:12px;border-radius:8px;margin-bottom:16px;line-height:1.5}
 footer{text-align:center;color:#71869b;font-size:12px;padding:25px}
@@ -588,7 +588,9 @@ function comboEfficiencyRows() {
     const shares = num(combo.current_size);
     const payout = shares !== null && shares > 0 ? shares : null;
     const key = wallet + ":" + id;
-    if (!wallet || !id || seen.has(key) || !held || (timing.key !== "upcoming" && !(timing.key === "unknown" && noLegResolved)) || entry === null || entry <= 0 || payout === null || payout <= entry) continue;
+    const traderRecord = comboTraderRecord(wallet);
+    // Minimum $5 actual entry; cap at $100 and require >=25% settled combo win rate over a minimum sample.
+    if (!wallet || !id || seen.has(key) || !held || (timing.key !== "upcoming" && !(timing.key === "unknown" && noLegResolved)) || entry === null || entry < 5 || entry > 100 || payout === null || payout <= entry || traderRecord.resolved < 4 || traderRecord.rate === null || traderRecord.rate < 25) continue;
     seen.add(key);
     const profit = payout - entry;
     const legs = Array.isArray(combo.legs) ? combo.legs : [];
@@ -607,14 +609,14 @@ function renderLeaders() {
   const baseList = rankedLeaders();
   const list = comboMode ? comboProfitRows() : efficiencyMode ? comboEfficiencyRows() : baseList;
   const visible = allLeaders ? list : list.slice(0, 10);
-  $("leaderModeNote").textContent = efficiencyMode ? "Open combos only · start times are verified where available; unknown start times are flagged. Estimates assume each winning combo share pays $1 and are not guaranteed profit." : "";
+  $("leaderModeNote").textContent = efficiencyMode ? "Active combos only · each entry is $5–$100 · trader must have at least 4 settled combos in the last 7 days and a combo win rate of at least 25%. Payout is estimated from shares and entry cost; no guaranteed returns." : comboMode ? "All figures count distinct combos resolved in the rolling last 7 days only. These are combo results, not individual-market wins/losses. P&L is shown only where entry and payout are both known." : "";
   $("leaderHeader").innerHTML = comboMode
-    ? "<th>#</th><th>Trader</th><th>Weekly wins</th><th>Weekly losses</th><th>Weekly partial</th><th>Weekly combo P&amp;L</th><th>Weekly P&amp;L coverage</th>"
+    ? " <th>#</th><th>Trader</th><th>Weekly combo wins</th><th>Weekly combo losses</th><th>Weekly partial</th><th>Combo win rate</th><th>Weekly combo P&amp;L</th><th>Weekly P&amp;L coverage</th>"
     : efficiencyMode
       ? "<th>#</th><th>Trader</th><th>Upcoming combo</th><th>Entry</th><th>Est. payout</th><th>Est. profit</th><th>Est. return</th>"
       : "<th>#</th><th>Trader</th><th>Wins–losses</th><th>Win rate</th><th>Period P&amp;L</th><th>Volume</th>";
   $("leadersBody").innerHTML = visible.length ? visible.map((trader,index) => {
-    if (comboMode) return `<tr><td class="rank">${index+1}</td><td><div class="trader-name">${avatar(trader.trader)}<span class="name-text">${profileButton({...trader.trader, wallet:trader.wallet}, nameOf(trader.trader))}</span></div></td><td class="record">${trader.wins}</td><td class="record">${trader.losses}</td><td class="record">${trader.partial}</td><td class="${trader.pnlKnown && trader.profit < 0 ? "negative" : "positive"}">${trader.pnlKnown ? (trader.pnlMissing ? "Partial: " : "") + (trader.profit > 0 ? "+" : "") + cash(trader.profit) : "N/A"}</td><td class="record">${trader.pnlKnown}/${trader.combos} combos</td></tr>`;
+    if (comboMode) return `<tr><td class="rank">${index+1}</td><td><div class="trader-name">${avatar(trader.trader)}<span class="name-text">${profileButton({...trader.trader, wallet:trader.wallet}, nameOf(trader.trader))}</span></div></td><td class="record">${trader.wins}</td><td class="record">${trader.losses}</td><td class="record">${trader.partial}</td><td class="record">${(trader.wins + trader.losses) ? (trader.wins / (trader.wins + trader.losses) * 100).toFixed(1) + "%" : "N/A"}</td><td class="${trader.pnlKnown && trader.profit < 0 ? "negative" : "positive"}">${trader.pnlKnown ? (trader.pnlMissing ? "Partial: " : "") + (trader.profit > 0 ? "+" : "") + cash(trader.profit) : "N/A"}</td><td class="record">${trader.pnlKnown}/${trader.combos} combos</td></tr>`;
     if (efficiencyMode) return `<tr><td class="rank">${index+1}</td><td><div class="trader-name">${avatar(trader.trader)}<span class="name-text">${profileButton({...trader.trader, wallet:trader.wallet}, nameOf(trader.trader))}</span></div></td><td class="combo-title" title="${esc(trader.title || "Combo details unavailable")}">${esc(trader.title || "Combo details unavailable")}<br><small class="subtitle">${esc(trader.timingLabel || "Start time unverified")}</small></td><td class="money">${cash(trader.entry)}</td><td class="money">${cash(trader.payout)}</td><td class="positive">~${cash(trader.profit)}</td><td class="record">~${trader.multiple.toFixed(1)}×</td></tr>`;
     const pnl = num(trader.pnl ?? trader.profit), volume = num(trader.volume ?? trader.vol), pnlClass = pnl !== null && pnl < 0 ? "negative" : "positive";
     return `<tr><td class="rank">${trader.displayRank}</td><td><div class="trader-name">${avatar(trader)}<span class="name-text">${profileButton(trader)}</span></div></td><td class="record">${recordText(trader)}</td><td class="record">${recordOf(trader)?.rate == null ? "N/A" : recordOf(trader).rate.toFixed(1) + "%"}</td><td class="${pnlClass}">${pnl === null ? "N/A" : (pnl > 0 ? "+" : "") + cash(pnl)}</td><td class="money">${cash(volume)}</td></tr>`;
