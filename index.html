@@ -87,7 +87,7 @@ select{max-width:155px}
 .trade-amount{font-size:15px;font-weight:750}
 .trade-user{color:var(--muted);font-size:12px;margin-top:5px}
 .trade-time{color:var(--muted);font-size:11px}
-.combo-card{padding:12px 0;border-bottom:1px solid #142433;cursor:pointer;min-width:0;max-width:100%;overflow-wrap:anywhere}.combo-card:last-child{border-bottom:0}.combo-title{font-weight:700;line-height:1.4;margin-bottom:6px;overflow-wrap:anywhere;word-break:normal;min-width:0;max-width:100%}.combo-meta{display:flex;flex-wrap:wrap;gap:7px;align-items:center;margin-top:7px;min-width:0;max-width:100%}.combo-legs{margin-top:10px;padding:10px;background:#0b1825;border-radius:8px;max-width:100%;min-width:0;overflow-wrap:anywhere}.combo-leg{padding:8px 0;border-bottom:1px solid #203346;line-height:1.45;overflow-wrap:anywhere}.combo-leg:last-child{border-bottom:0}.panel,.column,.layout{min-width:0}.panel *{max-width:100%}.combo-title,.combo-leg{white-space:normal}
+.favorite-star{border:1px solid #34516b;background:#102131;color:#fbbf24;border-radius:7px;padding:2px 7px;margin-left:6px;cursor:pointer;font-size:14px;line-height:1.5;flex:0 0 auto}.favorite-star[aria-pressed="true"]{background:#473713;border-color:#d6a632}.favorite-trade{padding:10px 0;border-bottom:1px solid #203346;overflow-wrap:anywhere}.favorite-trade:last-child{border-bottom:0}.favorite-panel{min-width:0}.combo-card{padding:12px 0;border-bottom:1px solid #142433;cursor:pointer;min-width:0;max-width:100%;overflow-wrap:anywhere}.combo-card:last-child{border-bottom:0}.combo-title{font-weight:700;line-height:1.4;margin-bottom:6px;overflow-wrap:anywhere;word-break:normal;min-width:0;max-width:100%}.combo-meta{display:flex;flex-wrap:wrap;gap:7px;align-items:center;margin-top:7px;min-width:0;max-width:100%}.combo-legs{margin-top:10px;padding:10px;background:#0b1825;border-radius:8px;max-width:100%;min-width:0;overflow-wrap:anywhere}.combo-leg{padding:8px 0;border-bottom:1px solid #203346;line-height:1.45;overflow-wrap:anywhere}.combo-leg:last-child{border-bottom:0}.panel,.column,.layout{min-width:0}.panel *{max-width:100%}.combo-title,.combo-leg{white-space:normal}
 .empty,.loading{text-align:center;color:var(--muted);padding:22px 5px;line-height:1.6}
 .error{color:#ffb4c1;background:#321a24;border:1px solid #663344;padding:12px;border-radius:8px;margin-bottom:16px;line-height:1.5}
 footer{text-align:center;color:#71869b;font-size:12px;padding:25px}
@@ -144,6 +144,11 @@ dialog::backdrop{background:#000b}
 
   <div class="layout">
     <div class="column">
+      <section class="panel favorite-panel">
+        <div class="panel-heading"><div class="heading-left"><span class="heading-icon">⭐</span><h2>Favorite Trader Activity</h2></div><span class="pill" id="favoriteCount">0 saved</span></div>
+        <div class="source-note">Star traders below. This feed checks recent BUY prints for saved wallets about once a minute while this page is open. It is an alert feed, not automatic trade copying.</div>
+        <div id="favoriteFeed" class="recent-list"><div class="empty">Star a trader to start tracking new buys.</div></div>
+      </section>
       <section class="panel">
         <div class="panel-heading">
           <div class="heading-left"><span class="heading-icon">🏆</span><h2>Top 100 Traders</h2></div>
@@ -331,6 +336,21 @@ function avatar(trader) {
   return `<span class="avatar">${esc(initials)}</span>`;
 }
 
+function favoriteWallets() {
+  try { const v=JSON.parse(localStorage.getItem("polymarketFavoriteWallets")||"[]"); return [...new Set((Array.isArray(v)?v:[]).map(x=>String(x).toLowerCase()).filter(x=>/^0x[a-f0-9]{40}$/i.test(x)))].slice(0,50); } catch { return []; }
+}
+function isFavorite(wallet) { return favoriteWallets().includes(String(wallet||"").toLowerCase()); }
+function favoriteButton(wallet) {
+  const w=String(wallet||"").toLowerCase(); if(!/^0x[a-f0-9]{40}$/i.test(w)) return "";
+  const saved=isFavorite(w);
+  return '<button class="favorite-star" title="'+(saved?"Remove favorite":"Favorite trader")+'" aria-pressed="'+saved+'" onclick="event.stopPropagation();toggleFavorite(\''+w+'\')">'+(saved?"★":"☆")+'</button>';
+}
+function toggleFavorite(wallet) {
+  const w=String(wallet||"").toLowerCase(); if(!/^0x[a-f0-9]{40}$/i.test(w)) return;
+  let a=favoriteWallets(); if(a.includes(w)) a=a.filter(x=>x!==w); else if(a.length<50) a.push(w); else { alert("You can save up to 50 favorite traders."); return; }
+  try { localStorage.setItem("polymarketFavoriteWallets",JSON.stringify(a)); } catch {}
+  renderLeaders(); renderConsensus(); renderCombos(); renderFavoriteFeed();
+}
 function profileButton(trader, label = nameOf(trader), walletOverride = "") {
   const wallet = walletOf(trader) || String(walletOverride || "").toLowerCase();
   if (!/^0x[a-f0-9]{40}$/i.test(wallet)) return `<span>${esc(label)}</span>`;
@@ -619,10 +639,10 @@ function renderLeaders() {
       ? "<th>#</th><th>Trader</th><th>Upcoming combo</th><th>Entry</th><th>Est. payout</th><th>Est. profit</th><th>Est. return</th>"
       : "<th>#</th><th>Trader</th><th>Wins–losses</th><th>Win rate</th><th>Period P&amp;L</th><th>Volume</th>";
   $("leadersBody").innerHTML = visible.length ? visible.map((trader,index) => {
-    if (comboMode) return `<tr><td class="rank">${index+1}</td><td><div class="trader-name">${avatar(trader.trader)}<span class="name-text">${profileButton({...trader.trader, wallet:trader.wallet}, nameOf(trader.trader))}</span></div></td><td class="record">${trader.wins}</td><td class="record">${trader.losses}</td><td class="record">${trader.partial}</td><td class="record">${(trader.wins + trader.losses) ? (trader.wins / (trader.wins + trader.losses) * 100).toFixed(1) + "%" : "N/A"}</td><td class="${trader.pnlKnown && trader.profit < 0 ? "negative" : "positive"}">${trader.pnlKnown ? (trader.pnlMissing ? "Partial: " : "") + (trader.profit > 0 ? "+" : "") + cash(trader.profit) : "N/A"}</td><td class="record">${trader.pnlKnown}/${trader.combos} combos</td></tr>`;
-    if (efficiencyMode) return `<tr><td class="rank">${index+1}</td><td><div class="trader-name">${avatar(trader.trader)}<span class="name-text">${profileButton({...trader.trader, wallet:trader.wallet}, nameOf(trader.trader))}</span></div></td><td class="combo-title" title="${esc(trader.title || "Combo details unavailable")}">${esc(trader.title || "Combo details unavailable")}<br><small class="subtitle">${esc(trader.timingLabel || "Start time unverified")}</small></td><td class="money">${cash(trader.entry)}</td><td class="money">${cash(trader.payout)}</td><td class="positive">~${cash(trader.profit)}</td><td class="record">~${trader.multiple.toFixed(1)}×</td></tr>`;
+    if (comboMode) return `<tr><td class="rank">${index+1}</td><td><div class="trader-name">${avatar(trader.trader)}<span class="name-text">${profileButton({...trader.trader, wallet:trader.wallet}, nameOf(trader.trader))}</span>${favoriteButton(trader.wallet)}</div></td><td class="record">${trader.wins}</td><td class="record">${trader.losses}</td><td class="record">${trader.partial}</td><td class="record">${(trader.wins + trader.losses) ? (trader.wins / (trader.wins + trader.losses) * 100).toFixed(1) + "%" : "N/A"}</td><td class="${trader.pnlKnown && trader.profit < 0 ? "negative" : "positive"}">${trader.pnlKnown ? (trader.pnlMissing ? "Partial: " : "") + (trader.profit > 0 ? "+" : "") + cash(trader.profit) : "N/A"}</td><td class="record">${trader.pnlKnown}/${trader.combos} combos</td></tr>`;
+    if (efficiencyMode) return `<tr><td class="rank">${index+1}</td><td><div class="trader-name">${avatar(trader.trader)}<span class="name-text">${profileButton({...trader.trader, wallet:trader.wallet}, nameOf(trader.trader))}</span>${favoriteButton(trader.wallet)}</div></td><td class="combo-title" title="${esc(trader.title || "Combo details unavailable")}">${esc(trader.title || "Combo details unavailable")}<br><small class="subtitle">${esc(trader.timingLabel || "Start time unverified")}</small></td><td class="money">${cash(trader.entry)}</td><td class="money">${cash(trader.payout)}</td><td class="positive">~${cash(trader.profit)}</td><td class="record">~${trader.multiple.toFixed(1)}×</td></tr>`;
     const pnl = num(trader.pnl ?? trader.profit), volume = num(trader.volume ?? trader.vol), pnlClass = pnl !== null && pnl < 0 ? "negative" : "positive";
-    return `<tr><td class="rank">${trader.displayRank}</td><td><div class="trader-name">${avatar(trader)}<span class="name-text">${profileButton(trader)}</span></div></td><td class="record">${recordText(trader)}</td><td class="record">${recordOf(trader)?.rate == null ? "N/A" : recordOf(trader).rate.toFixed(1) + "%"}</td><td class="${pnlClass}">${pnl === null ? "N/A" : (pnl > 0 ? "+" : "") + cash(pnl)}</td><td class="money">${cash(volume)}</td></tr>`;
+    return `<tr><td class="rank">${trader.displayRank}</td><td><div class="trader-name">${avatar(trader)}<span class="name-text">${profileButton(trader)}</span>${favoriteButton(walletOf(trader))}</div></td><td class="record">${recordText(trader)}</td><td class="record">${recordOf(trader)?.rate == null ? "N/A" : recordOf(trader).rate.toFixed(1) + "%"}</td><td class="${pnlClass}">${pnl === null ? "N/A" : (pnl > 0 ? "+" : "") + cash(pnl)}</td><td class="money">${cash(volume)}</td></tr>`;
   }).join("") : `<tr><td colspan="${comboMode || efficiencyMode ? 7 : 6}" class="empty">${comboMode ? (comboLoadFinished ? "No resolved combos with usable entry and payout data were found for the last 7 days." : "Scanning combo positions…") : efficiencyMode ? (comboLoadFinished ? "No open combos with a positive estimated return and no resolved legs were found in the checked traders." : "Scanning combo positions…") : "No leaderboard data available. Check that the updater has created " + esc(FILES[period]) + "."}</td></tr>`;
   $("leadersMore").textContent = allLeaders ? "Show fewer ↑" : "View all traders →";
   $("leadersMore").style.display = list.length > 10 ? "inline-block" : "none";
@@ -777,7 +797,7 @@ function renderConsensus() {
         const hasReportedEntry = !buy && reportedAvgPrice !== null;
         const sellCost = sell?._cost;
         return '<div class="member member-compact">' +
-          '<div class="member-identity"><strong>' + profileButton(member, memberName) + '</strong><small>' + (buy ? "BUY trade observed · "+esc(dateText(buy.timestamp)) : (hasReportedEntry ? "Consensus position entry reported · "+esc(dateText(buyTime)) : (!events ? "Loading exact market trade history…" : "Trade print unavailable; consensus position is still reported"))) + '</small><small>' + (sell ? "SELL observed · "+esc(dateText(sell.timestamp)) : (!events ? "Checking later SELL trades…" : (member.isStillHolding === true || String(member.positionStatus || "").toUpperCase() === "OPEN" ? "Still listed as an open position; no SELL required" : "No matching SELL found in returned trade history"))) + '</small></div>' +
+          '<div class="member-identity"><strong>' + profileButton(member, memberName) + favoriteButton(wallet) + '</strong><small>' + (buy ? "BUY trade observed · "+esc(dateText(buy.timestamp)) : (hasReportedEntry ? "Consensus position entry reported · "+esc(dateText(buyTime)) : (!events ? "Loading exact market trade history…" : "Trade print unavailable; consensus position is still reported"))) + '</small><small>' + (sell ? "SELL observed · "+esc(dateText(sell.timestamp)) : (!events ? "Checking later SELL trades…" : (member.isStillHolding === true || String(member.positionStatus || "").toUpperCase() === "OPEN" ? "Still listed as an open position; no SELL required" : "No matching SELL found in returned trade history"))) + '</small></div>' +
           '<div><strong>' + (buyPrice === null || buyPrice === undefined ? "—" : (buyPrice*100).toFixed(1)+"¢") + '</strong><small>' + (buy ? "Observed buy price" : (reportedAvgPrice !== null ? "Reported position average entry" : "Observed buy price")) + '</small><small>' + (bought === null || bought === undefined ? (memberEntry !== null ? "Reported position entry value "+cash(memberEntry)+" · exact trade cost unavailable" : "Buy transaction amount unavailable") : (buy ? "Buy transaction "+cash(bought) : "Estimated entry value "+cash(bought))+(shares !== null ? " · "+shares.toFixed(1)+" shares" : "")) + '</small></div>' +
           '<div><strong>' + (sell && sell._price !== null ? (sell._price*100).toFixed(1)+"¢" : "—") + '</strong><small>Observed sell price</small><small>' + (sell ? "SELL transaction "+(sellCost === null ? "amount unavailable" : cash(sellCost)) : (!events ? "Loading transaction history" : "No matching SELL found")) + '</small><small>' + (memberValue !== null ? "Position value reported "+cash(memberValue) : "Current held value unavailable") + '</small></div>' +
         '</div>';
@@ -1044,6 +1064,29 @@ function renderCombos() {
 function toggleCombos() { allCombos = !allCombos; renderCombos(); }
 function toggleCombo(id) { if (expandedCombos.has(id)) expandedCombos.delete(id); else expandedCombos.add(id); renderCombos(); }
 
+let favoriteFeedBusy=false;
+const favoriteSeenTrades=new Set();
+async function renderFavoriteFeed() {
+ const box=$("favoriteFeed"),count=$("favoriteCount"); if(!box||favoriteFeedBusy)return;
+ const favorites=favoriteWallets(); if(count)count.textContent=favorites.length+" saved";
+ if(!favorites.length){box.innerHTML='<div class="empty">Star a trader in the leaderboard, consensus list, or combo list to follow their recent buys.</div>';return;}
+ favoriteFeedBusy=true;
+ try {
+  const known=new Map(); for(const t of rankedLeaders())known.set(walletOf(t),t);
+  for(const m of consensus())for(const t of (m.traders||m.members||[])){const w=walletOf(t);if(w)known.set(w,t);}
+  for(const c of comboRows){const w=String(c._wallet||walletOf(c._trader||{})).toLowerCase();if(w&&!known.has(w))known.set(w,c._trader||{wallet:w});}
+  const found=[];
+  for(const wallet of favorites.slice(0,20))try{
+   const r=await fetch("https://data-api.polymarket.com/trades?user="+encodeURIComponent(wallet)+"&limit=20",{cache:"no-store",signal:AbortSignal.timeout(10000)});
+   if(!r.ok)continue;const j=await r.json(),rows=Array.isArray(j?.data)?j.data:Array.isArray(j)?j:[];
+   for(const t of rows){if(String(t.side||"").toUpperCase()!=="BUY")continue;const time=timestamp(t.timestamp??t.createdAt??t.time);if(!time||Date.now()/1000-time>1800)continue;
+    const id=[wallet,t.transactionHash||t.txHash||t.asset||t.tokenId||t.conditionId||t.market,t.timestamp??t.createdAt??t.time,t.price,t.size].join("|");if(favoriteSeenTrades.has(id))continue;favoriteSeenTrades.add(id);found.push({wallet,trade:t,time,trader:known.get(wallet)||{wallet,name:"Favorite trader"}});
+   }
+  }catch{}
+  found.sort((a,b)=>b.time-a.time);const rows=found.slice(0,30);
+  box.innerHTML=rows.length?rows.map(({wallet,trade,time,trader})=>'<div class="favorite-trade"><div><strong>'+profileButton({...trader,wallet},nameOf(trader))+favoriteButton(wallet)+'</strong><span class="subtitle"> · '+esc(relative(time))+'</span></div><div>'+esc(trade.title||trade.question||trade.market||trade.eventSlug||"Market details unavailable")+'</div><div><span class="side-tag">'+esc(trade.outcome||"Outcome unavailable")+'</span> BUY · '+cash(trade.usdcSize??trade.amount??trade.size)+' <small class="subtitle">'+(num(trade.price)!==null?(num(trade.price)*100).toFixed(1)+"¢":"price N/A")+'</small></div></div>').join(""):'<div class="empty">No new BUY prints from favorites in the last 30 minutes. This feed refreshes while the page stays open.</div>';
+ }finally{favoriteFeedBusy=false;}
+}
 function toggleLeaders() {
   allLeaders = !allLeaders;
   renderLeaders();
@@ -1097,9 +1140,9 @@ function openProfile(wallet) {
     : [];
 
   $("profileContent").innerHTML = `
-    <div class="profile-top">${avatar(trader)}<div><h2>${esc(nameOf(trader))}</h2><div class="subtitle">Trader profile</div></div></div>
+    <div class="profile-top">${avatar(trader)}<div><h2>${esc(nameOf(trader))} ${favoriteButton(traderWallet)}</h2><div class="subtitle">Trader profile</div></div></div>
     <div class="profile-grid">
-      <div class="profile-stat"><small>Leaderboard rank</small><strong>#${esc(trader.rank ?? trader.displayRank ?? "—")}</strong></div>
+      <div class="profile-stat"><small>Leaderboard rank</small><strong>${trader.rank ?? trader.displayRank ? "#" + esc(trader.rank ?? trader.displayRank) : "Not ranked in loaded data"}</strong></div>
       <div class="profile-stat"><small>Resolved wins–losses</small><strong>${record ? recordText(trader) : "N/A"}</strong></div>
       <div class="profile-stat"><small>Resolved win rate</small><strong>${record?.rate == null ? "N/A" : record.rate.toFixed(1) + "%"}</strong></div>
       <div class="profile-stat"><small>Early exits observed</small><strong id="sellMarketCount">${num(trader.earlyExitMarkets) === null ? "Checking…" : String(trader.earlyExitMarkets) + (trader.settlementRecordComplete === true ? "" : "+")}</strong><small class="subtitle">Settlement-verified when available; otherwise historical closed-position P&amp;L estimate</small></div>
@@ -1455,6 +1498,8 @@ async function loadForwardTest() {
 loadData();
 loadConsensusData();
 loadForwardTest();
+renderFavoriteFeed();
+setInterval(renderFavoriteFeed, 60000);
 </script>
 </body>
 </html>
