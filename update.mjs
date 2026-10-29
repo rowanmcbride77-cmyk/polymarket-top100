@@ -8,11 +8,11 @@ const PERIODS = [
   { key: "month", api: "MONTH" }
 ];
 
-const CANDIDATE_COUNT = 600;
-const PROCESS_CANDIDATE_COUNT = 600;
-// Bound live-position and closed-history requests so the scheduled refresh finishes reliably.
-// Only wallets with complete period records can qualify for consensus, so prioritize record quality.
-const RECORD_SCAN_CANDIDATE_COUNT = 300;
+// Discover and use a broad pool for overlap detection. Expensive per-wallet history
+// verification remains separately bounded so the scheduled workflow can finish.
+const CANDIDATE_COUNT = 5000;
+const PROCESS_CANDIDATE_COUNT = 5000;
+const RECORD_SCAN_CANDIDATE_COUNT = 1000;
 const LEADERBOARD_PAGE_COUNT = 1000;
 const MIN_CONSENSUS_WIN_RATE = 90;
 const LEADER_COUNT = 100;
@@ -300,7 +300,7 @@ async function getCandidates(period) {
     "OVERALL", "SPORTS", "POLITICS", "CRYPTO", "ESPORTS", "CULTURE",
     "MENTIONS", "WEATHER", "ECONOMICS", "TECH", "FINANCE"  ];
   const timePeriods = [...new Set([period.api, "DAY", "WEEK", "MONTH", "ALL"])];
-  const target = PROCESS_CANDIDATE_COUNT;
+  const target = CANDIDATE_COUNT;
 
   discovery:
   for (const timePeriod of timePeriods) {
@@ -1237,7 +1237,7 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
   // expensive closed-position history enrichment to RECORD_SCAN_CANDIDATE_COUNT wallets.
   const candidates = discoveredCandidates.slice(0, PROCESS_CANDIDATE_COUNT);
   const recordCandidates = candidates.slice(0, RECORD_SCAN_CANDIDATE_COUNT);
-  console.log(`Discovered ${discoveredCandidates.length} ${period.key} candidates; loading closed-position records for ${recordCandidates.length} of ${candidates.length} wallets to keep the workflow within runtime limits...`);
+  console.log(`Discovered ${discoveredCandidates.length} ${period.key} candidates; scanning active positions across ${candidates.length} wallets and detailed closed-position records for ${recordCandidates.length} wallets.`);
   const records = await attachRecords(recordCandidates, period, nowMs, RANKING_RECORD_LIMIT);
   console.log(`${period.key}: verifying settlement outcomes for ${recordCandidates.length} wallets for consensus qualification...`);
   const settlementRows = await attachSettlementStats(recordCandidates, period, nowMs);
@@ -1318,8 +1318,8 @@ async function main() {
 
   const unique = new Map();
 
-  // Active-position and consensus-market enrichment is also bounded to the
-  // sampled candidates, instead of querying every discovered wallet.
+  // Use the full discovered pool for overlap detection; only the detailed
+  // period-history scan is bounded separately.
   const positionCandidates = [
     ...weekCandidates.slice(0, PROCESS_CANDIDATE_COUNT),
     ...monthCandidates.slice(0, PROCESS_CANDIDATE_COUNT)
