@@ -711,7 +711,7 @@ function hasExpiredEndDate(market, nowMs) {
 async function getBroadConsensusMarkets(knownTraders, nowMs, activePositions) {
   // Group positions directly from the Data API. Page beyond the first 100
   // holdings so lower-value active markets are not silently omitted.
-  const MAX_POSITION_PAGES_PER_TRADER = 2;
+  const MAX_POSITION_PAGES_PER_TRADER = 5;
   const consensusPositions = await mapLimit(knownTraders, CONCURRENCY, async trader => {
     const wallet = String(trader.wallet || "").toLowerCase();
     if (!wallet) return [wallet, []];
@@ -1239,14 +1239,27 @@ async function writeJsonUnderLimit(filename, output) {
 }
 
 async function buildPeriod(period, discoveredCandidates, activePositions, nowMs, consensusCandidates, fullRecordCache, consensusGroups) {
-  // Keep the full discovered candidate pool for ranking and consensus, while bounding
-  // expensive closed-position history enrichment to RECORD_SCAN_CANDIDATE_COUNT wallets.
+  // Rank the leaderboard using a bounded top-wallet history sample, but verify
+  // every wallet actually present in a discovered consensus market. Previously
+  // only the first 1,000 leaderboard wallets received period records, so valid
+  // consensus holders outside that arbitrary slice were silently discarded.
   const candidates = discoveredCandidates.slice(0, PROCESS_CANDIDATE_COUNT);
-  const recordCandidates = candidates.slice(0, RECORD_SCAN_CANDIDATE_COUNT);
-  console.log(`Discovered ${discoveredCandidates.length} ${period.key} candidates; scanning active positions across ${candidates.length} wallets and detailed closed-position records for ${recordCandidates.length} wallets.`);
+  const rankingRecordCandidates = candidates.slice(0, RECORD_SCAN_CANDIDATE_COUNT);
+  const candidateByWallet = new Map(candidates.map(trader => [String(trader.wallet || "").toLowerCase(), trader]));
+  const consensusWallets = new Set(
+    consensusGroups.flatMap(group => (Array.isArray(group.traders) ? group.traders : [])
+      .map(holder => String(holder.wallet || "").toLowerCase())
+      .filter(wallet => candidateByWallet.has(wallet)))
+  );
+  const recordCandidateMap = new Map(rankingRecordCandidates.map(trader => [String(trader.wallet || "").toLowerCase(), trader]));
+  for (const wallet of consensusWallets) {
+    if (!recordCandidateMap.has(wallet)) recordCandidateMap.set(wallet, candidateByWallet.get(wallet));
+  }
+  const recordCandidates = [...recordCandidateMap.values()];
+  console.log(`Discovered ${discoveredCandidates.length} ${period.key} candidates; scanning active positions across ${candidates.length} wallets, leaderboard records for ${rankingRecordCandidates.length}, and consensus-holder records for ${consensusWallets.size} (unique record scan: ${recordCandidates.length}).`);
   const records = await attachRecords(recordCandidates, period, nowMs, RANKING_RECORD_LIMIT);
-  console.log(`${period.key}: verifying settlement outcomes for ${recordCandidates.length} wallets for consensus qualification...`);
-  const settlementRows = await attachSettlementStats(recordCandidates, period, nowMs);
+  console.log(`${period.key}: verifying settlement outcomes for the top ${rankingRecordCandidates.length} wallets...`);
+  const settlementRows = await attachSettlementStats(rankingRecordCandidates, period, nowMs);
   const settlementRecords = Object.fromEntries(settlementRows.map(trader => [String(trader.wallet || "").toLowerCase(), trader]));
   const ranked = rankCandidates(candidates, records);
   const sportsRanked = rankSportsCandidates(candidates, records);
@@ -1297,7 +1310,9 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     entryWindowMinutes: CONSENSUS_ENTRY_WINDOW_MINUTES,
     candidateCount: ranked.length,
     discoveredCandidateCount: discoveredCandidates.length,
-    settlementRecordCandidateCount: recordCandidates.length,
+    settlementRecordCandidateCount: rankingRecordCandidates.length,
+    consensusHolderRecordCandidateCount: consensusWallets.size,
+    totalRecordCandidateCount: recordCandidates.length,
     scanDiagnostics: lastConsensusDiagnostics,
     candidatePoolBasis: "Unique traders collected from Polymarket public Data API v1 overall PnL and volume leaderboards, paginating each board through its supported offset ceiling (0–1,000). This is the largest accessible leaderboard-derived candidate pool from these endpoints, not all platform traders. Consensus qualification uses verified settled outcomes for the settlement-history sample, not realized-P&L proxies.",
     resolutionWindowHours: 168,
