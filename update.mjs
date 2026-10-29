@@ -890,8 +890,6 @@ function buildConsensus(holderGroups, candidates, records = {}) {
             periodClosedMarkets < MIN_TRADER_RESOLVED_MARKETS ||
             earlyExitRate === null ||
             earlyExitRate < MIN_CONSENSUS_EARLY_EXIT_RATE) return [];
-        const settlementWins = num(record.settlementWins);
-        const settlementLosses = num(record.settlementLosses);
         return [{
           ...holder,
           wallet,
