@@ -14,7 +14,7 @@ const CANDIDATE_COUNT = 5000;
 const PROCESS_CANDIDATE_COUNT = 5000;
 const RECORD_SCAN_CANDIDATE_COUNT = 1000;
 const LEADERBOARD_PAGE_COUNT = 1000;
-const MIN_CONSENSUS_WIN_RATE = 90;
+const MIN_CONSENSUS_EARLY_EXIT_RATE = 90;
 const LEADER_COUNT = 100;
 const PAGE_SIZE = 50;
 const POSITION_FETCH_LIMIT = 100;
@@ -871,18 +871,25 @@ function buildConsensus(holderGroups, candidates, records = {}) {
         if (!record || record.recordComplete !== true) return [];
         const wins = num(record.wins);
         const losses = num(record.losses);
-        const resolvedMarkets = num(record.resolvedMarkets) ?? (wins !== null && losses !== null ? wins + losses : null);
+        const periodClosedMarkets = wins !== null && losses !== null ? wins + losses : null;
+        const resolvedMarkets = num(record.resolvedMarkets) ?? periodClosedMarkets;
         const winRate = wins !== null && losses !== null && wins + losses > 0
           ? wins / (wins + losses) * 100
           : num(record.winRate);
-        // Period-specific qualification: at least 10 closed markets and 90%+
-        // wins in this exact data period (7 days for week, 30 days for month).
-        if (wins === null || losses === null || resolvedMarkets === null ||
-            resolvedMarkets < MIN_TRADER_RESOLVED_MARKETS ||
-            winRate === null || winRate < MIN_CONSENSUS_WIN_RATE) return [];
-        const earlyExits = num(record.earlyExitPositions) ?? 0;
-        const observedClassified = resolvedMarkets + earlyExits;
-        const earlyExitRate = observedClassified > 0 ? earlyExits / observedClassified : null;
+        const earlyExits = num(record.earlyExitPositions);
+        const settlementWins = num(record.settlementWins) ?? 0;
+        const settlementLosses = num(record.settlementLosses) ?? 0;
+        const settlementResolved = settlementWins + settlementLosses;
+        const observedClassified = settlementResolved + (earlyExits ?? 0);
+        const earlyExitRate = observedClassified > 0 && earlyExits !== null
+          ? earlyExits / observedClassified * 100
+          : null;
+        // The requested 90% threshold refers to the share of classified
+        // positions exited before resolution, NOT the trader's win rate.
+        if (periodClosedMarkets === null ||
+            periodClosedMarkets < MIN_TRADER_RESOLVED_MARKETS ||
+            earlyExitRate === null ||
+            earlyExitRate < MIN_CONSENSUS_EARLY_EXIT_RATE) return [];
         const settlementWins = num(record.settlementWins);
         const settlementLosses = num(record.settlementLosses);
         return [{
@@ -901,9 +908,10 @@ function buildConsensus(holderGroups, candidates, records = {}) {
           settlementLosses,
           earlyExitPositions: earlyExits,
           earlyExitRate,
+          settlementResolvedMarkets: settlementResolved,
           settlementRecordComplete: record.settlementRecordComplete === true,
           recordComplete: record.recordComplete !== false,
-          recordBasis: "Period-scoped closed-market record; at least 10 closed markets and at least 90% win rate required for consensus. Settlement-verification fields are shown separately."
+          recordBasis: "At least 10 period-scoped closed positions and at least 90% early-exit share among classified sampled positions. Win rate is a separate metric and is not the 90% threshold."
         }];
       });
       const totalValue = traders.reduce((sum, trader) => sum + (num(trader.amount) ?? 0), 0);      return { ...group, traders, sameSide: traders.length, totalValue };
@@ -1282,7 +1290,7 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     generatedAt: new Date(nowMs).toISOString(),
     pool: period.key,
     qualificationWindowDays: period.key === "month" ? 30 : 7,
-    minimumWinRate: MIN_CONSENSUS_WIN_RATE,
+    minimumEarlyExitRate: MIN_CONSENSUS_EARLY_EXIT_RATE,
     minimumResolvedMarkets: MIN_TRADER_RESOLVED_MARKETS,
     qualificationBasis: period.key === "week"
       ? "Every displayed consensus trader must have at least 10 closed markets in the last 7 days and a period win rate of at least 90%, using the same period-scoped record as the weekly leaderboard. Lifetime settlement counts do not qualify a trader."
