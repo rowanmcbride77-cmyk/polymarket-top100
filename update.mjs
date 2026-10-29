@@ -1253,7 +1253,7 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
   const ranked = rankCandidates(candidates, records);
   const sportsRanked = rankSportsCandidates(candidates, records);
   const leaders = ranked.slice(0, LEADER_COUNT);
-  console.log(`${period.key}: ${leaders.length} traders qualify with at least ${MIN_TRADER_RESOLVED_MARKETS} classifiable closed positions and ${MIN_CONSENSUS_WIN_RATE}%+ profitable-close rate`);
+  console.log(`${period.key}: consensus traders require at least ${MIN_TRADER_RESOLVED_MARKETS} closed positions and ${MIN_CONSENSUS_EARLY_EXIT_RATE}%+ early-exit share`);
   // Reuse the period-scoped record sample used for ranking; avoid a second history scan.
   const leaderRecords = records;
   const tradeRows = await mapLimit(
