@@ -73,13 +73,12 @@ jobs:
                   const wins = Number(row.wins);
                   const losses = Number(row.losses);
                   const resolved = Number(row.resolvedMarkets);
-                  const rate = Number(row.winRate);
+                  const earlyExitRate = Number(row.earlyExitRate);
                   return row.recordComplete !== true ||
                     !Number.isFinite(wins) || !Number.isFinite(losses) ||
                     !Number.isFinite(resolved) || resolved < 10 ||
                     wins + losses !== resolved ||
-                    !Number.isFinite(rate) || rate < 90 ||
-                    Math.abs(rate - (wins / resolved * 100)) > 0.11;
+                    !Number.isFinite(earlyExitRate) || earlyExitRate < 90;
                 });
                 return wallets.size < 2 || wallets.size !== traders.length ||
                   group.sameSide !== traders.length || invalidTrader;
