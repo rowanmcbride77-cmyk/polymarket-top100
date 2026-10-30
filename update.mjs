@@ -22,14 +22,14 @@ const POSITIONS_PER_TRADER = 10;
 const RANKING_RECORD_LIMIT = 1000;
 const LEADER_RECORD_LIMIT = RANKING_RECORD_LIMIT;
 const CONSENSUS_LIMIT = 100;
-const CONSENSUS_MARKET_SCAN_LIMIT = 1500;
+const CONSENSUS_MARKET_SCAN_LIMIT = 3000;
 // Keep upcoming markets in the data so the UI can filter 24h / 3d / 7d accurately.
 const CONSENSUS_WINDOW_HOURS = 168;
 const CONSENSUS_HOLDERS_PER_MARKET = 1500;
-const MIN_CONSENSUS_POSITION_VALUE = 5;
+const MIN_CONSENSUS_POSITION_VALUE = 1;
 const CONSENSUS_ENTRY_WINDOW_MINUTES = 1440;
 const MIN_TRADER_RESOLVED_MARKETS = 10;
-const TRADERS_PER_MARKET = 250;
+const TRADERS_PER_MARKET = 500;
 const TRADE_LIMIT = 10;
 const MAX_JSON_BYTES = 5 * 1024 * 1024;
 const CONCURRENCY = 6;
@@ -1317,7 +1317,7 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     consensusHolderRecordCandidateCount: consensusWallets.size,
     totalRecordCandidateCount: recordCandidates.length,
     scanDiagnostics: lastConsensusDiagnostics,
-    candidatePoolBasis: "Unique traders collected from Polymarket public Data API v1 overall PnL and volume leaderboards, paginating each board through its supported offset ceiling (0–1,000). This is the largest accessible leaderboard-derived candidate pool from these endpoints, not all platform traders. Consensus qualification uses verified settled outcomes for the settlement-history sample, not realized-P&L proxies.",
+    candidatePoolBasis: "Unique traders collected from Polymarket public Data API v1 overall PnL and volume leaderboards, paginating each board through its supported offset ceiling (0–1,000), targeting 5,000 wallets. This is a broad leaderboard-derived sample, not all platform traders. Consensus market overlap counts open positions of at least $1 and retains up to 500 same-outcome holders per market; qualified counts apply the 90% profitable-close and 10-market tests separately.",
     resolutionWindowHours: 168,
     entryActivityWindowHours: null,
     recordBasis: "Consensus traders are filtered by the selected period's closed-market win/loss record (90%+ and at least 10 closed markets). Verified settlement data is retained separately and never substituted for period metrics.",
