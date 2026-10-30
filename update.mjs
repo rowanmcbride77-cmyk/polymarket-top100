@@ -1174,12 +1174,15 @@ function makeOutput(period, ranked, sportsRanked, activePositions, tradeRows, no
     comboCandidates: ranked.map(trader => ({
       wallet: trader.wallet,
       name: trader.name || trader.username || "",
-      wins: trader.wins,
-      losses: trader.losses,
-      winRate: trader.winRate,
-      resolvedMarkets: trader.resolvedMarkets,
-      recordComplete: trader.recordComplete,
-      recordBasis: trader.recordBasis
+      rank: trader.rank ?? null,
+      pnl: trader.pnl ?? trader.profit ?? null,
+      volume: trader.volume ?? trader.vol ?? null,
+      wins: trader.wins ?? null,
+      losses: trader.losses ?? null,
+      winRate: trader.winRate ?? null,
+      resolvedMarkets: trader.resolvedMarkets ?? null,
+      recordComplete: trader.recordComplete === true,
+      recordBasis: trader.recordBasis || "Period market record unavailable"
     })),
     traderActiveTrades: Object.fromEntries(tradeRows.filter(Boolean)),
     traderActivePositions: leaderPositions,
