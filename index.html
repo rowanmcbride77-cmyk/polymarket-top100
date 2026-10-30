@@ -217,7 +217,7 @@ dialog::backdrop{background:#000b}
             </select>
           </label>
         </div>
-        <div class="source-note" id="consensusQualificationNote">Shared markets among weekly traders with at least 5 closed markets and a 90%+ win rate. Early exits are shown separately.</div>
+        <div class="source-note" id="consensusQualificationNote">Shared positions among 2+ traders. Each trader’s 90%+ / minimum-trade qualification is shown separately.</div>
         <div class="table-wrap">
           <table>
             <thead><tr><th>#</th><th>Market</th><th>Side</th><th>Traders</th><th>Combined Value</th><th>Resolves</th></tr></thead>
@@ -754,7 +754,7 @@ async function loadConsensusTradeHistory(wallet, conditionId, outcome) {
 
 function renderConsensus() {
   const minCount = Number($("minTraders").value || 2);
-  const hours = Number($("recency").value || 168);
+  const hours = Number($("recency").value || 720);
   const now = Date.now() / 1000;
   const cutoff = now + hours * 3600;
 
@@ -765,7 +765,7 @@ function renderConsensus() {
       // Some live markets omit a parseable end date in the public API.
       // Include those in the default 7-day view instead of hiding otherwise
       // valid consensus entirely; shorter windows still require a known date.
-      if (endTime === null) return hours === 168;
+      if (endTime === null) return hours === 168 || hours === 720;
       return endTime > now && endTime <= cutoff;
     })
     .sort((a, b) => traderCount(b) - traderCount(a));
