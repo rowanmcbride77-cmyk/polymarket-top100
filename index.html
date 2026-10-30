@@ -200,9 +200,9 @@ dialog::backdrop{background:#000b}
           </label>
           <label>Min. traders
             <select id="minTraders" onchange="renderConsensus()">
-              <option value="2">2+</option>
+              <option value="2" selected>2+</option>
               <option value="3">3+</option>
-              <option value="5" selected>5+</option>
+              <option value="5">5+</option>
               <option value="10">10+</option>
               <option value="20">20+</option>
               <option value="50">50+</option>
@@ -211,9 +211,9 @@ dialog::backdrop{background:#000b}
           </label>
           <label>Resolves within
             <select id="recency" onchange="renderConsensus()">
-              <option value="25" selected>25 hours</option>
+              <option value="25">25 hours</option>
               <option value="72">3 days</option>
-              <option value="168">7 days</option>
+              <option value="168" selected>7 days</option>
             </select>
           </label>
         </div>
@@ -597,7 +597,7 @@ function comboProfitRows() {
   // accounting and losing/negative rows rather than filling the Top 100 with them.
   return [...byWallet.values()]
     .filter(row => row.combos > 0 && row.pnlMissing === 0 &&
-      row.pnlKnown === row.combos && Number.isFinite(row.profit) && row.profit > 0)
+      row.pnlKnown === row.combos && Number.isFinite(row.profit) && row.profit >= 100)
     .sort((a,b) => b.profit-a.profit || b.wins-a.wins || b.weeklyCombos-a.weeklyCombos)
     .slice(0,100)
     .map((row,index)=>({...row,displayRank:index+1}));
@@ -664,7 +664,7 @@ function renderLeaders() {
     if (efficiencyMode) return `<tr><td class="rank">${index+1}</td><td><div class="trader-name">${avatar(trader.trader)}<span class="name-text">${profileButton({...trader.trader, wallet:trader.wallet}, nameOf(trader.trader))}</span>${favoriteButton(trader.wallet)}</div></td><td class="combo-title" title="${esc(trader.title || "Combo details unavailable")}">${esc(trader.title || "Combo details unavailable")}<br><small class="subtitle">${esc(trader.timingLabel || "Start time unverified")}</small></td><td class="money">${cash(trader.entry)}</td><td class="money">${cash(trader.payout)}</td><td class="positive">~${cash(trader.profit)}</td><td class="record">~${trader.multiple.toFixed(1)}×</td></tr>`;
     const pnl = num(trader.pnl ?? trader.profit), volume = num(trader.volume ?? trader.vol), pnlClass = pnl !== null && pnl < 0 ? "negative" : "positive";
     return `<tr><td class="rank">${trader.displayRank}</td><td><div class="trader-name">${avatar(trader)}<span class="name-text">${profileButton(trader)}</span>${favoriteButton(walletOf(trader))}</div></td><td class="record">${recordText(trader)}</td><td class="record">${recordOf(trader)?.rate == null ? "N/A" : recordOf(trader).rate.toFixed(1) + "%"}</td><td class="${pnlClass}">${pnl === null ? "N/A" : (pnl > 0 ? "+" : "") + cash(pnl)}</td><td class="money">${cash(volume)}</td></tr>`;
-  }).join("") : `<tr><td colspan="${comboMode || efficiencyMode ? 7 : 6}" class="empty">${comboMode ? (comboLoadFinished ? "No resolved combos with usable entry and payout data were found for the last 7 days." : "Scanning combo positions…") : efficiencyMode ? (comboLoadFinished ? "No open combos with a positive estimated return and no resolved legs were found in the checked traders." : "Scanning combo positions…") : "No leaderboard data available. Check that the updater has created " + esc(FILES[period]) + "."}</td></tr>`;
+  }).join("") : `<tr><td colspan="${comboMode || efficiencyMode ? 7 : 6}" class="empty">${comboMode ? (comboLoadFinished ? "No traders cleared the $100 minimum in fully reconciled net combo profit for the last 7 days." : "Scanning combo positions…") : efficiencyMode ? (comboLoadFinished ? "No open combos with a positive estimated return and no resolved legs were found in the checked traders." : "Scanning combo positions…") : "No leaderboard data available. Check that the updater has created " + esc(FILES[period]) + "."}</td></tr>`;
   $("leadersMore").textContent = allLeaders ? "Show fewer ↑" : "View all traders →";
   $("leadersMore").style.display = list.length > 10 ? "inline-block" : "none";
   const overviewList = comboMode ? list : efficiencyMode ? [] : baseList;
