@@ -711,7 +711,7 @@ function hasExpiredEndDate(market, nowMs) {
 async function getBroadConsensusMarkets(knownTraders, nowMs, activePositions) {
   // Group positions directly from the Data API. Page beyond the first 100
   // holdings so lower-value active markets are not silently omitted.
-  const MAX_POSITION_PAGES_PER_TRADER = 5;
+  const MAX_POSITION_PAGES_PER_TRADER = 2; // 200 open positions per wallet; avoid spending most of the run on deep low-value pagination.
   const consensusPositions = await mapLimit(knownTraders, CONCURRENCY, async trader => {
     const wallet = String(trader.wallet || "").toLowerCase();
     if (!wallet) return [wallet, []];
@@ -835,7 +835,8 @@ async function getBroadConsensusMarkets(knownTraders, nowMs, activePositions) {
     note: "walletsWithMorePositions indicates candidate wallets whose open positions exceed the scanned pages"
   };
   console.log("Consensus scan diagnostics: " + JSON.stringify(lastConsensusDiagnostics));
-  return holderGroups;
+  const activePositionsByWallet = Object.fromEntries(consensusPositions.map(([wallet, positions]) => [wallet, positions]));
+  return {holderGroups, activePositionsByWallet};
 }
 
 function buildConsensus(holderGroups, candidates, records = {}) {
@@ -1262,11 +1263,13 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
   console.log(`Discovered ${discoveredCandidates.length} ${period.key} candidates; scanning active positions across ${candidates.length} wallets, leaderboard records for ${rankingRecordCandidates.length}, and consensus-holder records for ${consensusWallets.size} (unique record scan: ${recordCandidates.length}).`);
   const records = await attachRecords(recordCandidates, period, nowMs, RANKING_RECORD_LIMIT);
   console.log(`${period.key}: verifying settlement outcomes for the top ${rankingRecordCandidates.length} wallets...`);
-  const settlementRows = await attachSettlementStats(rankingRecordCandidates, period, nowMs);
-  const settlementRecords = Object.fromEntries(settlementRows.map(trader => [String(trader.wallet || "").toLowerCase(), trader]));
   const ranked = rankCandidates(candidates, records);
   const sportsRanked = rankSportsCandidates(candidates, records);
   const leaders = ranked.slice(0, LEADER_COUNT);
+  // Detailed settlement verification is only needed for the visible Top 100.
+  // Scanning 1,000 wallets across three API cohorts twice per period delayed the entire publish.
+  const settlementRows = await attachSettlementStats(leaders, period, nowMs);
+  const settlementRecords = Object.fromEntries(settlementRows.map(trader => [String(trader.wallet || "").toLowerCase(), trader]));
   console.log(`${period.key}: consensus traders require at least ${MIN_TRADER_RESOLVED_MARKETS} closed positions and ${MIN_CONSENSUS_WIN_RATE}%+ profitable-close rate`);
   // Reuse the period-scoped record sample used for ranking; avoid a second history scan.
   const leaderRecords = records;
@@ -1353,14 +1356,11 @@ async function main() {
   }
 
   console.log(`Loading positions for ${unique.size} unique traders...`);
-  const activePositions = await attachActivePositions(
-    [...unique.values()],
-    nowMs
-  );
-
   const fullRecordCache = new Map();
   const consensusCandidatePool = [...unique.values()];
-  const consensusGroups = await getBroadConsensusMarkets(consensusCandidatePool, nowMs, activePositions);
+  const consensusScan = await getBroadConsensusMarkets(consensusCandidatePool, nowMs, {});
+  const activePositions = consensusScan.activePositionsByWallet;
+  const consensusGroups = consensusScan.holderGroups;
   console.log("Broad consensus groups: " + consensusGroups.length);
   // Consensus members must come from the actual record-ranked candidates for
   // the selected period, not merely anyone in the raw P&L candidate fetch.
