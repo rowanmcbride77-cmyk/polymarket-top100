@@ -217,10 +217,10 @@ dialog::backdrop{background:#000b}
             </select>
           </label>
         </div>
-        <div class="source-note" id="consensusQualificationNote">Consensus overlap: default view requires 5+ traders on the same market outcome. Each trader needs at least 10 closed positions and a 90%+ profitable-close rate. Early exits are displayed separately and are not automatically counted as wins. Traders must have entered within 24 hours of one another. Discovery targets up to 5,000 public leaderboard wallets; detailed history verification remains bounded to 1,000 wallets per period. This is a broad sample, not every Polymarket account. Expand a market to compare records.</div>
+        <div class="source-note" id="consensusQualificationNote">Consensus overlap: the first number is traders who qualify (at least 10 closed positions and a 90%+ profitable-close rate); the second is all discovered wallets holding that same market outcome. Early exits are displayed separately. Traders must have entered within 24 hours of one another. Discovery targets up to 5,000 public leaderboard wallets; raw overlap is not proof every account on Polymarket was scanned. Expand a market to compare qualified trader records.</div>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>#</th><th>Market</th><th>Side</th><th>Traders</th><th>Combined Value</th><th>Resolves</th></tr></thead>
+            <thead><tr><th>#</th><th>Market</th><th>Side</th><th>Qualified / raw traders</th><th>Combined Value</th><th>Resolves</th></tr></thead>
             <tbody id="consensusBody"><tr><td colspan="6" class="loading">Loading consensus…</td></tr></tbody>
           </table>
         </div>
@@ -786,7 +786,7 @@ function renderConsensus() {
       <td>${index + 1}</td>
       <td><div class="market-name"><span class="market-symbol">◈</span><span class="market-title">${esc(marketTitle(market))}</span></div></td>
       <td><span class="${sideClass}">${esc(side)}</span></td>
-      <td><strong>${count}</strong></td>
+      <td><strong>${count} / ${num(market.rawSameSide) ?? count}</strong></td>
       <td class="money">${cash(amount)}</td>
       <td title="${esc(dateText(marketEndTime(market)))}">${esc(timeUntil(marketEndTime(market)))}</td>
     </tr>`;
