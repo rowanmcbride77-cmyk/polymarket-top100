@@ -912,7 +912,7 @@ function buildConsensus(holderGroups, candidates, records = {}) {
           recordBasis: "At least 10 period-scoped closed positions and at least 90% profitable-close rate. Early exits are counted and displayed separately; early exits are not automatically treated as wins."
         }];
       });
-      const totalValue = traders.reduce((sum, trader) => sum + (num(trader.amount) ?? 0), 0);      return { ...group, traders, sameSide: traders.length, totalValue };
+      const totalValue = traders.reduce((sum, trader) => sum + (num(trader.amount) ?? 0), 0);      return { ...group, rawSameSide: group.sameSide, traders, sameSide: traders.length, totalValue };
     })
     .filter(group => group.sameSide >= 2);
 
