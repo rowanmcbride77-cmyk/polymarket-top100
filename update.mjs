@@ -840,109 +840,40 @@ async function getBroadConsensusMarkets(knownTraders, nowMs, activePositions) {
 }
 
 function buildConsensus(holderGroups, candidates, records = {}) {
-  const candidateMap = new Map(candidates.map(trader => [
-    String(trader.wallet || "").toLowerCase(), trader
-  ]));
-
-  // First qualify each side independently. Never combine different outcomes
-  // for the same condition/market into one consensus count.
-  const qualifiedGroups = holderGroups
-    .filter(group => {
-      const nowMs = Date.now();
-      // Include upcoming markets; the old negated isResolvingSoon() check
-      // accidentally removed markets resolving within 24 hours.
-      const end = marketEndDate(group);
-      const hasEnd = end !== null && end !== undefined && end !== "";
-      return !hasExpiredEndDate(group, nowMs) &&
-        (!hasEnd || isResolvingSoon(group, nowMs)) &&
-        (num(group.totalValue) ?? 0) > 0;
-    })
-    .map(group => {
-      const traders = group.traders.flatMap(holder => {
-        const wallet = String(holder.wallet || "").toLowerCase();
-        const candidate = candidateMap.get(wallet);
-        if (!candidate) return [];
-        // The weekly consensus pool must use the SAME period-scoped win/loss
-        // record shown in the weekly leaderboard. Do not substitute lifetime
-        // settlement counts here; that mismatch allowed 48% lifetime/other
-        // period records to appear in the weekly consensus list.
-        const record = records[wallet] || records[candidate.wallet];
-        // No raw leaderboard/lifetime fallback: without the selected period's
-        // closed-position record, the trader cannot qualify for consensus.
-        if (!record || record.recordComplete !== true) return [];
-        const wins = num(record.wins);
-        const losses = num(record.losses);
-        const periodClosedMarkets = wins !== null && losses !== null ? wins + losses : null;
-        const resolvedMarkets = num(record.resolvedMarkets) ?? periodClosedMarkets;
-        const winRate = wins !== null && losses !== null && wins + losses > 0
-          ? wins / (wins + losses) * 100
-          : num(record.winRate);
-        const earlyExits = num(record.earlyExitPositions);
-        const settlementWins = num(record.settlementWins) ?? 0;
-        const settlementLosses = num(record.settlementLosses) ?? 0;
-        const settlementResolved = settlementWins + settlementLosses;
-        const observedClassified = settlementResolved + (earlyExits ?? 0);
-        const earlyExitRate = observedClassified > 0 && earlyExits !== null
-          ? earlyExits / observedClassified * 100
-          : null;
-        // The requested 90% threshold is the profitable-close rate.
-        // Early exits are tracked and displayed separately, never treated as wins.
-        if (periodClosedMarkets === null ||
-            periodClosedMarkets < MIN_TRADER_RESOLVED_MARKETS ||
-            winRate === null ||
-            winRate < MIN_CONSENSUS_WIN_RATE) return [];
-        return [{
-          ...holder,
-          wallet,
-          name: holder.name || candidate.name || "Trader",
-          rank: candidate.sportsRank ?? candidate.rank ?? null,
-          overallRank: candidate.rank ?? null,
-          pnl: candidate.pnl ?? holder.pnl ?? null,
-          volume: candidate.volume ?? holder.volume ?? null,
-          wins,
-          losses,
-          winRate,
-          resolvedMarkets,
-          settlementWins,
-          settlementLosses,
-          earlyExitPositions: earlyExits,
-          earlyExitRate,
-          settlementResolvedMarkets: settlementResolved,
-          settlementRecordComplete: record.settlementRecordComplete === true,
-          recordComplete: record.recordComplete !== false,
-          recordBasis: "At least 10 period-scoped closed positions and at least 90% profitable-close rate. Early exits are counted and displayed separately; early exits are not automatically treated as wins."
-        }];
-      });
-      const totalValue = traders.reduce((sum, trader) => sum + (num(trader.amount) ?? 0), 0);      return { ...group, rawSameSide: group.sameSide, traders, sameSide: traders.length, totalValue };
-    })
-    .filter(group => group.sameSide >= 2);
-
-  // Strict one-sided consensus: if qualified traders hold more than one
-  // outcome in the same condition/market, suppress the entire market. This
-  // prevents a 9-vs-1 split (or a 3-vs-3 sports split) from appearing as a
-  // one-sided signal. A market is shown only when exactly one outcome has
-  // at least two qualified traders in the scanned candidate pool.
-  const outcomesByCondition = new Map();
-  for (const group of qualifiedGroups) {
-    const conditionId = String(group.conditionId || "").toLowerCase();
-    if (!conditionId) continue;
-    if (!outcomesByCondition.has(conditionId)) outcomesByCondition.set(conditionId, new Set());
-    outcomesByCondition.get(conditionId).add(String(group.side || "").trim().toLowerCase());
-  }
-
-  return qualifiedGroups
-    .filter(group => {
-      const conditionId = String(group.conditionId || "").toLowerCase();
-      const outcomes = outcomesByCondition.get(conditionId);
-      if (!outcomes || outcomes.size <= 1) return true;
-      const sameConditionGroups = qualifiedGroups.filter(item => String(item.conditionId || "").toLowerCase() === conditionId);
-      // A lone opposing holder should not erase a valid 2+ trader consensus.
-      return sameConditionGroups.filter(item => item.sameSide >= 2).length <= 1;
-    })
-    .sort((a, b) => b.sameSide - a.sameSide || b.totalValue - a.totalValue || (b.newestBuy || 0) - (a.newestBuy || 0))
+  const candidateMap = new Map(candidates.map(trader => [String(trader.wallet || '').toLowerCase(), trader]));
+  const nowMs = Date.now();
+  // Preserve genuine shared-position markets. Performance qualification is
+  // attached to each trader instead of suppressing the entire market.
+  return holderGroups.filter(group => {
+    const end = marketEndDate(group);
+    const hasEnd = end !== null && end !== undefined && end !== '';
+    return group.sameSide >= 2 && !hasExpiredEndDate(group, nowMs) &&
+      (!hasEnd || isResolvingSoon(group, nowMs)) && (num(group.totalValue) ?? 0) > 0;
+  }).map(group => {
+    const traders = group.traders.map(holder => {
+      const wallet = String(holder.wallet || '').toLowerCase();
+      const candidate = candidateMap.get(wallet) || {};
+      const record = records[wallet] || records[candidate.wallet] || {};
+      const wins = num(record.wins), losses = num(record.losses);
+      const resolvedMarkets = wins !== null && losses !== null ? wins + losses : num(record.resolvedMarkets);
+      const winRate = wins !== null && losses !== null && resolvedMarkets > 0 ? wins / resolvedMarkets * 100 : num(record.winRate);
+      const qualified = record.recordComplete === true && resolvedMarkets !== null &&
+        resolvedMarkets >= MIN_TRADER_RESOLVED_MARKETS && winRate !== null && winRate >= MIN_CONSENSUS_WIN_RATE;
+      return { ...holder, wallet, name: holder.name || candidate.name || 'Trader',
+        rank: candidate.sportsRank ?? candidate.rank ?? holder.rank ?? null,
+        overallRank: candidate.rank ?? null, pnl: candidate.pnl ?? holder.pnl ?? null,
+        volume: candidate.volume ?? holder.volume ?? null, wins, losses, winRate, resolvedMarkets,
+        earlyExitPositions: num(record.earlyExitPositions), recordComplete: record.recordComplete === true,
+        qualified, recordBasis: qualified ? 'Meets the selected period performance threshold' : 'Shared-position holder; performance record incomplete or below threshold' };
+    });
+    return { ...group, traders, sameSide: traders.length,
+      qualifiedTraders: traders.filter(trader => trader.qualified).length,
+      totalValue: traders.reduce((sum, trader) => sum + (num(trader.amount) ?? 0), 0) };
+  }).filter(group => group.sameSide >= 2)
+    .sort((a, b) => b.sameSide - a.sameSide || b.qualifiedTraders - a.qualifiedTraders ||
+      b.totalValue - a.totalValue || (b.newestBuy || 0) - (a.newestBuy || 0))
     .slice(0, CONSENSUS_LIMIT);
 }
-
 function parseArrayField(value) {
   if (Array.isArray(value)) return value;
   if (typeof value !== "string" || !value.trim()) return [];
@@ -1310,8 +1241,8 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     minimumWinRate: MIN_CONSENSUS_WIN_RATE,
     minimumResolvedMarkets: MIN_TRADER_RESOLVED_MARKETS,
     qualificationBasis: period.key === "week"
-      ? "Every displayed consensus trader must have at least 5 closed markets in the last 7 days and a period win rate of at least 90%, using the same period-scoped record as the weekly leaderboard. Lifetime settlement counts do not qualify a trader."
-      : "Every displayed consensus trader must have at least 10 closed markets in the last 30 days and a period win rate of at least 90%, using the same period-scoped record as the monthly leaderboard. Lifetime settlement counts do not qualify a trader.",
+      ? "Markets show 2+ discovered wallets holding the same outcome. Each trader is separately marked qualified only with a complete weekly record of at least 5 closed markets and a 90%+ profitable-close rate."
+      : "Markets show 2+ discovered wallets holding the same outcome. Each trader is separately marked qualified only with a complete monthly record of at least 10 closed markets and a 90%+ profitable-close rate.",
     minimumSameSideTraders: 2,
     entryWindowMinutes: CONSENSUS_ENTRY_WINDOW_MINUTES,
     candidateCount: ranked.length,
@@ -1321,7 +1252,7 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     totalRecordCandidateCount: recordCandidates.length,
     scanDiagnostics: lastConsensusDiagnostics,
     candidatePoolBasis: "Unique traders collected from Polymarket public Data API v1 overall PnL and volume leaderboards, paginating each board through its supported offset ceiling (0–1,000), targeting 5,000 wallets. This is a broad leaderboard-derived sample, not all platform traders. Consensus market overlap counts open positions of at least $1 and retains same-outcome holders; upcoming markets within 30 days are eligible.",
-    resolutionWindowHours: 168,
+    resolutionWindowHours: CONSENSUS_WINDOW_HOURS,
     entryActivityWindowHours: null,
     recordBasis: "Consensus traders are filtered by the selected period's closed-market profitable-close record (90%+ and at least 5 closed markets for weekly; 10 for monthly). Verified settlement data is retained separately and never substituted for period metrics.",
     consensus: output.consensus
