@@ -839,7 +839,7 @@ async function getBroadConsensusMarkets(knownTraders, nowMs, activePositions) {
   return {holderGroups, activePositionsByWallet};
 }
 
-function buildConsensus(holderGroups, candidates, records = {}) {
+function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedMarkets = MIN_TRADER_RESOLVED_MARKETS) {
   const candidateMap = new Map(candidates.map(trader => [String(trader.wallet || '').toLowerCase(), trader]));
   const nowMs = Date.now();
   // Preserve genuine shared-position markets. Performance qualification is
@@ -858,7 +858,7 @@ function buildConsensus(holderGroups, candidates, records = {}) {
       const resolvedMarkets = wins !== null && losses !== null ? wins + losses : num(record.resolvedMarkets);
       const winRate = wins !== null && losses !== null && resolvedMarkets > 0 ? wins / resolvedMarkets * 100 : num(record.winRate);
       const qualified = record.recordComplete === true && resolvedMarkets !== null &&
-        resolvedMarkets >= MIN_TRADER_RESOLVED_MARKETS && winRate !== null && winRate >= MIN_CONSENSUS_WIN_RATE;
+        resolvedMarkets >= minimumResolvedMarkets && winRate !== null && winRate >= MIN_CONSENSUS_WIN_RATE;
       return { ...holder, wallet, name: holder.name || candidate.name || 'Trader',
         rank: candidate.sportsRank ?? candidate.rank ?? holder.rank ?? null,
         overallRank: candidate.rank ?? null, pnl: candidate.pnl ?? holder.pnl ?? null,
@@ -1118,7 +1118,7 @@ function makeOutput(period, ranked, sportsRanked, activePositions, tradeRows, no
     })),
     traderActiveTrades: Object.fromEntries(tradeRows.filter(Boolean)),
     traderActivePositions: leaderPositions,
-    consensus: buildConsensus(consensusGroups, consensusCandidates || ranked, Object.fromEntries([...new Set([...Object.keys(records || {}), ...Object.keys(settlementRecords || {})])].map(wallet => [wallet, { ...(records?.[wallet] || {}), ...(settlementRecords?.[wallet] || {}), wins: records?.[wallet]?.wins ?? settlementRecords?.[wallet]?.wins, losses: records?.[wallet]?.losses ?? settlementRecords?.[wallet]?.losses }])) )
+    consensus: buildConsensus(consensusGroups, consensusCandidates || ranked, Object.fromEntries([...new Set([...Object.keys(records || {}), ...Object.keys(settlementRecords || {})])].map(wallet => [wallet, { ...(records?.[wallet] || {}), ...(settlementRecords?.[wallet] || {}), wins: records?.[wallet]?.wins ?? settlementRecords?.[wallet]?.wins, losses: records?.[wallet]?.losses ?? settlementRecords?.[wallet]?.losses }])), period.key === 'month' ? 10 : 5)
   };
 }
 
