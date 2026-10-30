@@ -28,7 +28,7 @@ const CONSENSUS_WINDOW_HOURS = 168;
 const CONSENSUS_HOLDERS_PER_MARKET = 1500;
 const MIN_CONSENSUS_POSITION_VALUE = 1;
 const CONSENSUS_ENTRY_WINDOW_MINUTES = 1440;
-const MIN_TRADER_RESOLVED_MARKETS = 10;
+const MIN_TRADER_RESOLVED_MARKETS = 5;
 const TRADERS_PER_MARKET = 500;
 const TRADE_LIMIT = 10;
 const MAX_JSON_BYTES = 5 * 1024 * 1024;
@@ -1310,7 +1310,7 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     minimumWinRate: MIN_CONSENSUS_WIN_RATE,
     minimumResolvedMarkets: MIN_TRADER_RESOLVED_MARKETS,
     qualificationBasis: period.key === "week"
-      ? "Every displayed consensus trader must have at least 10 closed markets in the last 7 days and a period win rate of at least 90%, using the same period-scoped record as the weekly leaderboard. Lifetime settlement counts do not qualify a trader."
+      ? "Every displayed consensus trader must have at least 5 closed markets in the last 7 days and a period win rate of at least 90%, using the same period-scoped record as the weekly leaderboard. Lifetime settlement counts do not qualify a trader."
       : "Every displayed consensus trader must have at least 10 closed markets in the last 30 days and a period win rate of at least 90%, using the same period-scoped record as the monthly leaderboard. Lifetime settlement counts do not qualify a trader.",
     minimumSameSideTraders: 2,
     entryWindowMinutes: CONSENSUS_ENTRY_WINDOW_MINUTES,
