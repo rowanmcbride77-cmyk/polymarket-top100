@@ -24,7 +24,7 @@ const LEADER_RECORD_LIMIT = RANKING_RECORD_LIMIT;
 const CONSENSUS_LIMIT = 100;
 const CONSENSUS_MARKET_SCAN_LIMIT = 3000;
 // Keep upcoming markets in the data so the UI can filter 24h / 3d / 7d accurately.
-const CONSENSUS_WINDOW_HOURS = 168;
+const CONSENSUS_WINDOW_HOURS = 720; // 30-day upcoming-market window to avoid dropping nearly all shared positions
 const CONSENSUS_HOLDERS_PER_MARKET = 1500;
 const MIN_CONSENSUS_POSITION_VALUE = 1;
 const CONSENSUS_ENTRY_WINDOW_MINUTES = 1440;
@@ -1320,10 +1320,10 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     consensusHolderRecordCandidateCount: consensusWallets.size,
     totalRecordCandidateCount: recordCandidates.length,
     scanDiagnostics: lastConsensusDiagnostics,
-    candidatePoolBasis: "Unique traders collected from Polymarket public Data API v1 overall PnL and volume leaderboards, paginating each board through its supported offset ceiling (0–1,000), targeting 5,000 wallets. This is a broad leaderboard-derived sample, not all platform traders. Consensus market overlap counts open positions of at least $1 and retains up to 500 same-outcome holders per market; qualified counts apply the 90% profitable-close and 10-market tests separately.",
+    candidatePoolBasis: "Unique traders collected from Polymarket public Data API v1 overall PnL and volume leaderboards, paginating each board through its supported offset ceiling (0–1,000), targeting 5,000 wallets. This is a broad leaderboard-derived sample, not all platform traders. Consensus market overlap counts open positions of at least $1 and retains same-outcome holders; upcoming markets within 30 days are eligible.",
     resolutionWindowHours: 168,
     entryActivityWindowHours: null,
-    recordBasis: "Consensus traders are filtered by the selected period's closed-market win/loss record (90%+ and at least 10 closed markets). Verified settlement data is retained separately and never substituted for period metrics.",
+    recordBasis: "Consensus traders are filtered by the selected period's closed-market profitable-close record (90%+ and at least 5 closed markets for weekly; 10 for monthly). Verified settlement data is retained separately and never substituted for period metrics.",
     consensus: output.consensus
   });
 
