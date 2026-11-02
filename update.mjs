@@ -523,23 +523,29 @@ async function attachActivePositions(candidates, nowMs) {
 async function getRecentTrades(wallet) {
   const params = new URLSearchParams({
     user: wallet,
+    side: "BUY",
     limit: String(TRADE_LIMIT)
   });
 
   try {
-    const rows = asArray(await getJson(`${API}/trades?${params}`));
+    // v2 trades use the {data, pagination} envelope and snake_case fields.
+    const rows = asArray(await getJson(`${API}/v2/trades?${params}`));
 
     return rows
       .filter(row => String(row.side || "").toUpperCase() === "BUY")
       .slice(0, TRADE_LIMIT)
-      .map(row => ({
-        title: row.title || row.question || row.eventSlug || "Unknown market",
-        side: "BUY",
-        outcome: row.outcome || row.outcome_name || "Unknown",
-        amount: num(row.usdcSize ?? row.amount ?? row.size),
-        buyTime: timestampMs(row.timestamp ?? row.createdAt ?? row.time),
-        conditionId: row.conditionId || row.condition_id || null
-      }))
+      .map(row => {
+        const shares = num(row.size);
+        const price = num(row.price);
+        return {
+          title: row.title || row.question || row.event_slug || "Unknown market",
+          side: "BUY",
+          outcome: row.outcome || row.outcome_name || "Unknown",
+          amount: num(row.usdc_size ?? row.usdcSize ?? row.amount) ?? (shares !== null && price !== null ? shares * price : null),
+          buyTime: timestampMs(row.timestamp ?? row.created_at ?? row.createdAt ?? row.time),
+          conditionId: row.condition_id || row.conditionId || null
+        };
+      })
       .sort((a, b) => (b.buyTime || 0) - (a.buyTime || 0));
   } catch (error) {
     console.error(`Trades failed for ${wallet}: ${error.message}`);
