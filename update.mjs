@@ -27,7 +27,7 @@ const CONSENSUS_MARKET_SCAN_LIMIT = 3000;
 const CONSENSUS_WINDOW_HOURS = 720; // 30-day upcoming-market window to avoid dropping nearly all shared positions
 const CONSENSUS_HOLDERS_PER_MARKET = 1500;
 const MIN_CONSENSUS_POSITION_VALUE = 1;
-const CONSENSUS_ENTRY_WINDOW_MINUTES = 1440;
+const CONSENSUS_ENTRY_WINDOW_MINUTES = 60;
 const MIN_TRADER_RESOLVED_MARKETS = 5;
 const TRADERS_PER_MARKET = 500;
 const TRADE_LIMIT = 10;
@@ -304,11 +304,11 @@ async function getCandidates(period) {
   const byWallet = new Map();
   const categories = [
     "OVERALL", "SPORTS", "POLITICS", "CRYPTO", "CULTURE",
-    "MENTIONS", "WEATHER", "ECONOMICS", "TECH", "FINANCE"
+    "MENTIONS", "WEATHER", "ECONOMICS", "TECH", "FINANCE", "OTHER"
   ];
   const timePeriods = [...new Set([period.api, "DAY", "WEEK", "MONTH", "ALL"])];
   const target = CANDIDATE_COUNT;
-  const pageSize = 1000;
+  const pageSize = 100;
   let boardRequests = 0;
 
   discovery:
@@ -325,7 +325,16 @@ async function getCandidates(period) {
             limit: String(pageSize)
           });
           if (cursor) params.set("cursor", cursor);
-          const response = await getJson(`${API}/v2/leaderboard?${params}`);
+          let response;
+          try {
+            response = await getJson(`${API}/v2/leaderboard?${params}`);
+          } catch (error) {
+            if (/HTTP 400|HTTP 404/.test(error.message)) {
+              console.warn(`Skipping unsupported leaderboard board ${category}/${timePeriod}/${sortBy}: ${error.message}`);
+              break;
+            }
+            throw error;
+          }
           const rows = asArray(response);
           boardRequests++;
           pageNo++;
@@ -345,7 +354,7 @@ async function getCandidates(period) {
           if (byWallet.size >= target) break discovery;
           const pagination = response?.pagination ?? response?.data?.pagination ?? {};
           cursor = pagination.next_cursor ?? pagination.nextCursor ?? null;
-          if (pagination.has_more !== true || !cursor || pageNo >= 10) break;
+          if (!cursor || pagination.has_more === false || pageNo >= 10) break;
         } while (cursor);
       }
     }
@@ -450,7 +459,10 @@ function isActivePosition(position, nowMs) {
     position.endDateIso;
 
   if (endDate) {
-    const endMs = timestampMs(endDate);
+    let endMs = timestampMs(endDate);
+    if (typeof endDate === "string" && /^\\d{4}-\\d{2}-\\d{2}$/.test(endDate)) {
+      endMs = Date.parse(endDate + "T23:59:59.999Z");
+    }
     if (endMs !== null && endMs < nowMs) return false;
   }
 
@@ -477,7 +489,11 @@ function compactPosition(position) {
       position.endDate ??
       position.end_date ??
       position.endDateIso ??
-      null
+      null,
+    status: position.status ?? null,
+    closed: position.closed === true,
+    redeemable: position.redeemable === true,
+    mergeable: position.mergeable === true
   };
 }
 
@@ -785,7 +801,7 @@ async function getBroadConsensusMarkets(knownTraders, nowMs, activePositions) {
       // OPEN is a superset in Data API v2 and includes redeemable settled
       // winners. Consensus must only count genuinely active, non-dust holdings.
       if (!isActivePosition(position, nowMs)) continue;
-      const lastEvent = timestampMs(position.lastEventAt ?? position.last_event_at);
+      const lastEvent = timestampMs(position.lastEventAt ?? position.last_event_at ?? position.firstEntryAt ?? position.first_entry_at);
       if (lastEvent === null || lastEvent < nowMs - CONSENSUS_ENTRY_WINDOW_MINUTES * 60 * 1000) continue;
       openPositionsSeen++;
       const conditionId = String(position.conditionId ?? position.condition_id ?? "").toLowerCase();
