@@ -76,6 +76,10 @@ jobs:
                 const traders = Array.isArray(group.traders) ? group.traders : [];
                 const wallets = new Set(traders.map(row => String(row.wallet || "").toLowerCase()).filter(Boolean));
                 const invalidTrader = traders.some(row => {
+                  // Shared markets remain visible even when some holders do
+                  // not meet the performance threshold. Only rows explicitly
+                  // marked qualified must carry a complete, matching record.
+                  if (row.qualified !== true) return false;
                   const wins = Number(row.wins);
                   const losses = Number(row.losses);
                   const resolved = Number(row.resolvedMarkets);
