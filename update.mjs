@@ -980,8 +980,9 @@ function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedM
       totalValue: group.totalValue, endDate: group.endDate
     }))
   }));
-  return eligibleGroups.map(group => {
-    const traders = group.traders.map(holder => {
+  const mappedGroups = eligibleGroups.map(group => {
+    const holders = Array.isArray(group.traders) ? group.traders : [];
+    const traders = holders.map(holder => {
       const wallet = String(holder.wallet || '').toLowerCase();
       const candidate = candidateMap.get(wallet) || {};
       const record = records[wallet] || records[candidate.wallet] || {};
@@ -1000,7 +1001,16 @@ function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedM
     return { ...group, traders, sameSide: traders.length,
       qualifiedTraders: traders.filter(trader => trader.qualified).length,
       totalValue: traders.reduce((sum, trader) => sum + (num(trader.amount) ?? 0), 0) };
-  }).filter(group => group.sameSide >= 2)
+  });
+  console.log("Consensus mapped groups:", JSON.stringify({
+    mappedGroups: mappedGroups.length,
+    withTwoOrMoreTraders: mappedGroups.filter(group => group.traders.length >= 2).length,
+    sample: mappedGroups.slice(0, 3).map(group => ({
+      conditionId: group.conditionId, sameSide: group.sameSide,
+      totalValue: group.totalValue, traders: group.traders.length
+    }))
+  }));
+  return mappedGroups.filter(group => group.traders.length >= 2 && group.totalValue > 0)
     .sort((a, b) => b.sameSide - a.sameSide || b.qualifiedTraders - a.qualifiedTraders ||
       b.totalValue - a.totalValue || (b.newestBuy || 0) - (a.newestBuy || 0))
     .slice(0, CONSENSUS_LIMIT);
