@@ -1228,19 +1228,20 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
   const candidates = discoveredCandidates.slice(0, PROCESS_CANDIDATE_COUNT);
   const rankingRecordCandidates = candidates.slice(0, RECORD_SCAN_CANDIDATE_COUNT);
   const candidateByWallet = new Map(candidates.map(trader => [String(trader.wallet || "").toLowerCase(), trader]));
-  const consensusWallets = new Set(
-    consensusGroups.flatMap(group => (Array.isArray(group.traders) ? group.traders : [])
-      .map(holder => String(holder.wallet || "").toLowerCase())
-      .filter(wallet => candidateByWallet.has(wallet)))
-  );
   // A period tab must only show traders discovered in that same period pool.
   // The raw position scan is shared across week/month for efficiency, so prune
-  // each market back to the selected pool before counting its shared side.
+  // each market back to the selected pool and 30-day horizon before counting.
   const periodConsensusGroups = consensusGroups.map(group => {
     const traders = (Array.isArray(group.traders) ? group.traders : [])
       .filter(holder => candidateByWallet.has(String(holder.wallet || "").toLowerCase()));
-    return traders.length >= 2 ? { ...group, traders, sameSide: traders.length } : null;
+    return traders.length >= 2 && isResolvingSoon(group, nowMs)
+      ? { ...group, traders, sameSide: traders.length }
+      : null;
   }).filter(Boolean);
+  const consensusWallets = new Set(
+    periodConsensusGroups.flatMap(group => group.traders
+      .map(holder => String(holder.wallet || "").toLowerCase()))
+  );
   const recordCandidateMap = new Map(rankingRecordCandidates.map(trader => [String(trader.wallet || "").toLowerCase(), trader]));
   for (const wallet of consensusWallets) {
     if (!recordCandidateMap.has(wallet)) recordCandidateMap.set(wallet, candidateByWallet.get(wallet));
