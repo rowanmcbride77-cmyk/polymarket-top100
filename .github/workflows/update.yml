@@ -43,6 +43,9 @@ jobs:
 
           for (const file of ["week.json", "month.json", "consensus-week.json", "consensus-month.json"]) {
             const stat = await fs.stat(file);
+            if (stat.size === 0) {
+              throw new Error(`${file} is empty; refusing to publish empty scanner data`);
+            }
             if (stat.size > 5 * 1024 * 1024) {
               throw new Error(`${file} exceeds 5 MB`);
             }
