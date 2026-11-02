@@ -1272,8 +1272,10 @@ function makeOutput(period, ranked, sportsRanked, activePositions, tradeRows, no
 }
 
 async function writeJsonUnderLimit(filename, output) {
-  if (!output || !Array.isArray(output.leaders) || output.leaders.length === 0) {
-    throw new Error(`${filename}: refusing to write empty or missing leaderboard data`);
+  const hasLeaders = Array.isArray(output?.leaders) && output.leaders.length > 0;
+  const hasConsensus = Array.isArray(output?.consensus) && output.consensus.length > 0;
+  if (!output || (!hasLeaders && !hasConsensus)) {
+    throw new Error(`${filename}: refusing to write empty or missing leaderboard/consensus data`);
   }
   const compact = () => JSON.stringify(output);
 
@@ -1288,7 +1290,7 @@ async function writeJsonUnderLimit(filename, output) {
         0,
         Math.floor(output.consensus.length / 2)
       );
-    } else {
+    } else if (output.traderActivePositions && output.traderActiveTrades) {
       for (const wallet of Object.keys(output.traderActivePositions)) {
         output.traderActivePositions[wallet] =
           (output.traderActivePositions[wallet] || []).slice(0, 3);
@@ -1310,6 +1312,8 @@ async function writeJsonUnderLimit(filename, output) {
           `${filename} remains ${(bytes / 1024 / 1024).toFixed(2)} MB after trimming positions, trades, and consensus. Check whether another workflow step is generating this file.`
         );
       }
+    } else {
+      throw new Error(`${filename} remains over the size limit after trimming all available sections`);
     }
 
     json = compact();
@@ -1317,8 +1321,10 @@ async function writeJsonUnderLimit(filename, output) {
   }
 
   const parsedCheck = JSON.parse(json);
-  if (!Array.isArray(parsedCheck.leaders) || parsedCheck.leaders.length === 0) {
-    throw new Error(`${filename}: serialized output failed the non-empty leaderboard check`);
+  const parsedHasLeaders = Array.isArray(parsedCheck.leaders) && parsedCheck.leaders.length > 0;
+  const parsedHasConsensus = Array.isArray(parsedCheck.consensus) && parsedCheck.consensus.length > 0;
+  if (!parsedHasLeaders && !parsedHasConsensus) {
+    throw new Error(`${filename}: serialized output failed the non-empty data check`);
   }
   const tempFilename = `${filename}.tmp`;
   await fs.writeFile(tempFilename, json, "utf8");
