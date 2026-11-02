@@ -321,7 +321,7 @@ async function getCandidates(period) {
       for (const orderBy of ["PNL", "VOLUME"]) {
         let cursor = null;
         let page = 0;
-        while (page < MAX_LEADERBOARD_PAGES) {
+        while (page < LEADERBOARD_PAGE_COUNT) {
           const params = new URLSearchParams({
             category,
             time_period: timePeriod.toLowerCase(),
