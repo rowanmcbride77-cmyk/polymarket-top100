@@ -445,7 +445,7 @@ function isActivePosition(position, nowMs) {
 
   if (endDate) {
     let endMs = timestampMs(endDate);
-    if (typeof endDate === "string" && /^\\d{4}-\\d{2}-\\d{2}$/.test(endDate)) {
+    if (typeof endDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(endDate)) {
       endMs = Date.parse(endDate + "T23:59:59.999Z");
     }
     if (endMs !== null && endMs < nowMs) return false;
@@ -725,6 +725,14 @@ function hasExpiredEndDate(market, nowMs) {
   return endMs !== null && endMs < nowMs;
 }
 
+function isLiveConsensusPosition(position) {
+  const size = num(position.size ?? position.current_size ?? position.currentSize);
+  if (size === null || size <= 0) return false;
+  if (position.closed === true || position.redeemable === true || position.mergeable === true) return false;
+  const status = String(position.status ?? "").toUpperCase();
+  return !status || status === "OPEN" || status === "ACTIVE";
+}
+
 async function getBroadConsensusMarkets(knownTraders, nowMs, activePositions) {
   // Group positions directly from the Data API. Page beyond the first 100
   // holdings so lower-value active markets are not silently omitted.
@@ -785,7 +793,7 @@ async function getBroadConsensusMarkets(knownTraders, nowMs, activePositions) {
     for (const position of positions) {
       // OPEN is a superset in Data API v2 and includes redeemable settled
       // winners. Consensus must only count genuinely active, non-dust holdings.
-      if (!isActivePosition(position, nowMs)) continue;
+      if (!isLiveConsensusPosition(position)) continue;
       openPositionsSeen++;
       const conditionId = String(position.conditionId ?? position.condition_id ?? "").toLowerCase();
       const side = String(position.outcome ?? position.outcome_name ?? "").trim();
@@ -859,11 +867,92 @@ async function getBroadConsensusMarkets(knownTraders, nowMs, activePositions) {
   return {holderGroups, activePositionsByWallet};
 }
 
+async function enrichConsensusMarkets(holderGroups, nowMs) {
+  // Position records can carry stale/missing end dates. Resolve condition IDs
+  // through Gamma before applying the 30-day UI window; keep undated active
+  // markets visible rather than silently deleting the entire consensus panel.
+  const scan = holderGroups.slice(0, CONSENSUS_MARKET_SCAN_LIMIT);
+  const conditionIds = [...new Set(scan.map(group => String(group.conditionId || "").toLowerCase()).filter(Boolean))];
+  const chunks = [];
+  for (let i = 0; i < conditionIds.length; i += 40) chunks.push(conditionIds.slice(i, i + 40));
+
+  const pages = await mapLimit(chunks, CONCURRENCY, async ids => {
+    const params = new URLSearchParams({condition_ids: ids.join(",")});
+    try {
+      return {rows: asArray(await getJson(`${GAMMA_API}/markets?${params}`)), ok: true};
+    } catch (error) {
+      console.warn("Consensus market metadata lookup failed:", error.message);
+      return {rows: [], ok: false};
+    }
+  });
+
+  const marketByCondition = new Map();
+  for (const page of pages) for (const market of page.rows) {
+    const id = String(market.conditionId ?? market.condition_id ?? "").toLowerCase();
+    if (id) marketByCondition.set(id, market);
+  }
+
+  let closedRemoved = 0;
+  let outsideWindowRemoved = 0;
+  let unknownDateKept = 0;
+  let staleDateCleared = 0;
+  const enriched = [];
+  for (const group of scan) {
+    const market = marketByCondition.get(String(group.conditionId || "").toLowerCase());
+    if (market && (market.closed === true || String(market.closed).toLowerCase() === "true")) {
+      closedRemoved++;
+      continue;
+    }
+
+    let endDate = market ? marketEndDate(market) : marketEndDate(group);
+    let endMs = timestampMs(endDate);
+    if (typeof endDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(endDate)) {
+      endMs = Date.parse(endDate + "T23:59:59.999Z");
+    }
+
+    // Gamma's endDate is not always the actual resolution deadline. If the
+    // market is still not closed but its listed date has passed, retain it as
+    // undated instead of incorrectly treating the active holding as expired.
+    if (endMs !== null && endMs < nowMs) {
+      endDate = null;
+      staleDateCleared++;
+      endMs = null;
+    }
+    if (endMs !== null && endMs > nowMs + CONSENSUS_WINDOW_HOURS * 60 * 60 * 1000) {
+      outsideWindowRemoved++;
+      continue;
+    }
+    if (endMs === null) unknownDateKept++;
+
+    enriched.push({
+      ...group,
+      title: market?.question || market?.title || group.title,
+      slug: market?.slug || group.slug || null,
+      endDate,
+      marketClosed: market ? false : null,
+      marketMetadataVerified: Boolean(market)
+    });
+  }
+
+  console.log("Consensus Gamma enrichment: " + JSON.stringify({
+    scannedGroups: scan.length,
+    conditionIds: conditionIds.length,
+    metadataPages: pages.length,
+    metadataReturned: marketByCondition.size,
+    closedRemoved,
+    outsideWindowRemoved,
+    staleDateCleared,
+    unknownDateKept,
+    eligibleGroups: enriched.length
+  }));
+  return enriched;
+}
+
 function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedMarkets = MIN_TRADER_RESOLVED_MARKETS) {
   const candidateMap = new Map(candidates.map(trader => [String(trader.wallet || '').toLowerCase(), trader]));
   const nowMs = Date.now();
-  // Only publish markets that are upcoming (or have no usable end date),
-  // active, and backed by at least two independently qualified traders.
+  // Positions are active according to the v2 OPEN lifecycle and Gamma closed
+  // state. Each holder's performance qualification is shown separately.
   return holderGroups.filter(group => {
     const end = marketEndDate(group);
     const withinWindow = end === null || end === undefined || end === ''
@@ -1270,17 +1359,17 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     minimumWinRate: MIN_CONSENSUS_WIN_RATE,
     minimumResolvedMarkets: MIN_TRADER_RESOLVED_MARKETS,
     qualificationBasis: period.key === "week"
-      ? "Markets show 2+ discovered wallets holding the same outcome. Each trader is separately marked qualified only with a complete weekly record of at least 5 closed markets and a 90%+ profitable-close rate."
-      : "Markets show 2+ discovered wallets holding the same outcome. Each trader is separately marked qualified only with a complete monthly record of at least 10 closed markets and a 90%+ profitable-close rate.",
+      ? "Markets show 2+ discovered wallets holding the same active outcome. Each trader is separately marked qualified only with a complete weekly record of at least 5 closed positions and a 90%+ profitable-close rate."
+      : "Markets show 2+ discovered wallets holding the same active outcome. Each trader is separately marked qualified only with a complete monthly record of at least 10 closed positions and a 90%+ profitable-close rate.",
     minimumSameSideTraders: 2,
-    entryWindowMinutes: CONSENSUS_ENTRY_WINDOW_MINUTES,
+    entryWindowMinutes: null,
     candidateCount: ranked.length,
     discoveredCandidateCount: discoveredCandidates.length,
     settlementRecordCandidateCount: rankingRecordCandidates.length,
     consensusHolderRecordCandidateCount: consensusWallets.size,
     totalRecordCandidateCount: recordCandidates.length,
     scanDiagnostics: lastConsensusDiagnostics,
-    candidatePoolBasis: "Unique traders collected from Polymarket public Data API v2 PnL and volume leaderboards, following opaque cursors across categories and time periods, targeting 5,000 wallets. This is a broad leaderboard-derived sample, not all platform traders. Consensus market overlap counts open positions of at least $1 and retains same-outcome holders; upcoming markets within 30 days are eligible.",
+    candidatePoolBasis: "Unique traders collected from Polymarket public Data API v2 PnL and volume leaderboards, following opaque cursors across categories and time periods, targeting 5,000 wallets. This is a broad leaderboard-derived sample, not all platform traders. Consensus market overlap counts active same-outcome positions of at least $1; Gamma-closed markets are excluded, upcoming dates within 30 days are retained, and active markets with unavailable or stale dates remain visible as undated.",
     resolutionWindowHours: CONSENSUS_WINDOW_HOURS,
     entryActivityWindowHours: null,
     recordBasis: "Consensus traders are filtered by the selected period's closed-market profitable-close record (90%+ and at least 5 closed markets for weekly; 10 for monthly). Verified settlement data is retained separately and never substituted for period metrics.",
@@ -1320,8 +1409,8 @@ async function main() {
   const consensusCandidatePool = [...unique.values()];
   const consensusScan = await getBroadConsensusMarkets(consensusCandidatePool, nowMs, {});
   const activePositions = consensusScan.activePositionsByWallet;
-  const consensusGroups = consensusScan.holderGroups;
-  console.log("Broad consensus groups: " + consensusGroups.length);
+  const consensusGroups = await enrichConsensusMarkets(consensusScan.holderGroups, nowMs);
+  console.log("Broad consensus groups after Gamma enrichment: " + consensusGroups.length);
   // Consensus members must come from the actual record-ranked candidates for
   // the selected period, not merely anyone in the raw P&L candidate fetch.
   // IMPORTANT: consensus membership must use the full discovered candidate pool,
