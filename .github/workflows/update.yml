@@ -57,6 +57,13 @@ jobs:
 
             if (file === "week.json" || file === "month.json") {
               const leaders = Array.isArray(parsed.leaders) ? parsed.leaders : [];
+              if (leaders.length < 100) {
+                throw new Error(`${file} has only ${leaders.length} leaders; expected 100 before publishing`);
+              }
+              const uniqueWallets = new Set(leaders.map(row => String(row.wallet || "").toLowerCase()).filter(Boolean));
+              if (uniqueWallets.size !== leaders.length) {
+                throw new Error(`${file} contains duplicate or missing trader wallets`);
+              }
               const misleadingCappedRecords = leaders.filter(row =>
                 row.recordComplete === false &&
                 (row.wins !== null || row.losses !== null || row.winRate !== null)
@@ -69,17 +76,25 @@ jobs:
 
             if (file === "consensus-week.json" || file === "consensus-month.json") {
               const groups = Array.isArray(parsed.consensus) ? parsed.consensus : [];
+              if (groups.length === 0) {
+                throw new Error(`${file} has no shared active-outcome markets; refusing to publish an empty consensus panel`);
+              }
+              const minimumResolved = parsed.pool === "month" ? 10 : 5;
               const invalidGroups = groups.filter(group => {
                 const traders = Array.isArray(group.traders) ? group.traders : [];
                 const wallets = new Set(traders.map(row => String(row.wallet || "").toLowerCase()).filter(Boolean));
                 const invalidTrader = traders.some(row => {
+                  // Shared markets stay visible when holders are unqualified.
+                  // Only traders explicitly marked qualified must pass the
+                  // complete, period-matched 90%+ record validation.
+                  if (row.qualified !== true) return false;
                   const wins = Number(row.wins);
                   const losses = Number(row.losses);
                   const resolved = Number(row.resolvedMarkets);
                   const winRate = Number(row.winRate);
                   return row.recordComplete !== true ||
                     !Number.isFinite(wins) || !Number.isFinite(losses) ||
-                    !Number.isFinite(resolved) || resolved < 5 ||
+                    !Number.isFinite(resolved) || resolved < minimumResolved ||
                     wins + losses !== resolved ||
                     !Number.isFinite(winRate) || winRate < 90 ||
                     Math.abs(winRate - (wins / resolved * 100)) > 0.11;
@@ -90,7 +105,7 @@ jobs:
               if (invalidGroups.length) {
                 throw new Error(`${file} contains ${invalidGroups.length} consensus groups without at least two distinct, unique wallets`);
               }
-              console.log(`${file}: ${groups.length} consensus groups passed distinct-wallet checks`);
+              console.log(`${file}: ${groups.length} shared active-outcome groups passed distinct-wallet and qualified-record checks`);
             }
 
             console.log(`${file}: ${(stat.size / 1024 / 1024).toFixed(2)} MB; valid JSON`);
