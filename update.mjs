@@ -539,19 +539,23 @@ async function getRecentTrades(wallet) {
   });
 
   try {
-    const rows = asArray(await getJson(`${API}/trades?${params}`));
+    const rows = asArray(await getJson(`${API}/v2/trades?${params}`));
 
     return rows
       .filter(row => String(row.side || "").toUpperCase() === "BUY")
       .slice(0, TRADE_LIMIT)
-      .map(row => ({
-        title: row.title || row.question || row.eventSlug || "Unknown market",
-        side: "BUY",
-        outcome: row.outcome || row.outcome_name || "Unknown",
-        amount: num(row.usdcSize ?? row.amount ?? row.size),
-        buyTime: timestampMs(row.timestamp ?? row.createdAt ?? row.time),
-        conditionId: row.conditionId || row.condition_id || null
-      }))
+      .map(row => {
+        const price = num(row.price);
+        const shares = num(row.size);
+        return {
+          title: row.title || row.question || row.event_slug || row.eventSlug || "Unknown market",
+          side: "BUY",
+          outcome: row.outcome || row.outcome_name || "Unknown",
+          amount: num(row.usdc_size ?? row.usdcSize ?? row.amount) ?? (price !== null && shares !== null ? price * shares : null),
+          buyTime: timestampMs(row.timestamp ?? row.created_at ?? row.createdAt ?? row.time),
+          conditionId: row.condition_id || row.conditionId || null
+        };
+      })
       .sort((a, b) => (b.buyTime || 0) - (a.buyTime || 0));
   } catch (error) {
     console.error(`Trades failed for ${wallet}: ${error.message}`);
@@ -961,14 +965,22 @@ function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedM
   const nowMs = Date.now();
   // Positions are active according to the v2 OPEN lifecycle and Gamma closed
   // state. Each holder's performance qualification is shown separately.
-  return holderGroups.filter(group => {
-    const end = marketEndDate(group);
-    const withinWindow = end === null || end === undefined || end === ''
-      ? true
-      : isResolvingSoon(group, nowMs);
-    return withinWindow && group.sameSide >= 2 &&
-      (num(group.totalValue) ?? 0) > 0;
-  }).map(group => {
+  // enrichConsensusMarkets already removes closed markets and dates beyond
+  // the 30-day horizon. Rechecking with isResolvingSoon here used a different
+  // date interpretation and silently discarded valid shared-position groups.
+  const eligibleGroups = holderGroups.filter(group =>
+    group.sameSide >= 2 && (num(group.totalValue) ?? 0) > 0
+  );
+  console.log("Consensus build inputs:", JSON.stringify({
+    enrichedGroups: holderGroups.length,
+    eligibleGroups: eligibleGroups.length,
+    sample: holderGroups.slice(0, 3).map(group => ({
+      conditionId: group.conditionId, sameSide: group.sameSide,
+      traderRows: Array.isArray(group.traders) ? group.traders.length : 0,
+      totalValue: group.totalValue, endDate: group.endDate
+    }))
+  }));
+  return eligibleGroups.map(group => {
     const traders = group.traders.map(holder => {
       const wallet = String(holder.wallet || '').toLowerCase();
       const candidate = candidateMap.get(wallet) || {};
