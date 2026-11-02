@@ -847,8 +847,10 @@ function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedM
   return holderGroups.filter(group => {
     const end = marketEndDate(group);
     const hasEnd = end !== null && end !== undefined && end !== '';
-    return group.sameSide >= 2 && !hasExpiredEndDate(group, nowMs) &&
-      (!hasEnd || isResolvingSoon(group, nowMs)) && (num(group.totalValue) ?? 0) > 0;
+    // These are currently OPEN positions. Gamma endDate can be stale, missing,
+    // or represent an event start rather than market resolution; do not erase
+    // genuine shared holdings based on that unreliable field.
+    return group.sameSide >= 2 && (num(group.totalValue) ?? 0) > 0;
   }).map(group => {
     const traders = group.traders.map(holder => {
       const wallet = String(holder.wallet || '').toLowerCase();
