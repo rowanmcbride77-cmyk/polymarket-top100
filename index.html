@@ -160,11 +160,11 @@ dialog::backdrop{background:#000b}
         <div id="leaderModeNote" style="display:none"></div>
         <div class="table-wrap">
           <table>
-            <thead><tr id="leaderHeader"><th>#</th><th>Trader</th><th>Wins–Losses</th><th>Win Rate</th><th>Period P&amp;L</th><th>Volume</th></tr></thead>
+            <thead><tr id="leaderHeader"><th>#</th><th>Trader</th><th>Profitable–unprofitable closes</th><th>Close rate</th><th>Period P&amp;L</th><th>Volume</th></tr></thead>
             <tbody id="leadersBody"><tr><td colspan="6" class="loading">Loading traders…</td></tr></tbody>
           </table>
         </div>
-        <div class="source-note">Resolved win–loss counts include only positions whose last event was at or after market resolution. Positions closed before resolution are tracked separately as early exits. If settlement verification is unavailable, the displayed record falls back to the historical closed-position profitability estimate; it is not guaranteed to equal true settlement wins.</div>
+        <div class="source-note">Records are complete period-scoped profitable/unprofitable market closes, calculated by netting realized P&amp;L across each market’s outcome positions. This is not a verified prediction win rate: early exits affect the result and are not counted as settled wins/losses.</div>
         <button class="link-button" id="leadersMore" onclick="toggleLeaders()">View all traders →</button>
       </section>
 
@@ -217,7 +217,7 @@ dialog::backdrop{background:#000b}
             </select>
           </label>
         </div>
-        <div class="source-note" id="consensusQualificationNote">Shared positions among 2+ traders. Each trader’s 90%+ / minimum-trade qualification is shown separately.</div>
+        <div class="source-note" id="consensusQualificationNote">Shared same-outcome positions among 2+ discovered traders. Period close rate is net realized P&amp;L per market; it is not a verified settlement win rate and can include early exits.</div>
         <div class="table-wrap">
           <table>
             <thead><tr><th>#</th><th>Market</th><th>Side</th><th>Traders</th><th>Combined Value</th><th>Resolves</th></tr></thead>
@@ -317,21 +317,20 @@ function walletOf(trader) {
 }
 
 function recordOf(trader) {
-  // Only verified market settlements count as prediction wins/losses.
-  // Positive/negative realized P&L on a closed position can reflect an early
-  // exit and must never be displayed as a market record.
-  if (trader?.settlementRecordComplete !== true) return null;
-  const wins = num(trader?.settlementWins);
-  const losses = num(trader?.settlementLosses);
+  // These are complete period-scoped profitable/unprofitable market closes,
+  // not prediction wins verified against settlement. The basis is disclosed
+  // beside the table so early exits are not mistaken for settlement results.
+  if (trader?.recordComplete !== true) return null;
+  const wins = num(trader?.wins);
+  const losses = num(trader?.losses);
   if (wins === null || losses === null || wins < 0 || losses < 0) return null;
   const total = wins + losses;
-  return {wins, losses, total, rate:total ? wins / total * 100 : null, verified:true};
+  return {wins, losses, total, rate:total ? wins / total * 100 : null, verified:false};
 }
 
 function recordText(trader) {
   const record = recordOf(trader);
-  const suffix = trader?.settlementRecordComplete === false ? "+" : "";
-  return record ? `${record.wins}${suffix}–${record.losses}${suffix}` : "N/A";
+  return record ? `${record.wins}–${record.losses}` : "N/A";
 }
 
 function avatar(trader) {
@@ -459,7 +458,7 @@ async function loadConsensusData() {
   const pool = $("consensusPool").value;
   $("consensusBody").innerHTML = `<tr><td colspan="6" class="loading">Loading ${esc(pool)} consensus pool…</td></tr>`;
   const horizon = Number($("recency").value || 168);
-  $("consensusPeriod").textContent = (pool === "week" ? "Weekly traders" : "30-day traders") + " · " + (horizon === 25 ? "25h" : horizon === 72 ? "3 days" : "7 days");
+  $("consensusPeriod").textContent = (pool === "week" ? "Weekly traders" : "30-day traders") + " · " + (horizon === 25 ? "25h" : horizon === 72 ? "3 days" : horizon === 720 ? "30 days" : "7 days");
   const filename = CONSENSUS_FILES[pool];
   try {
     let result = null;
