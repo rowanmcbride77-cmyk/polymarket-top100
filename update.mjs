@@ -82,6 +82,8 @@ async function getJson(url, attempts = 4) {
 function asArray(value) {
   if (Array.isArray(value)) return value;
   if (Array.isArray(value?.data)) return value.data;
+  if (Array.isArray(value?.data?.leaderboard)) return value.data.leaderboard;
+  if (Array.isArray(value?.leaderboard)) return value.leaderboard;
   if (Array.isArray(value?.results)) return value.results;
   return [];
 }
@@ -109,6 +111,7 @@ function walletOf(row) {
     row?.proxyWallet ??
     row?.proxy_wallet ??
     row?.user_id ??
+    row?.userId ??
     row?.address ??
     row?.wallet ??
     ""
@@ -129,7 +132,9 @@ function normalizeLeader(row, index) {
       row.pseudonym ||
       (wallet ? `${wallet.slice(0, 8)}…${wallet.slice(-4)}` : "Unknown"),
     pnl: num(row.pnl),
-    volume: num(row.vol ?? row.volume),
+    // v2's bare volume is shares; only publish a dollar figure when the API
+    // explicitly supplies a USDC-denominated field.
+    volume: num(row.volume_usdc ?? row.volumeUsdc ?? row.vol ?? null),
     wins: null,
     losses: null,
     winRate: null,
@@ -292,54 +297,65 @@ async function mapLimit(items, limit, callback) {
 }
 
 async function getCandidates(period) {
-  // Build a broader discovery pool from public trader leaderboards across
-  // categories and time windows. Each individual leaderboard is capped at
-  // offset 1,000, so no single board can provide 5,000 wallets.
+  // Data API v1 /leaderboard was retired on 2026-10-24. The v2 board is
+  // cursor-paginated and uses user_id/user_name plus snake_case query fields.
+  // Walk multiple categories, windows and sort orders to build a broad,
+  // deduplicated public trader pool without sending the removed offset param.
   const byWallet = new Map();
   const categories = [
-    "OVERALL", "SPORTS", "POLITICS", "CRYPTO", "ESPORTS", "CULTURE",
-    "MENTIONS", "WEATHER", "ECONOMICS", "TECH", "FINANCE"  ];
+    "OVERALL", "SPORTS", "POLITICS", "CRYPTO", "CULTURE",
+    "MENTIONS", "WEATHER", "ECONOMICS", "TECH", "FINANCE"
+  ];
   const timePeriods = [...new Set([period.api, "DAY", "WEEK", "MONTH", "ALL"])];
   const target = CANDIDATE_COUNT;
+  const pageSize = 1000;
+  let boardRequests = 0;
 
   discovery:
   for (const timePeriod of timePeriods) {
     for (const category of categories) {
-      for (const orderBy of ["PNL", "VOL"]) {
-        for (let offset = 0; offset <= LEADERBOARD_PAGE_COUNT; offset += PAGE_SIZE) {
+      for (const sortBy of ["PNL", "VOLUME"]) {
+        let cursor = null;
+        let pageNo = 0;
+        do {
           const params = new URLSearchParams({
             category,
-            timePeriod,
-            orderBy,
-            limit: String(PAGE_SIZE),
-            offset: String(offset)
+            time_period: timePeriod,
+            sort_by: sortBy,
+            limit: String(pageSize)
           });
-          const rows = asArray(await getJson(`${API}/v1/leaderboard?${params}`));
+          if (cursor) params.set("cursor", cursor);
+          const response = await getJson(`${API}/v2/leaderboard?${params}`);
+          const rows = asArray(response);
+          boardRequests++;
+          pageNo++;
+
           if (!rows.length) break;
           for (let i = 0; i < rows.length; i++) {
-            const trader = normalizeLeader(rows[i], offset + i + 1);
-            if (!trader.wallet) continue;
+            const trader = normalizeLeader(rows[i], i + 1);
+            if (!trader.wallet || !/^0x[a-f0-9]{40}$/i.test(trader.wallet)) continue;
             const existing = byWallet.get(trader.wallet);
-            if (existing) {
-              existing.pnl = trader.pnl ?? existing.pnl;
-              existing.volume = trader.volume ?? existing.volume;
-              if ((!existing.name || existing.name === "Unknown") && trader.name) existing.name = trader.name;
-            } else {
+            if (!existing) {
               byWallet.set(trader.wallet, trader);
+            } else if ((!existing.name || existing.name === "Unknown") && trader.name) {
+              existing.name = trader.name;
             }
           }
+
           if (byWallet.size >= target) break discovery;
-          if (rows.length < PAGE_SIZE || offset >= LEADERBOARD_PAGE_COUNT) break;
-        }
+          const pagination = response?.pagination ?? response?.data?.pagination ?? {};
+          cursor = pagination.next_cursor ?? pagination.nextCursor ?? null;
+          if (pagination.has_more !== true || !cursor || pageNo >= 10) break;
+        } while (cursor);
       }
     }
   }
 
   const candidates = [...byWallet.values()];
-  console.log(`${period.key}: discovered ${candidates.length} unique traders across public leaderboard categories and periods (target ${target})`);
+  console.log(`${period.key}: discovered ${candidates.length} unique traders from ${boardRequests} v2 leaderboard pages (target ${target})`);
   if (candidates.length < target) {
     throw new Error(
-      `${period.key}: only discovered ${candidates.length} unique trader wallets; required ${target}. Refusing to publish a successful update with an undersized candidate pool.`
+      `${period.key}: v2 leaderboard discovery returned only ${candidates.length} unique trader wallets across ${boardRequests} pages; required ${target}. Refusing to publish incomplete data.`
     );
   }
   return candidates.slice(0, target);
@@ -766,6 +782,11 @@ async function getBroadConsensusMarkets(knownTraders, nowMs, activePositions) {
     const trader = traderByWallet.get(wallet);
     if (!trader) continue;
     for (const position of positions) {
+      // OPEN is a superset in Data API v2 and includes redeemable settled
+      // winners. Consensus must only count genuinely active, non-dust holdings.
+      if (!isActivePosition(position, nowMs)) continue;
+      const lastEvent = timestampMs(position.lastEventAt ?? position.last_event_at);
+      if (lastEvent === null || lastEvent < nowMs - CONSENSUS_ENTRY_WINDOW_MINUTES * 60 * 1000) continue;
       openPositionsSeen++;
       const conditionId = String(position.conditionId ?? position.condition_id ?? "").toLowerCase();
       const side = String(position.outcome ?? position.outcome_name ?? "").trim();
@@ -842,15 +863,17 @@ async function getBroadConsensusMarkets(knownTraders, nowMs, activePositions) {
 function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedMarkets = MIN_TRADER_RESOLVED_MARKETS) {
   const candidateMap = new Map(candidates.map(trader => [String(trader.wallet || '').toLowerCase(), trader]));
   const nowMs = Date.now();
-  // Preserve genuine shared-position markets. Performance qualification is
-  // attached to each trader instead of suppressing the entire market.
+  // Only publish markets that are upcoming (or have no usable end date),
+  // active, and backed by at least two independently qualified traders.
   return holderGroups.filter(group => {
     const end = marketEndDate(group);
-    const hasEnd = end !== null && end !== undefined && end !== '';
-    // These are currently OPEN positions. Gamma endDate can be stale, missing,
-    // or represent an event start rather than market resolution; do not erase
-    // genuine shared holdings based on that unreliable field.
-    return group.sameSide >= 2 && (num(group.totalValue) ?? 0) > 0;
+    const withinWindow = end === null || end === undefined || end === ''
+      ? true
+      : isResolvingSoon(group, nowMs);
+    const recentActivity = num(group.newestBuy) !== null &&
+      num(group.newestBuy) >= nowMs - CONSENSUS_ENTRY_WINDOW_MINUTES * 60 * 1000;
+    return withinWindow && recentActivity && group.sameSide >= 2 &&
+      (num(group.totalValue) ?? 0) > 0;
   }).map(group => {
     const traders = group.traders.map(holder => {
       const wallet = String(holder.wallet || '').toLowerCase();
@@ -868,9 +891,10 @@ function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedM
         earlyExitPositions: num(record.earlyExitPositions), recordComplete: record.recordComplete === true,
         qualified, recordBasis: qualified ? 'Meets the selected period performance threshold' : 'Shared-position holder; performance record incomplete or below threshold' };
     });
-    return { ...group, traders, sameSide: traders.length,
-      qualifiedTraders: traders.filter(trader => trader.qualified).length,
-      totalValue: traders.reduce((sum, trader) => sum + (num(trader.amount) ?? 0), 0) };
+    const qualifiedTraders = traders.filter(trader => trader.qualified);
+    return { ...group, traders: qualifiedTraders, sameSide: qualifiedTraders.length,
+      qualifiedTraders: qualifiedTraders.length,
+      totalValue: qualifiedTraders.reduce((sum, trader) => sum + (num(trader.amount) ?? 0), 0) };
   }).filter(group => group.sameSide >= 2)
     .sort((a, b) => b.sameSide - a.sameSide || b.qualifiedTraders - a.qualifiedTraders ||
       b.totalValue - a.totalValue || (b.newestBuy || 0) - (a.newestBuy || 0))
@@ -1125,6 +1149,9 @@ function makeOutput(period, ranked, sportsRanked, activePositions, tradeRows, no
 }
 
 async function writeJsonUnderLimit(filename, output) {
+  if (!output || !Array.isArray(output.leaders) || output.leaders.length === 0) {
+    throw new Error(`${filename}: refusing to write empty or missing leaderboard data`);
+  }
   const compact = () => JSON.stringify(output);
 
   let json = compact();
@@ -1166,6 +1193,10 @@ async function writeJsonUnderLimit(filename, output) {
     bytes = Buffer.byteLength(json, "utf8");
   }
 
+  const parsedCheck = JSON.parse(json);
+  if (!Array.isArray(parsedCheck.leaders) || parsedCheck.leaders.length === 0) {
+    throw new Error(`${filename}: serialized output failed the non-empty leaderboard check`);
+  }
   const tempFilename = `${filename}.tmp`;
   await fs.writeFile(tempFilename, json, "utf8");
   await fs.rename(tempFilename, filename);
@@ -1253,7 +1284,7 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     consensusHolderRecordCandidateCount: consensusWallets.size,
     totalRecordCandidateCount: recordCandidates.length,
     scanDiagnostics: lastConsensusDiagnostics,
-    candidatePoolBasis: "Unique traders collected from Polymarket public Data API v1 overall PnL and volume leaderboards, paginating each board through its supported offset ceiling (0–1,000), targeting 5,000 wallets. This is a broad leaderboard-derived sample, not all platform traders. Consensus market overlap counts open positions of at least $1 and retains same-outcome holders; upcoming markets within 30 days are eligible.",
+    candidatePoolBasis: "Unique traders collected from Polymarket public Data API v2 PnL and volume leaderboards, following opaque cursors across categories and time periods, targeting 5,000 wallets. This is a broad leaderboard-derived sample, not all platform traders. Consensus market overlap counts open positions of at least $1 and retains same-outcome holders; upcoming markets within 30 days are eligible.",
     resolutionWindowHours: CONSENSUS_WINDOW_HOURS,
     entryActivityWindowHours: null,
     recordBasis: "Consensus traders are filtered by the selected period's closed-market profitable-close record (90%+ and at least 5 closed markets for weekly; 10 for monthly). Verified settlement data is retained separately and never substituted for period metrics.",
