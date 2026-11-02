@@ -151,7 +151,8 @@ async function getResolvedRecord(wallet, period, nowMs, maxPositions = RANKING_R
   // totals look like recent-period trade counts.
   const periodDays = String(period?.api || period || "").toUpperCase() === "MONTH" ? 30 : 7;
   const cutoffMs = nowMs - periodDays * 24 * 60 * 60 * 1000;
-  const seen = new Set();
+  const seenPositions = new Set();
+  const marketPnl = new Map();
   let wins = 0;
   let losses = 0;
   let realizedPnlTotal = 0;
@@ -199,10 +200,13 @@ async function getResolvedRecord(wallet, period, nowMs, maxPositions = RANKING_R
       const condition = String(row.condition_id ?? row.conditionId ?? row.market ?? "");
       const outcome = String(row.outcome_index ?? row.outcomeIndex ?? row.outcome ?? "");
       const key = asset || `${condition}|${outcome}`;
-      if (!key || seen.has(key)) continue;
-      seen.add(key);
+      if (!key || seenPositions.has(key)) continue;
+      seenPositions.add(key);
       realizedPnlTotal += pnl;
-      if (pnl > 0) wins++; else losses++;
+      // Count one result per market, not one result per outcome-token row.
+      // Both outcome positions in the same condition are netted together.
+      const marketKey = condition || key;
+      marketPnl.set(marketKey, (marketPnl.get(marketKey) || 0) + pnl);
       if (isSportsMarket(row)) {
         if (pnl > 0) sportsWins++; else sportsLosses++;
       }
@@ -223,8 +227,12 @@ async function getResolvedRecord(wallet, period, nowMs, maxPositions = RANKING_R
     }
   }
 
+  for (const marketPnlValue of marketPnl.values()) {
+    if (marketPnlValue > 0.000001) wins++;
+    else if (marketPnlValue < -0.000001) losses++;
+  }
   const resolvedMarkets = wins + losses;
-  // A capped sample is not a complete record. Never publish its 1,000–0
+  // A capped sample is not a complete record. Never publish its partial
   // counts or 100% rate as if they were a trader's true record.
   const publishableRecord = recordComplete && resolvedMarkets > 0;
   return {
@@ -242,8 +250,8 @@ async function getResolvedRecord(wallet, period, nowMs, maxPositions = RANKING_R
     recordComplete,
     recordLimit: maxPositions,
     recordBasis: recordComplete
-      ? `Closed-position sample from the last ${periodDays} days scanned; positive/negative realized P&L proxy, not verified market settlement`
-      : `INCOMPLETE sample of up to ${maxPositions} closed positions from the last ${periodDays} days; positive/negative realized P&L proxy, not verified market settlement`
+      ? `Complete closed-position scan from the last ${periodDays} days; one profitable/unprofitable result per market using net realized P&L. This is a close-profitability proxy, not verified settlement accuracy; early exits count.`
+      : `INCOMPLETE sample of closed positions from the last ${periodDays} days; market-level profitable/unprofitable counts are withheld. This is a close-profitability proxy, not verified settlement accuracy.`
   };
 }
 async function attachRecords(traders, period, nowMs, maxPositions = RANKING_RECORD_LIMIT, cache = null) {
@@ -1149,6 +1157,36 @@ async function getSettlementStats(wallet, period, nowMs, limit = 250) {
   };
 }
 const settlementStatsCache = new Map();
+async function getPeriodVolume(wallet, period, nowMs) {
+  const periodDays = String(period?.api || period || "").toUpperCase() === "MONTH" ? 30 : 7;
+  const cutoffMs = nowMs - periodDays * 24 * 60 * 60 * 1000;
+  const params = new URLSearchParams({
+    user: wallet,
+    start: String(Math.floor(cutoffMs / 1000)),
+    end: String(Math.floor(nowMs / 1000))
+  });
+  const response = await getJson(`${API}/v2/user-volume?${params}`);
+  const data = response?.data ?? response ?? {};
+  return {
+    volume: num(data.volume_usdc),
+    volumeShares: num(data.volume),
+    volumeTradeCount: num(data.trade_count),
+    volumeBasis: `Polymarket Data API v2 user-volume volume_usdc over the last ${periodDays} UTC days`
+  };
+}
+
+async function attachPeriodVolumes(traders, period, nowMs) {
+  return await mapLimit(traders, CONCURRENCY, async trader => {
+    try {
+      const stats = await getPeriodVolume(String(trader.wallet || "").toLowerCase(), period, nowMs);
+      return { ...trader, ...stats };
+    } catch (error) {
+      console.warn("Period USD volume unavailable for " + trader.wallet + ":", error.message);
+      return { ...trader, volume: null, volumeShares: null, volumeTradeCount: null, volumeBasis: "Unavailable from Data API v2 user-volume" };
+    }
+  });
+}
+
 async function attachSettlementStats(traders, period, nowMs) {
   return await mapLimit(traders, 4, async trader => {
     try {
@@ -1346,6 +1384,7 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
   );
   // Enrich only the visible Top 100 with verified settlement outcomes and a
   // separate count of positions whose last event preceded market resolution.
+  output.leaders = await attachPeriodVolumes(output.leaders, period, nowMs);
   output.leaders = await attachSettlementStats(output.leaders, period, nowMs);
 
   await writeJsonUnderLimit(`${period.key}.json`, output);
