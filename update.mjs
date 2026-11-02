@@ -1125,6 +1125,7 @@ function makeOutput(period, ranked, sportsRanked, activePositions, tradeRows, no
       rank: trader.rank ?? null,
       pnl: trader.pnl ?? trader.profit ?? null,
       volume: trader.volume ?? trader.vol ?? null,
+      volumeUsd: trader.periodVolumeUsd ?? null,
       wins: trader.wins ?? null,
       losses: trader.losses ?? null,
       winRate: trader.winRate ?? null,
@@ -1189,6 +1190,36 @@ async function writeJsonUnderLimit(filename, output) {
   );
 }
 
+async function getPeriodVolume(wallet, period, nowMs) {
+  const days = String(period?.api || period || "").toUpperCase() === "MONTH" ? 30 : 7;
+  const params = new URLSearchParams({
+    user: wallet,
+    start: String(Math.floor((nowMs - days * 24 * 60 * 60 * 1000) / 1000)),
+    end: String(Math.floor(nowMs / 1000))
+  });
+  const response = await getJson(`${API}/v2/user-volume?${params}`);
+  const volume = response?.data || {};
+  return {
+    periodVolumeUsd: num(volume.volume_usdc),
+    periodVolumeShares: num(volume.volume),
+    periodTradeCount: num(volume.trade_count)
+  };
+}
+
+async function attachPeriodVolumes(traders, period, nowMs) {
+  const rows = await mapLimit(traders, CONCURRENCY, async trader => {
+    try {
+      return [String(trader.wallet || "").toLowerCase(), await getPeriodVolume(trader.wallet, period, nowMs)];
+    } catch (error) {
+      console.warn(`USD volume lookup failed for ${trader.name}: ${error.message}`);
+      return [String(trader.wallet || "").toLowerCase(), {
+        periodVolumeUsd: null, periodVolumeShares: null, periodTradeCount: null
+      }];
+    }
+  });
+  return Object.fromEntries(rows.filter(Boolean));
+}
+
 async function buildPeriod(period, discoveredCandidates, activePositions, nowMs, fullRecordCache, consensusGroups) {
   // Rank the leaderboard using a bounded top-wallet history sample, but verify
   // every wallet actually present in a discovered consensus market. Previously
@@ -1225,9 +1256,17 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
   // traders can exceed it. Re-scan only the visible Top 100 without a cap so
   // their period close records are complete before the UI publishes them.
   const completeLeaderRecords = await attachRecords(leaders, period, nowMs, null);
-  const displayRecords = { ...records, ...completeLeaderRecords };
+  const periodVolumes = await attachPeriodVolumes(leaders, period, nowMs);
+  const completeDisplayRecords = Object.fromEntries(leaders.map(trader => {
+    const wallet = String(trader.wallet || "").toLowerCase();
+    return [wallet, {
+      ...(completeLeaderRecords[wallet] || {}),
+      ...(periodVolumes[wallet] || {})
+    }];
+  }));
+  const displayRecords = { ...records, ...completeDisplayRecords };
   const displayRanked = ranked.map(trader => {
-    const complete = completeLeaderRecords[String(trader.wallet || "").toLowerCase()];
+    const complete = completeDisplayRecords[String(trader.wallet || "").toLowerCase()];
     return complete ? { ...trader, ...complete } : trader;
   });
   // Detailed settlement verification is only needed for the visible Top 100.
