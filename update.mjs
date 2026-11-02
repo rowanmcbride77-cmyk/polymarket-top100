@@ -13,7 +13,7 @@ const PERIODS = [
 const CANDIDATE_COUNT = 5000;
 const PROCESS_CANDIDATE_COUNT = 5000;
 const RECORD_SCAN_CANDIDATE_COUNT = 1000;
-const LEADERBOARD_PAGE_COUNT = 1000;
+const MAX_LEADERBOARD_PAGES = 21;
 const MIN_CONSENSUS_WIN_RATE = 90;
 const LEADER_COUNT = 100;
 const PAGE_SIZE = 50;
@@ -146,7 +146,8 @@ async function getResolvedRecord(wallet, period, nowMs, maxPositions = RANKING_R
   // totals look like recent-period trade counts.
   const periodDays = String(period?.api || period || "").toUpperCase() === "MONTH" ? 30 : 7;
   const cutoffMs = nowMs - periodDays * 24 * 60 * 60 * 1000;
-  const seen = new Set();
+  const seenPositions = new Set();
+  const marketPnl = new Map();
   let wins = 0;
   let losses = 0;
   let realizedPnlTotal = 0;
@@ -194,10 +195,13 @@ async function getResolvedRecord(wallet, period, nowMs, maxPositions = RANKING_R
       const condition = String(row.condition_id ?? row.conditionId ?? row.market ?? "");
       const outcome = String(row.outcome_index ?? row.outcomeIndex ?? row.outcome ?? "");
       const key = asset || `${condition}|${outcome}`;
-      if (!key || seen.has(key)) continue;
-      seen.add(key);
+      if (!key || seenPositions.has(key)) continue;
+      seenPositions.add(key);
       realizedPnlTotal += pnl;
-      if (pnl > 0) wins++; else losses++;
+      // Count one result per market, not one result per outcome-token row.
+      // Both outcome positions in the same condition are netted together.
+      const marketKey = condition || key;
+      marketPnl.set(marketKey, (marketPnl.get(marketKey) || 0) + pnl);
       if (isSportsMarket(row)) {
         if (pnl > 0) sportsWins++; else sportsLosses++;
       }
@@ -218,8 +222,12 @@ async function getResolvedRecord(wallet, period, nowMs, maxPositions = RANKING_R
     }
   }
 
+  for (const marketPnlValue of marketPnl.values()) {
+    if (marketPnlValue > 0.000001) wins++;
+    else if (marketPnlValue < -0.000001) losses++;
+  }
   const resolvedMarkets = wins + losses;
-  // A capped sample is not a complete record. Never publish its 1,000–0
+  // A capped sample is not a complete record. Never publish its partial
   // counts or 100% rate as if they were a trader's true record.
   const publishableRecord = recordComplete && resolvedMarkets > 0;
   return {
@@ -237,8 +245,8 @@ async function getResolvedRecord(wallet, period, nowMs, maxPositions = RANKING_R
     recordComplete,
     recordLimit: maxPositions,
     recordBasis: recordComplete
-      ? `Closed-position sample from the last ${periodDays} days scanned; positive/negative realized P&L proxy, not verified market settlement`
-      : `INCOMPLETE sample of up to ${maxPositions} closed positions from the last ${periodDays} days; positive/negative realized P&L proxy, not verified market settlement`
+      ? `Complete closed-position scan from the last ${periodDays} days; one profitable/unprofitable result per market using net realized P&L. This is a close-profitability proxy, not verified settlement accuracy; early exits count.`
+      : `INCOMPLETE sample of closed positions from the last ${periodDays} days; market-level profitable/unprofitable counts are withheld. This is a close-profitability proxy, not verified settlement accuracy.`
   };
 }
 async function attachRecords(traders, period, nowMs, maxPositions = RANKING_RECORD_LIMIT, cache = null) {
@@ -292,32 +300,35 @@ async function mapLimit(items, limit, callback) {
 }
 
 async function getCandidates(period) {
-  // Build a broader discovery pool from public trader leaderboards across
-  // categories and time windows. Each individual leaderboard is capped at
-  // offset 1,000, so no single board can provide 5,000 wallets.
+  // Data API v1 was retired on 2026-10-24. Use v2's data envelope,
+  // snake_case fields and opaque cursor pagination; offset is not supported.
   const byWallet = new Map();
   const categories = [
-    "OVERALL", "SPORTS", "POLITICS", "CRYPTO", "ESPORTS", "CULTURE",
-    "MENTIONS", "WEATHER", "ECONOMICS", "TECH", "FINANCE"  ];
+    "overall", "sports", "politics", "crypto", "esports", "culture",
+    "mentions", "weather", "economics", "tech", "finance"
+  ];
   const timePeriods = [...new Set([period.api, "DAY", "WEEK", "MONTH", "ALL"])];
   const target = CANDIDATE_COUNT;
 
   discovery:
   for (const timePeriod of timePeriods) {
     for (const category of categories) {
-      for (const orderBy of ["PNL", "VOL"]) {
-        for (let offset = 0; offset <= LEADERBOARD_PAGE_COUNT; offset += PAGE_SIZE) {
+      for (const orderBy of ["PNL", "VOLUME"]) {
+        let cursor = null;
+        let page = 0;
+        while (page < MAX_LEADERBOARD_PAGES) {
           const params = new URLSearchParams({
             category,
-            timePeriod,
-            orderBy,
-            limit: String(PAGE_SIZE),
-            offset: String(offset)
+            time_period: timePeriod.toLowerCase(),
+            sort_by: orderBy,
+            limit: String(PAGE_SIZE)
           });
-          const rows = asArray(await getJson(`${API}/v1/leaderboard?${params}`));
+          if (cursor) params.set("cursor", cursor);
+          const response = await getJson(`${API}/v2/leaderboard?${params}`);
+          const rows = asArray(response);
           if (!rows.length) break;
           for (let i = 0; i < rows.length; i++) {
-            const trader = normalizeLeader(rows[i], offset + i + 1);
+            const trader = normalizeLeader(rows[i], page * PAGE_SIZE + i + 1);
             if (!trader.wallet) continue;
             const existing = byWallet.get(trader.wallet);
             if (existing) {
@@ -329,14 +340,17 @@ async function getCandidates(period) {
             }
           }
           if (byWallet.size >= target) break discovery;
-          if (rows.length < PAGE_SIZE || offset >= LEADERBOARD_PAGE_COUNT) break;
+          const nextCursor = response?.pagination?.next_cursor ?? null;
+          page++;
+          if (!nextCursor) break;
+          cursor = String(nextCursor);
         }
       }
     }
   }
 
   const candidates = [...byWallet.values()];
-  console.log(`${period.key}: discovered ${candidates.length} unique traders across public leaderboard categories and periods (target ${target})`);
+  console.log(`${period.key}: discovered ${candidates.length} unique traders across public v2 leaderboard categories and periods (target ${target})`);
   if (candidates.length < target) {
     throw new Error(
       `${period.key}: only discovered ${candidates.length} unique trader wallets; required ${target}. Refusing to publish a successful update with an undersized candidate pool.`
@@ -344,7 +358,6 @@ async function getCandidates(period) {
   }
   return candidates.slice(0, target);
 }
-
 function rankSportsCandidates(candidates, records = {}) {
   const rows = candidates.map(trader => ({ ...trader, ...(records[trader.wallet] || {}) }));
   return rows.filter(trader => (trader.sportsResolvedMarkets || 0) >= 5 && trader.sportsWinRate !== null)
@@ -845,12 +858,10 @@ function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedM
   // Preserve genuine shared-position markets. Performance qualification is
   // attached to each trader instead of suppressing the entire market.
   return holderGroups.filter(group => {
-    const end = marketEndDate(group);
-    const hasEnd = end !== null && end !== undefined && end !== '';
-    // These are currently OPEN positions. Gamma endDate can be stale, missing,
-    // or represent an event start rather than market resolution; do not erase
-    // genuine shared holdings based on that unreliable field.
-    return group.sameSide >= 2 && (num(group.totalValue) ?? 0) > 0;
+    // Position rows are already filtered to an actual positive share balance
+    // or positive current value. Do not discard a shared side merely because
+    // its mark-to-market value is zero (e.g. a near-zero-priced outcome).
+    return group.sameSide >= 2;
   }).map(group => {
     const traders = group.traders.map(holder => {
       const wallet = String(holder.wallet || '').toLowerCase();
@@ -1095,7 +1106,7 @@ function makeOutput(period, ranked, sportsRanked, activePositions, tradeRows, no
     period: period.key,
     rankingBasis:
       `General leaderboard ranks the discovered candidate set using the existing period ranking. Closed-position profitability is a realized-P&L proxy, not verified settlement accuracy and not proof that a trader never exits early. Candidate discovery is limited to the discovered public leaderboard universe.`,
-    recordBasis: "IMPORTANT: complete profitable/unprofitable close counts are inferred from realized P&L, not verified market prediction wins/losses. If a history scan hits its cap, counts and rate are hidden rather than shown as a misleading 1,000–0 sample. Incomplete-record traders fall back to Polymarket period P&L/volume ranking.",
+    recordBasis: "Profitable/unprofitable close counts are computed per market by netting realized P&L across that market's outcome positions. This is a close-profitability proxy, not verified settlement accuracy; early exits affect it. Only complete period scans are published.",
     candidateCount: ranked.length,
     sportsLeaders: sportsRanked.slice(0, LEADER_COUNT),
     minResolvedMarketsForRecordRanking: 10,
@@ -1199,6 +1210,15 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
   const ranked = rankCandidates(candidates, records);
   const sportsRanked = rankSportsCandidates(candidates, records);
   const leaders = ranked.slice(0, LEADER_COUNT);
+  // The 1,000-position cap is useful for broad candidate ranking, but popular
+  // traders can exceed it. Re-scan only the visible Top 100 without a cap so
+  // their period close records are complete before the UI publishes them.
+  const completeLeaderRecords = await attachRecords(leaders, period, nowMs, null);
+  const displayRecords = { ...records, ...completeLeaderRecords };
+  const displayRanked = ranked.map(trader => {
+    const complete = completeLeaderRecords[String(trader.wallet || "").toLowerCase()];
+    return complete ? { ...trader, ...complete } : trader;
+  });
   // Detailed settlement verification is only needed for the visible Top 100.
   // Scanning 1,000 wallets across three API cohorts twice per period delayed the entire publish.
   const settlementRows = await attachSettlementStats(leaders, period, nowMs);
@@ -1217,14 +1237,14 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
 
   const output = makeOutput(
     period,
-    ranked,
+    displayRanked,
     sportsRanked,
     activePositions,
     tradeRows,
     nowMs,
     consensusCandidates,
-    records,
-    leaderRecords,
+    displayRecords,
+    displayRecords,
     consensusGroups,
     settlementRecords
   );
