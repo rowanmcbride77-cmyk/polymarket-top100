@@ -890,7 +890,10 @@ function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedM
     });
     return { ...group, traders, sameSide: traders.length,
       qualifiedTraders: traders.filter(trader => trader.qualified).length,
-      totalValue: traders.reduce((sum, trader) => sum + (num(trader.amount) ?? 0), 0) };
+      // Combined Value is the live mark-to-market value, not the original
+      // entry cost. Entry basis remains available per trader in the detail.
+      totalValue: traders.reduce((sum, trader) => sum + (num(trader.currentValue) ?? 0), 0),
+      totalEntry: traders.reduce((sum, trader) => sum + (num(trader.amount) ?? 0), 0) };
   }).filter(group => group.sameSide >= 2)
     .sort((a, b) => b.sameSide - a.sameSide || b.qualifiedTraders - a.qualifiedTraders ||
       b.totalValue - a.totalValue || (b.newestBuy || 0) - (a.newestBuy || 0))
