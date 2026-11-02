@@ -69,6 +69,9 @@ jobs:
 
             if (file === "consensus-week.json" || file === "consensus-month.json") {
               const groups = Array.isArray(parsed.consensus) ? parsed.consensus : [];
+              if (groups.length === 0) {
+                throw new Error(`${file} has no upcoming shared-outcome markets in the 30-day scan window; refusing to publish empty consensus data`);
+              }
               const invalidGroups = groups.filter(group => {
                 const traders = Array.isArray(group.traders) ? group.traders : [];
                 const wallets = new Set(traders.map(row => String(row.wallet || "").toLowerCase()).filter(Boolean));
