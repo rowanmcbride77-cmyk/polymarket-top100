@@ -317,20 +317,20 @@ function walletOf(trader) {
 }
 
 function recordOf(trader) {
-  // Prefer verified market-settlement results when available; otherwise
-  // restore the existing historical closed-position profitability record.
-  const settled = trader?.settlementRecordComplete === true;
-  const wins = num(settled ? trader?.settlementWins : trader?.wins);
-  const losses = num(settled ? trader?.settlementLosses : trader?.losses);
+  // Only verified market settlements count as prediction wins/losses.
+  // Positive/negative realized P&L on a closed position can reflect an early
+  // exit and must never be displayed as a market record.
+  if (trader?.settlementRecordComplete !== true) return null;
+  const wins = num(trader?.settlementWins);
+  const losses = num(trader?.settlementLosses);
   if (wins === null || losses === null || wins < 0 || losses < 0) return null;
   const total = wins + losses;
-  const suppliedRate = num(settled ? null : trader?.winRate);
-  return {wins, losses, total, rate:suppliedRate !== null ? suppliedRate : (total ? wins / total * 100 : null), verified:settled};
+  return {wins, losses, total, rate:total ? wins / total * 100 : null, verified:true};
 }
 
 function recordText(trader) {
   const record = recordOf(trader);
-  const suffix = trader?.recordComplete === false ? "+" : "";
+  const suffix = trader?.settlementRecordComplete === false ? "+" : "";
   return record ? `${record.wins}${suffix}–${record.losses}${suffix}` : "N/A";
 }
 
