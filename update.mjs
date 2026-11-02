@@ -1189,7 +1189,7 @@ async function writeJsonUnderLimit(filename, output) {
   );
 }
 
-async function buildPeriod(period, discoveredCandidates, activePositions, nowMs, consensusCandidates, fullRecordCache, consensusGroups) {
+async function buildPeriod(period, discoveredCandidates, activePositions, nowMs, fullRecordCache, consensusGroups) {
   // Rank the leaderboard using a bounded top-wallet history sample, but verify
   // every wallet actually present in a discovered consensus market. Previously
   // only the first 1,000 leaderboard wallets received period records, so valid
@@ -1202,6 +1202,14 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
       .map(holder => String(holder.wallet || "").toLowerCase())
       .filter(wallet => candidateByWallet.has(wallet)))
   );
+  // A period tab must only show traders discovered in that same period pool.
+  // The raw position scan is shared across week/month for efficiency, so prune
+  // each market back to the selected pool before counting its shared side.
+  const periodConsensusGroups = consensusGroups.map(group => {
+    const traders = (Array.isArray(group.traders) ? group.traders : [])
+      .filter(holder => candidateByWallet.has(String(holder.wallet || "").toLowerCase()));
+    return traders.length >= 2 ? { ...group, traders, sameSide: traders.length } : null;
+  }).filter(Boolean);
   const recordCandidateMap = new Map(rankingRecordCandidates.map(trader => [String(trader.wallet || "").toLowerCase(), trader]));
   for (const wallet of consensusWallets) {
     if (!recordCandidateMap.has(wallet)) recordCandidateMap.set(wallet, candidateByWallet.get(wallet));
@@ -1245,10 +1253,10 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     activePositions,
     tradeRows,
     nowMs,
-    consensusCandidates,
+    candidates,
     displayRecords,
     displayRecords,
-    consensusGroups,
+    periodConsensusGroups,
     settlementRecords
   );
   // Enrich only the visible Top 100 with verified settlement outcomes and a
@@ -1323,8 +1331,8 @@ async function main() {
   // IMPORTANT: consensus membership must use the full discovered candidate pool,
   // not the tiny record-filtered leaderboard. The latter can make valid overlaps
   // vanish even when the position scan found them.
-  await buildPeriod(PERIODS[0], weekCandidates, activePositions, nowMs, consensusCandidatePool, fullRecordCache, consensusGroups);
-  await buildPeriod(PERIODS[1], monthCandidates, activePositions, nowMs, consensusCandidatePool, fullRecordCache, consensusGroups);
+  await buildPeriod(PERIODS[0], weekCandidates, activePositions, nowMs, fullRecordCache, consensusGroups);
+  await buildPeriod(PERIODS[1], monthCandidates, activePositions, nowMs, fullRecordCache, consensusGroups);
 
   console.log("Polymarket tracker update completed.");
 }
