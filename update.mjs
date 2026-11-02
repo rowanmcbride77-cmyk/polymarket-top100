@@ -861,7 +861,10 @@ function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedM
     // Position rows are already filtered to an actual positive share balance
     // or positive current value. Do not discard a shared side merely because
     // its mark-to-market value is zero (e.g. a near-zero-priced outcome).
-    return group.sameSide >= 2;
+    // Apply the 30-day scan horizon before taking the top 100. Otherwise
+    // far-future markets can fill the file and the browser's 30-day filter
+    // hides every row even though thousands of nearer markets were discovered.
+    return group.sameSide >= 2 && isResolvingSoon(group, nowMs);
   }).map(group => {
     const traders = group.traders.map(holder => {
       const wallet = String(holder.wallet || '').toLowerCase();
