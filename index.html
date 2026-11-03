@@ -217,7 +217,7 @@ dialog::backdrop{background:#000b}
             </select>
           </label>
         </div>
-        <div class="source-note" id="consensusQualificationNote">Shared positions among 2+ traders. Each trader’s 90%+ / minimum-trade qualification is shown separately.</div>
+        <div class="source-note" id="consensusQualificationNote">Only markets with at least 2 qualified traders are shown. Every counted trader must have a complete 7-day or 30-day record of at least 5 closed markets and a 90%+ profitable-close rate.</div>
         <div class="table-wrap">
           <table>
             <thead><tr><th>#</th><th>Market</th><th>Side</th><th>Traders</th><th>Combined Value</th><th>Resolves</th></tr></thead>
@@ -317,18 +317,16 @@ function walletOf(trader) {
 }
 
 function recordOf(trader) {
-  // Prefer true settlement counts when supplied. The current updater also
-  // publishes a complete period-scoped profitable/unprofitable close record.
-  // Do not confuse that proxy with settlement accuracy.
-  const settlementComplete = trader?.settlementRecordComplete === true;
-  const closeComplete = trader?.recordComplete === true;
-  if (!settlementComplete && !closeComplete) return null;
-  const wins = num(settlementComplete ? trader?.settlementWins : trader?.wins);
-  const losses = num(settlementComplete ? trader?.settlementLosses : trader?.losses);
+  // The leaderboard is period-scoped. Lifetime settlement totals must never
+  // replace the selected week's or month's record beside period P&L.
+  if (trader?.recordComplete !== true) return null;
+  const wins = num(trader?.wins);
+  const losses = num(trader?.losses);
+  const resolved = num(trader?.resolvedMarkets);
   if (wins === null || losses === null || wins < 0 || losses < 0) return null;
   const total = wins + losses;
-  if (total <= 0) return null;
-  return {wins, losses, total, rate:wins / total * 100, verified:settlementComplete, basis:settlementComplete ? "settlement" : "profitable-close"};
+  if (total <= 0 || (resolved !== null && resolved !== total)) return null;
+  return {wins, losses, total, rate:wins / total * 100, verified:false, basis:"period-profitable-close"};
 }
 
 function recordText(trader) {
@@ -454,8 +452,15 @@ function trades() {
 }
 
 function consensus() {
-  return Array.isArray(consensusData?.consensus) ? consensusData.consensus :
+  const rows = Array.isArray(consensusData?.consensus) ? consensusData.consensus :
     Array.isArray(consensusData?.consensusMarkets) ? consensusData.consensusMarkets : [];
+  return rows.map(market => {
+    const traders = (Array.isArray(market.traders) ? market.traders : [])
+      .filter(trader => trader?.qualified === true && trader?.recordComplete === true &&
+        num(trader?.winRate) !== null && num(trader.winRate) >= 90 &&
+        num(trader?.resolvedMarkets) !== null && num(trader.resolvedMarkets) >= 5);
+    return {...market, traders, sameSide:traders.length, qualifiedTraders:traders.length};
+  }).filter(market => market.traders.length >= 2);
 }
 
 async function loadConsensusData() {
