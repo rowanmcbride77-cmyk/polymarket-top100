@@ -1115,6 +1115,7 @@ async function getSettlementStats(wallet, period, nowMs, limit = 250) {
     if (market.closed !== true) {
       if (scanStatus === "CLOSED") {
         if (lastEventAt === null) { unclassified++; continue; }
+        if (lastEventAt < cutoffMs || lastEventAt > nowMs) continue;
         classified++;
         earlyExitPositions++;
         const rawIndex = position.outcome_index ?? position.outcomeIndex ?? position.outcome;
