@@ -1416,6 +1416,12 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
   output.leaders = await attachPeriodVolumes(output.leaders, period, nowMs);
   output.leaders = await attachSettlementStats(output.leaders, period, nowMs);
 
+  // Consensus has its own dedicated JSON file. Keep the full array separate
+  // before the leaderboard size guard trims the larger combined payload;
+  // otherwise the guard can empty output.consensus and publish an empty
+  // consensus-week/month file immediately afterward.
+  const consensusRows = Array.isArray(output.consensus) ? output.consensus : [];
+  output.consensus = [];
   await writeJsonUnderLimit(`${period.key}.json`, output);
 
   // Keep consensus data independent from the Top 100 period tabs. These
@@ -1441,11 +1447,11 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     resolutionWindowHours: CONSENSUS_WINDOW_HOURS,
     entryActivityWindowHours: null,
     recordBasis: "Consensus traders are filtered by the selected period's closed-market profitable-close record (90%+ and at least 5 closed markets for weekly; 10 for monthly). Verified settlement data is retained separately and never substituted for period metrics.",
-    consensus: output.consensus
+    consensus: consensusRows
   });
 
   console.log(
-    `${period.key}: ${leaders.length} leaders, ${output.consensus.length} consensus markets`
+    `${period.key}: ${leaders.length} leaders, ${consensusRows.length} consensus markets`
   );
 }
 
