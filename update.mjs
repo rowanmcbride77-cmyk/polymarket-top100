@@ -1410,6 +1410,7 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     consensusGroups,
     settlementRecords
   );
+  console.log("Output consensus immediately after makeOutput:", Array.isArray(output.consensus) ? output.consensus.length : String(output.consensus));
   // Enrich only the visible Top 100 with verified settlement outcomes and a
   // separate count of positions whose last event preceded market resolution.
   output.leaders = await attachPeriodVolumes(output.leaders, period, nowMs);
