@@ -1485,6 +1485,28 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
   // separate count of positions whose last event preceded market resolution.
   output.leaders = await attachPeriodVolumes(output.leaders, period, nowMs);
   output.leaders = await attachSettlementStats(output.leaders, period, nowMs);
+  output.leaders = output.leaders.map(trader => {
+    const verified = trader.settlementRecordComplete === true &&
+      (Number(trader.settlementWins) + Number(trader.settlementLosses)) > 0;
+    return {
+      ...trader,
+      profitableCloseWins: trader.wins ?? null,
+      profitableCloseLosses: trader.losses ?? null,
+      profitableCloseRate: trader.winRate ?? null,
+      wins: verified ? trader.settlementWins : null,
+      losses: verified ? trader.settlementLosses : null,
+      winRate: verified ? trader.settlementWins / (trader.settlementWins + trader.settlementLosses) * 100 : null,
+      resolvedMarkets: verified ? trader.settlementWins + trader.settlementLosses : null,
+      recordComplete: verified,
+      recordBasis: verified ? "Verified resolved-market outcomes in the selected period; early exits excluded" : "Verified settlement record incomplete; W-L and win rate withheld"
+    };
+  }).sort((x, y) => {
+    const xv = x.recordComplete === true && Number(x.resolvedMarkets) > 0;
+    const yv = y.recordComplete === true && Number(y.resolvedMarkets) > 0;
+    if (xv !== yv) return xv ? -1 : 1;
+    if (xv && yv) return (Number(y.winRate) - Number(x.winRate)) || (Number(y.resolvedMarkets) - Number(x.resolvedMarkets)) || ((Number(y.pnl) || 0) - (Number(x.pnl) || 0));
+    return (Number(y.pnl) || 0) - (Number(x.pnl) || 0);
+  }).map((trader, index) => ({...trader, rank:index+1}));
 
   // Keep consensus independent of the Top 100 JSON size guard.
   const builtConsensusRows = Array.isArray(output.consensus) ? output.consensus : [];
