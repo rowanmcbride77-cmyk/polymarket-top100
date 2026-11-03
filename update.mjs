@@ -391,14 +391,10 @@ function rankCandidates(candidates, records = {}) {
         merged.winRate = (wins / (wins + losses)) * 100;
         merged.resolvedMarkets = wins + losses;
       }
-      // When the closed-position scan is complete, use the sum of those same
-      // period-scoped realized P&L rows so the displayed dollars agree with W-L.
-      if (record.recordComplete === true && Number.isFinite(record.realizedPnlTotal)) {
-        merged.pnl = record.realizedPnlTotal;
-        merged.pnlBasis = "Sum of unique closed-position realized P&L in selected period";
-      } else {
-        merged.pnlBasis = "Polymarket leaderboard period P&L; closed-position history incomplete";
-      }
+      // Keep P&L tied to the selected period leaderboard. Closed-position
+      // realized P&L includes early exits and is not settled market P&L.
+      merged.pnl = trader.pnl;
+      merged.pnlBasis = "Polymarket leaderboard P&L for the selected period";
       return merged;
     })
     .sort((a, b) => {
@@ -980,21 +976,26 @@ function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedM
       const wallet = String(holder.wallet || '').toLowerCase();
       const candidate = candidateMap.get(wallet) || {};
       const record = records[wallet] || records[candidate.wallet] || {};
-      const wins = num(record.wins), losses = num(record.losses);
-      const resolvedMarkets = wins !== null && losses !== null ? wins + losses : num(record.resolvedMarkets);
-      const winRate = wins !== null && losses !== null && resolvedMarkets > 0 ? wins / resolvedMarkets * 100 : num(record.winRate);
-      const qualified = record.recordComplete === true && resolvedMarkets !== null &&
+      const wins = num(record.settlementWins), losses = num(record.settlementLosses);
+      const resolvedMarkets = wins !== null && losses !== null ? wins + losses : 0;
+      const winRate = resolvedMarkets > 0 ? wins / resolvedMarkets * 100 : null;
+      const qualified = record.settlementRecordComplete === true &&
         resolvedMarkets >= minimumResolvedMarkets && winRate !== null && winRate >= MIN_CONSENSUS_WIN_RATE;
       return { ...holder, wallet, name: holder.name || candidate.name || 'Trader',
         rank: candidate.sportsRank ?? candidate.rank ?? holder.rank ?? null,
         overallRank: candidate.rank ?? null, pnl: candidate.pnl ?? holder.pnl ?? null,
         volume: candidate.volume ?? holder.volume ?? null, wins, losses, winRate, resolvedMarkets,
-        earlyExitPositions: num(record.earlyExitPositions), recordComplete: record.recordComplete === true,
-        qualified, recordBasis: qualified ? 'Meets the selected period performance threshold' : 'Shared-position holder; performance record incomplete or below threshold' };
+        earlyExitPositions: num(record.earlyExitPositions), recordComplete: record.settlementRecordComplete === true,
+        qualified, recordBasis: qualified ? "Verified market settlements in selected period" : "Not enough verified settled markets at 90%+ in selected period" };
     });
     return { ...group, traders, sameSide: traders.length,
       qualifiedTraders: traders.filter(trader => trader.qualified).length,
       totalValue: traders.reduce((sum, trader) => sum + (num(trader.amount) ?? 0), 0) };
+  }).map(group => {
+    const qualifiedTraders = group.traders.filter(trader => trader.qualified);
+    return {...group, traders: qualifiedTraders, sameSide: qualifiedTraders.length,
+      qualifiedTraders: qualifiedTraders.length,
+      totalValue: qualifiedTraders.reduce((sum, trader) => sum + (num(trader.amount) ?? 0), 0)};
   }).filter(group => group.sameSide >= 2)
     .sort((a, b) => b.sameSide - a.sameSide || b.qualifiedTraders - a.qualifiedTraders ||
       b.totalValue - a.totalValue || (b.newestBuy || 0) - (a.newestBuy || 0))
@@ -1013,6 +1014,8 @@ function timeMs(value) {
   return Number.isFinite(ms) && ms > 0 ? ms : null;
 }
 async function getSettlementStats(wallet, period, nowMs, limit = 250) {
+  const periodDays = String(period?.api || period || "").toUpperCase() === "MONTH" ? 30 : 7;
+  const cutoffMs = nowMs - periodDays * 24 * 60 * 60 * 1000;
   // A CLOSED position means the wallet exited that position; it does not
   // mean the market settled. Include held positions too, because the API's
   // OPEN cohort contains settled winners that have not been redeemed and
@@ -1028,7 +1031,9 @@ async function getSettlementStats(wallet, period, nowMs, limit = 250) {
         limit: String(limit),
         status,
         sort_by: "TIMESTAMP",
-        sort_direction: "DESC"
+        sort_direction: "DESC",
+        start: String(Math.floor(cutoffMs / 1000)),
+        end: String(Math.floor(nowMs / 1000))
       });
       if (cursor) params.set("cursor", cursor);
       const response = await getJson(`${API}/v2/positions?${params}`);
@@ -1110,6 +1115,7 @@ async function getSettlementStats(wallet, period, nowMs, limit = 250) {
     if (market.closed !== true) {
       if (scanStatus === "CLOSED") {
         if (lastEventAt === null) { unclassified++; continue; }
+        if (lastEventAt < cutoffMs || lastEventAt > nowMs) continue;
         classified++;
         earlyExitPositions++;
         const rawIndex = position.outcome_index ?? position.outcomeIndex ?? position.outcome;
@@ -1123,6 +1129,7 @@ async function getSettlementStats(wallet, period, nowMs, limit = 250) {
     const winnerIndex = prices.findIndex(price => price !== null && price >= 0.999);
     const resolvedAt = timeMs(market.closedTime ?? market.closed_time ?? market.resolvedAt ?? market.resolved_at);
     if (winnerIndex < 0 || resolvedAt === null) { unclassified++; continue; }
+    if (resolvedAt < cutoffMs || resolvedAt > nowMs) continue;
 
     const rawIndex = position.outcome_index ?? position.outcomeIndex;
     let positionIndex = rawIndex === null || rawIndex === undefined ? -1 : Number(rawIndex);
@@ -1198,10 +1205,11 @@ async function attachSettlementStats(traders, period, nowMs) {
   return await mapLimit(traders, 4, async trader => {
     try {
       const wallet = String(trader.wallet || "").toLowerCase();
-      let pending = settlementStatsCache.get(wallet);
+      const cacheKey = wallet + ":" + String(period?.api || period || "WEEK").toUpperCase();
+      let pending = settlementStatsCache.get(cacheKey);
       if (!pending) {
         pending = getSettlementStats(wallet, period, nowMs, 250);
-        settlementStatsCache.set(wallet, pending);
+        settlementStatsCache.set(cacheKey, pending);
       }
       const stats = await pending;
       return {...trader, ...stats};
@@ -1274,7 +1282,7 @@ function makeOutput(period, ranked, sportsRanked, activePositions, tradeRows, no
     })),
     traderActiveTrades: Object.fromEntries(tradeRows.filter(Boolean)),
     traderActivePositions: leaderPositions,
-    consensus: buildConsensus(consensusGroups, consensusCandidates || ranked, Object.fromEntries([...new Set([...Object.keys(records || {}), ...Object.keys(settlementRecords || {})])].map(wallet => [wallet, { ...(records?.[wallet] || {}), ...(settlementRecords?.[wallet] || {}), wins: records?.[wallet]?.wins ?? settlementRecords?.[wallet]?.wins, losses: records?.[wallet]?.losses ?? settlementRecords?.[wallet]?.losses }])), period.key === 'month' ? 10 : 5)
+    consensus: buildConsensus(consensusGroups, consensusCandidates || ranked, settlementRecords || {}, period.key === "month" ? 10 : 5)
   };
 }
 
@@ -1368,9 +1376,11 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
   const leaders = ranked.slice(0, LEADER_COUNT);
   // Detailed settlement verification is only needed for the visible Top 100.
   // Scanning 1,000 wallets across three API cohorts twice per period delayed the entire publish.
-  const settlementRows = await attachSettlementStats(leaders, period, nowMs);
+  const settlementWallets = [...new Set([...leaders.map(t => String(t.wallet || "").toLowerCase()), ...[...consensusWallets].slice(0, 500)])];
+  const settlementCandidates = settlementWallets.map(wallet => candidateByWallet.get(wallet)).filter(Boolean);
+  const settlementRows = await attachSettlementStats(settlementCandidates, period, nowMs);
   const settlementRecords = Object.fromEntries(settlementRows.map(trader => [String(trader.wallet || "").toLowerCase(), trader]));
-  console.log(`${period.key}: consensus traders require at least ${MIN_TRADER_RESOLVED_MARKETS} closed positions and ${MIN_CONSENSUS_WIN_RATE}%+ profitable-close rate`);
+  console.log(`${period.key}: verifying actual market settlements for ${settlementRows.length} leaderboard and consensus wallets; qualification requires ${MIN_TRADER_RESOLVED_MARKETS} settled markets and ${MIN_CONSENSUS_WIN_RATE}%+ win rate`);
   // Reuse the period-scoped record sample used for ranking; avoid a second history scan.
   const leaderRecords = records;
   const tradeRows = await mapLimit(
