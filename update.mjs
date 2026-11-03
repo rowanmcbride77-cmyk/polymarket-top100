@@ -305,8 +305,9 @@ async function mapLimit(items, limit, callback) {
 }
 
 async function getCandidates(period) {
-  // Data API v1 was retired on 2026-10-24. Use v2's data envelope,
-  // snake_case fields and opaque cursor pagination; offset is not supported.
+  // Build a category-balanced trader pool. The old global 5,000-wallet stop
+  // could be reached while reading "overall", before sports and other
+  // category leaderboards were ever queried.
   const byWallet = new Map();
   const categories = [
     "overall", "sports", "politics", "crypto", "esports", "culture",
@@ -314,14 +315,16 @@ async function getCandidates(period) {
   ];
   const timePeriods = [...new Set([period.api, "DAY", "WEEK", "MONTH", "ALL"])];
   const target = CANDIDATE_COUNT;
+  const perCategoryTarget = Math.ceil(target / categories.length);
 
-  discovery:
-  for (const timePeriod of timePeriods) {
-    for (const category of categories) {
+  for (const category of categories) {
+    const categoryWallets = new Set();
+    categoryDiscovery:
+    for (const timePeriod of timePeriods) {
       for (const orderBy of ["PNL", "VOLUME"]) {
         let cursor = null;
         let page = 0;
-        while (page < LEADERBOARD_PAGE_COUNT) {
+        while (page < LEADERBOARD_PAGE_COUNT && categoryWallets.size < perCategoryTarget) {
           const params = new URLSearchParams({
             category,
             time_period: timePeriod.toLowerCase(),
@@ -335,21 +338,25 @@ async function getCandidates(period) {
           for (let i = 0; i < rows.length; i++) {
             const trader = normalizeLeader(rows[i], page * PAGE_SIZE + i + 1);
             if (!trader.wallet) continue;
+            const wallet = String(trader.wallet).toLowerCase();
+            categoryWallets.add(wallet);
+
             // Only requested-period leaderboard values may populate period P&L/volume.
             if (timePeriod !== period.api) {
               trader.pnl = null;
               trader.volume = null;
             }
-            const existing = byWallet.get(trader.wallet);
+            const existing = byWallet.get(wallet);
             if (existing) {
               if (existing.pnl === null || existing.pnl === undefined) existing.pnl = trader.pnl;
               if (existing.volume === null || existing.volume === undefined) existing.volume = trader.volume;
               if ((!existing.name || existing.name === "Unknown") && trader.name) existing.name = trader.name;
-            } else {
-              byWallet.set(trader.wallet, trader);
+            } else if (byWallet.size < target) {
+              byWallet.set(wallet, trader);
             }
+            if (categoryWallets.size >= perCategoryTarget) break;
           }
-          if (byWallet.size >= target) break discovery;
+          if (categoryWallets.size >= perCategoryTarget) break categoryDiscovery;
           const nextCursor = response?.pagination?.next_cursor ?? null;
           page++;
           if (!nextCursor) break;
@@ -357,13 +364,14 @@ async function getCandidates(period) {
         }
       }
     }
+    console.log(`Candidate discovery: ${category} contributed ${categoryWallets.size} distinct wallets (target ${perCategoryTarget}).`);
   }
 
   const candidates = [...byWallet.values()];
-  console.log(`${period.key}: discovered ${candidates.length} unique traders across public v2 leaderboard categories and periods (target ${target})`);
+  console.log(`${period.key}: discovered ${candidates.length} unique traders across balanced public v2 leaderboard categories (target ${target}; per-category target ${perCategoryTarget})`);
   if (candidates.length < target) {
     throw new Error(
-      `${period.key}: only discovered ${candidates.length} unique trader wallets; required ${target}. Refusing to publish a successful update with an undersized candidate pool.`
+      `${period.key}: only discovered ${candidates.length} unique trader wallets across category-balanced leaderboards; required ${target}. Refusing to publish an undersized candidate pool.`
     );
   }
   return candidates.slice(0, target);
