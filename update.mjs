@@ -1401,7 +1401,46 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
   output.leaders = await attachSettlementStats(output.leaders, period, nowMs);
 
   // Keep consensus independent of the Top 100 JSON size guard.
-  const consensusRows = Array.isArray(output.consensus) ? output.consensus : [];
+  const builtConsensusRows = Array.isArray(output.consensus) ? output.consensus : [];
+  // Preserve the raw, verified same-outcome overlap groups if a downstream
+  // qualification/enrichment step unexpectedly drops every built row. These
+  // are real OPEN-position overlaps from distinct wallets, not inferred picks.
+  const fallbackConsensusRows = (Array.isArray(consensusGroups) ? consensusGroups : [])
+    .map(group => {
+      const seenWallets = new Set();
+      const traders = (Array.isArray(group.traders) ? group.traders : []).filter(holder => {
+        const wallet = String(holder.wallet || "").toLowerCase();
+        if (!wallet || seenWallets.has(wallet)) return false;
+        seenWallets.add(wallet);
+        return true;
+      }).map(holder => ({
+        ...holder,
+        wallet: String(holder.wallet || "").toLowerCase(),
+        wins: null,
+        losses: null,
+        winRate: null,
+        resolvedMarkets: null,
+        recordComplete: false,
+        qualified: false,
+        recordBasis: "Shared active-position holder; period performance record unavailable"
+      }));
+      return {
+        ...group,
+        traders,
+        sameSide: traders.length,
+        qualifiedTraders: 0
+      };
+    })
+    .filter(group => group.sameSide >= 2)
+    .sort((a, b) => b.sameSide - a.sameSide || b.totalValue - a.totalValue || (b.newestBuy || 0) - (a.newestBuy || 0))
+    .slice(0, CONSENSUS_LIMIT);
+  const consensusRows = builtConsensusRows.length ? builtConsensusRows : fallbackConsensusRows;
+  console.log(`${period.key}: consensus serialization diagnostics: ${JSON.stringify({
+    builtRows: builtConsensusRows.length,
+    rawEligibleFallbackRows: fallbackConsensusRows.length,
+    rawGroups: Array.isArray(consensusGroups) ? consensusGroups.length : 0,
+    firstRawGroupHolderCount: Array.isArray(consensusGroups?.[0]?.traders) ? consensusGroups[0].traders.length : 0
+  })}`);
   output.consensus = [];
   await writeJsonUnderLimit(`${period.key}.json`, output);
 
