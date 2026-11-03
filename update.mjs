@@ -1334,7 +1334,7 @@ function makeOutput(period, ranked, sportsRanked, activePositions, tradeRows, no
     })),
     traderActiveTrades: Object.fromEntries(tradeRows.filter(Boolean)),
     traderActivePositions: leaderPositions,
-    consensus: buildConsensus(consensusGroups, consensusCandidates || ranked, Object.fromEntries([...new Set([...Object.keys(records || {}), ...Object.keys(settlementRecords || {})])].map(wallet => [wallet, { ...(records?.[wallet] || {}), ...(settlementRecords?.[wallet] || {}), wins: records?.[wallet]?.wins ?? settlementRecords?.[wallet]?.wins, losses: records?.[wallet]?.losses ?? settlementRecords?.[wallet]?.losses }])), 5)
+    consensus: buildConsensus(consensusGroups, consensusCandidates || ranked, Object.fromEntries([...new Set([...Object.keys(records || {}), ...Object.keys(settlementRecords || {})])].map(wallet => [wallet, { ...(records?.[wallet] || {}), ...(settlementRecords?.[wallet] || {}), wins: records?.[wallet]?.wins ?? settlementRecords?.[wallet]?.wins, losses: records?.[wallet]?.losses ?? settlementRecords?.[wallet]?.losses }])), period.key === "month" ? 10 : 5)
   };
 }
 
@@ -1431,7 +1431,8 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
   // Scanning 1,000 wallets across three API cohorts twice per period delayed the entire publish.
   const settlementRows = await attachSettlementStats(leaders, period, nowMs);
   const settlementRecords = Object.fromEntries(settlementRows.map(trader => [String(trader.wallet || "").toLowerCase(), trader]));
-  console.log(`${period.key}: consensus traders require at least ${MIN_TRADER_RESOLVED_MARKETS} closed positions and ${MIN_CONSENSUS_WIN_RATE}%+ profitable-close rate`);
+  const consensusMinimumResolved = period.key === "month" ? 10 : 5;
+  console.log(`${period.key}: consensus traders require at least ${consensusMinimumResolved} closed positions and ${MIN_CONSENSUS_WIN_RATE}%+ profitable-close rate`);
   // Reuse the period-scoped record sample used for ranking; avoid a second history scan.
   const leaderRecords = records;
   const tradeRows = await mapLimit(
@@ -1512,10 +1513,10 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     pool: period.key,
     qualificationWindowDays: period.key === "month" ? 30 : 7,
     minimumWinRate: MIN_CONSENSUS_WIN_RATE,
-    minimumResolvedMarkets: MIN_TRADER_RESOLVED_MARKETS,
+    minimumResolvedMarkets: period.key === "month" ? 10 : 5,
     qualificationBasis: period.key === "week"
       ? "Markets show 2+ discovered wallets holding the same active outcome. Each trader is separately marked qualified only with a complete weekly record of at least 5 closed positions and a 90%+ profitable-close rate."
-      : "Markets show 2+ qualified wallets holding the same active outcome. Each trader must have a complete monthly record of at least 5 closed positions and a 90%+ profitable-close rate.",
+      : "Markets show 2+ qualified wallets holding the same active outcome. Each trader must have a complete monthly record of at least 10 closed positions and a 90%+ profitable-close rate.",
     minimumSameSideTraders: 2,
     entryWindowMinutes: null,
     candidateCount: ranked.length,
