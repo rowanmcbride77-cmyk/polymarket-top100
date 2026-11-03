@@ -321,7 +321,7 @@ async function getCandidates(period) {
       for (const orderBy of ["PNL", "VOLUME"]) {
         let cursor = null;
         let page = 0;
-        while (page < MAX_LEADERBOARD_PAGES) {
+        while (page < LEADERBOARD_PAGE_COUNT) {
           const params = new URLSearchParams({
             category,
             time_period: timePeriod.toLowerCase(),
@@ -539,19 +539,23 @@ async function getRecentTrades(wallet) {
   });
 
   try {
-    const rows = asArray(await getJson(`${API}/trades?${params}`));
+    const rows = asArray(await getJson(`${API}/v2/trades?${params}`));
 
     return rows
       .filter(row => String(row.side || "").toUpperCase() === "BUY")
       .slice(0, TRADE_LIMIT)
-      .map(row => ({
-        title: row.title || row.question || row.eventSlug || "Unknown market",
-        side: "BUY",
-        outcome: row.outcome || row.outcome_name || "Unknown",
-        amount: num(row.usdcSize ?? row.amount ?? row.size),
-        buyTime: timestampMs(row.timestamp ?? row.createdAt ?? row.time),
-        conditionId: row.conditionId || row.condition_id || null
-      }))
+      .map(row => {
+        const price = num(row.price);
+        const shares = num(row.size);
+        return {
+          title: row.title || row.question || row.event_slug || row.eventSlug || "Unknown market",
+          side: "BUY",
+          outcome: row.outcome || row.outcome_name || "Unknown",
+          amount: num(row.usdc_size ?? row.usdcSize ?? row.amount) ?? (price !== null && shares !== null ? price * shares : null),
+          buyTime: timestampMs(row.timestamp ?? row.created_at ?? row.createdAt ?? row.time),
+          conditionId: row.condition_id || row.conditionId || null
+        };
+      })
       .sort((a, b) => (b.buyTime || 0) - (a.buyTime || 0));
   } catch (error) {
     console.error(`Trades failed for ${wallet}: ${error.message}`);
@@ -961,14 +965,17 @@ function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedM
   const nowMs = Date.now();
   // Positions are active according to the v2 OPEN lifecycle and Gamma closed
   // state. Each holder's performance qualification is shown separately.
-  return holderGroups.filter(group => {
-    const end = marketEndDate(group);
-    const withinWindow = end === null || end === undefined || end === ''
-      ? true
-      : isResolvingSoon(group, nowMs);
-    return withinWindow && group.sameSide >= 2 &&
-      (num(group.totalValue) ?? 0) > 0;
-  }).map(group => {
+  // enrichConsensusMarkets already excludes closed markets and dates beyond
+  // the configured 30-day horizon. Rechecking with isResolvingSoon used a
+  // different date interpretation and silently discarded valid shared markets.
+  const eligibleGroups = holderGroups.filter(group =>
+    group.sameSide >= 2 && (num(group.totalValue) ?? 0) > 0
+  );
+  console.log("Consensus build inputs:", JSON.stringify({
+    enrichedGroups: holderGroups.length,
+    eligibleGroups: eligibleGroups.length
+  }));
+  return eligibleGroups.map(group => {
     const traders = group.traders.map(holder => {
       const wallet = String(holder.wallet || '').toLowerCase();
       const candidate = candidateMap.get(wallet) || {};
@@ -1393,6 +1400,9 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
   output.leaders = await attachPeriodVolumes(output.leaders, period, nowMs);
   output.leaders = await attachSettlementStats(output.leaders, period, nowMs);
 
+  // Keep consensus independent of the Top 100 JSON size guard.
+  const consensusRows = Array.isArray(output.consensus) ? output.consensus : [];
+  output.consensus = [];
   await writeJsonUnderLimit(`${period.key}.json`, output);
 
   // Keep consensus data independent from the Top 100 period tabs. These
@@ -1418,11 +1428,11 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     resolutionWindowHours: CONSENSUS_WINDOW_HOURS,
     entryActivityWindowHours: null,
     recordBasis: "Consensus traders are filtered by the selected period's closed-market profitable-close record (90%+ and at least 5 closed markets for weekly; 10 for monthly). Verified settlement data is retained separately and never substituted for period metrics.",
-    consensus: output.consensus
+    consensus: consensusRows
   });
 
   console.log(
-    `${period.key}: ${leaders.length} leaders, ${output.consensus.length} consensus markets`
+    `${period.key}: ${leaders.length} leaders, ${consensusRows.length} consensus markets`
   );
 }
 
