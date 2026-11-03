@@ -930,6 +930,21 @@ async function getBroadConsensusMarkets(knownTraders, nowMs, activePositions) {
   return {holderGroups, activePositionsByWallet};
 }
 
+function classifyMarketCategory(market, group = {}) {
+  const tags = Array.isArray(market?.tags) ? market.tags.map(tag => typeof tag === "string" ? tag : (tag.label || tag.slug || tag.name || "")) : [];
+  const events = Array.isArray(market?.events) ? market.events : [];
+  const eventText = events.flatMap(event => [event.title, event.slug, event.category, event.sport, event.seriesSlug]);
+  const raw = [market?.category, market?.subcategory, market?.sport, market?.sportsMarketType, market?.sports_market_type, market?.seriesSlug, market?.slug, market?.question, market?.title, market?.description, group?.title, group?.slug, ...tags, ...eventText].filter(Boolean).join(" ").toLowerCase();
+  if (market?.gameId || market?.game_id || market?.gameStartTime || market?.game_start_time || /\b(nba|wnba|nfl|mlb|nhl|ncaa|ncaaf|ncaab|mls|atp|wta|ufc|mma|premier league|champions league|world cup|moneyline|spread|over\/under)\b/.test(raw)) return "sports";
+  if (/\b(esports|e-sports|league of legends|dota 2|counter.?strike|valorant)\b/.test(raw)) return "esports";
+  if (/\b(politic|election|president|congress|senate|democrat|republican|parliament|governor|vote)\b/.test(raw)) return "politics";
+  if (/\b(crypto|bitcoin|btc|ethereum|eth|solana|sol|dogecoin|token|defi)\b/.test(raw)) return "crypto";
+  if (/\b(econom|federal reserve|inflation|gdp|interest rate|recession|jobs report)\b/.test(raw)) return "economics";
+  if (/\b(tech|technology|artificial intelligence|apple|google|microsoft|nvidia)\b/.test(raw)) return "tech";
+  if (/\b(weather|temperature|rainfall|snowfall|hurricane)\b/.test(raw)) return "weather";
+  if (/\b(entertainment|celebrity|movie|music|culture|grammy|oscar)\b/.test(raw)) return "culture";
+  return "other";
+}
 async function enrichConsensusMarkets(holderGroups, nowMs) {
   // Position records can carry stale/missing end dates. Resolve condition IDs
   // through Gamma before applying the 30-day UI window; keep undated active
@@ -991,6 +1006,7 @@ async function enrichConsensusMarkets(holderGroups, nowMs) {
       ...group,
       title: market?.question || market?.title || group.title,
       slug: market?.slug || group.slug || null,
+      category: classifyMarketCategory(market || {}, group),
       endDate,
       marketClosed: market ? false : null,
       marketMetadataVerified: Boolean(market)
@@ -1056,8 +1072,13 @@ function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedM
       totalValue: traders.reduce((sum, trader) => sum + (num(trader.amount) ?? 0), 0) };
   }).filter(group => group.sameSide >= 2)
     .filter(group => group.traders.filter(trader => trader.qualified).length >= 2)
-    .sort((a, b) => b.qualifiedTraders - a.qualifiedTraders ||
-      b.sameSide - a.sameSide || b.totalValue - a.totalValue || (b.newestBuy || 0) - (a.newestBuy || 0))
+    .sort((a, b) => b.qualifiedTraders - a.qualifiedTraders || b.sameSide - a.sameSide || b.totalValue - a.totalValue || (b.newestBuy || 0) - (a.newestBuy || 0))
+    .reduce((selected, group) => {
+      const category = group.category || "other";
+      const count = selected.filter(item => (item.category || "other") === category).length;
+      if (count < 20) selected.push(group);
+      return selected;
+    }, [])
     .slice(0, CONSENSUS_LIMIT);
 }
 function parseArrayField(value) {
@@ -1073,6 +1094,8 @@ function timeMs(value) {
   return Number.isFinite(ms) && ms > 0 ? ms : null;
 }
 async function getSettlementStats(wallet, period, nowMs, limit = 250) {
+  const periodDays = String(period?.api || period || "").toUpperCase() === "MONTH" ? 30 : 7;
+  const periodCutoffMs = nowMs - periodDays * 24 * 60 * 60 * 1000;
   // A CLOSED position means the wallet exited that position; it does not
   // mean the market settled. Include held positions too, because the API's
   // OPEN cohort contains settled winners that have not been redeemed and
@@ -1183,6 +1206,7 @@ async function getSettlementStats(wallet, period, nowMs, limit = 250) {
     const winnerIndex = prices.findIndex(price => price !== null && price >= 0.999);
     const resolvedAt = timeMs(market.closedTime ?? market.closed_time ?? market.resolvedAt ?? market.resolved_at);
     if (winnerIndex < 0 || resolvedAt === null) { unclassified++; continue; }
+    if (resolvedAt < periodCutoffMs || resolvedAt > nowMs) continue;
 
     const rawIndex = position.outcome_index ?? position.outcomeIndex;
     let positionIndex = rawIndex === null || rawIndex === undefined ? -1 : Number(rawIndex);
