@@ -335,10 +335,15 @@ async function getCandidates(period) {
           for (let i = 0; i < rows.length; i++) {
             const trader = normalizeLeader(rows[i], page * PAGE_SIZE + i + 1);
             if (!trader.wallet) continue;
+            // Only requested-period leaderboard values may populate period P&L/volume.
+            if (timePeriod !== period.api) {
+              trader.pnl = null;
+              trader.volume = null;
+            }
             const existing = byWallet.get(trader.wallet);
             if (existing) {
-              existing.pnl = trader.pnl ?? existing.pnl;
-              existing.volume = trader.volume ?? existing.volume;
+              if (existing.pnl === null || existing.pnl === undefined) existing.pnl = trader.pnl;
+              if (existing.volume === null || existing.volume === undefined) existing.volume = trader.volume;
               if ((!existing.name || existing.name === "Unknown") && trader.name) existing.name = trader.name;
             } else {
               byWallet.set(trader.wallet, trader);
@@ -996,8 +1001,9 @@ function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedM
       qualifiedTraders: traders.filter(trader => trader.qualified).length,
       totalValue: traders.reduce((sum, trader) => sum + (num(trader.amount) ?? 0), 0) };
   }).filter(group => group.sameSide >= 2)
-    .sort((a, b) => b.sameSide - a.sameSide || b.qualifiedTraders - a.qualifiedTraders ||
-      b.totalValue - a.totalValue || (b.newestBuy || 0) - (a.newestBuy || 0))
+    .filter(group => group.traders.filter(trader => trader.qualified).length >= 2)
+    .sort((a, b) => b.qualifiedTraders - a.qualifiedTraders ||
+      b.sameSide - a.sameSide || b.totalValue - a.totalValue || (b.newestBuy || 0) - (a.newestBuy || 0))
     .slice(0, CONSENSUS_LIMIT);
 }
 function parseArrayField(value) {
@@ -1274,7 +1280,7 @@ function makeOutput(period, ranked, sportsRanked, activePositions, tradeRows, no
     })),
     traderActiveTrades: Object.fromEntries(tradeRows.filter(Boolean)),
     traderActivePositions: leaderPositions,
-    consensus: buildConsensus(consensusGroups, consensusCandidates || ranked, Object.fromEntries([...new Set([...Object.keys(records || {}), ...Object.keys(settlementRecords || {})])].map(wallet => [wallet, { ...(records?.[wallet] || {}), ...(settlementRecords?.[wallet] || {}), wins: records?.[wallet]?.wins ?? settlementRecords?.[wallet]?.wins, losses: records?.[wallet]?.losses ?? settlementRecords?.[wallet]?.losses }])), period.key === 'month' ? 10 : 5)
+    consensus: buildConsensus(consensusGroups, consensusCandidates || ranked, Object.fromEntries([...new Set([...Object.keys(records || {}), ...Object.keys(settlementRecords || {})])].map(wallet => [wallet, { ...(records?.[wallet] || {}), ...(settlementRecords?.[wallet] || {}), wins: records?.[wallet]?.wins ?? settlementRecords?.[wallet]?.wins, losses: records?.[wallet]?.losses ?? settlementRecords?.[wallet]?.losses }])), 5)
   };
 }
 
@@ -1454,7 +1460,7 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     minimumResolvedMarkets: MIN_TRADER_RESOLVED_MARKETS,
     qualificationBasis: period.key === "week"
       ? "Markets show 2+ discovered wallets holding the same active outcome. Each trader is separately marked qualified only with a complete weekly record of at least 5 closed positions and a 90%+ profitable-close rate."
-      : "Markets show 2+ discovered wallets holding the same active outcome. Each trader is separately marked qualified only with a complete monthly record of at least 10 closed positions and a 90%+ profitable-close rate.",
+      : "Markets show 2+ qualified wallets holding the same active outcome. Each trader must have a complete monthly record of at least 5 closed positions and a 90%+ profitable-close rate.",
     minimumSameSideTraders: 2,
     entryWindowMinutes: null,
     candidateCount: ranked.length,
@@ -1466,7 +1472,7 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     candidatePoolBasis: "Unique traders collected from Polymarket public Data API v2 PnL and volume leaderboards, following opaque cursors across categories and time periods, targeting 5,000 wallets. This is a broad leaderboard-derived sample, not all platform traders. Consensus market overlap counts active same-outcome positions of at least $1; Gamma-closed markets are excluded, upcoming dates within 30 days are retained, and active markets with unavailable or stale dates remain visible as undated.",
     resolutionWindowHours: CONSENSUS_WINDOW_HOURS,
     entryActivityWindowHours: null,
-    recordBasis: "Consensus traders are filtered by the selected period's closed-market profitable-close record (90%+ and at least 5 closed markets for weekly; 10 for monthly). Verified settlement data is retained separately and never substituted for period metrics.",
+    recordBasis: "Consensus markets include only holders with a complete selected-period closed-market profitable-close record of at least 90% and at least 5 closed markets. At least 2 qualified holders are required per market. Verified lifetime settlement data is separate and never substituted for period metrics.",
     consensus: consensusRows
   });
 
