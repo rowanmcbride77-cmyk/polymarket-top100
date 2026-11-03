@@ -1287,7 +1287,8 @@ function makeOutput(period, ranked, sportsRanked, activePositions, tradeRows, no
 async function writeJsonUnderLimit(filename, output) {
   const hasLeaders = Array.isArray(output?.leaders) && output.leaders.length > 0;
   const hasConsensus = Array.isArray(output?.consensus) && output.consensus.length > 0;
-  if (!output || (!hasLeaders && !hasConsensus)) {
+  const allowEmptyConsensus = String(filename).startsWith("consensus-");
+  if (!output || (!hasLeaders && !hasConsensus && !allowEmptyConsensus)) {
     throw new Error(`${filename}: refusing to write empty or missing leaderboard/consensus data`);
   }
   const compact = () => JSON.stringify(output);
@@ -1336,7 +1337,7 @@ async function writeJsonUnderLimit(filename, output) {
   const parsedCheck = JSON.parse(json);
   const parsedHasLeaders = Array.isArray(parsedCheck.leaders) && parsedCheck.leaders.length > 0;
   const parsedHasConsensus = Array.isArray(parsedCheck.consensus) && parsedCheck.consensus.length > 0;
-  if (!parsedHasLeaders && !parsedHasConsensus) {
+  if (!parsedHasLeaders && !parsedHasConsensus && !allowEmptyConsensus) {
     throw new Error(`${filename}: serialized output failed the non-empty data check`);
   }
   const tempFilename = `${filename}.tmp`;
@@ -1440,7 +1441,7 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     .filter(group => group.sameSide >= 2)
     .sort((a, b) => b.sameSide - a.sameSide || b.totalValue - a.totalValue || (b.newestBuy || 0) - (a.newestBuy || 0))
     .slice(0, CONSENSUS_LIMIT);
-  const consensusRows = builtConsensusRows.length ? builtConsensusRows : fallbackConsensusRows;
+  const consensusRows = builtConsensusRows;
   console.log(`${period.key}: consensus serialization diagnostics: ${JSON.stringify({
     builtRows: builtConsensusRows.length,
     rawEligibleFallbackRows: fallbackConsensusRows.length,
