@@ -367,6 +367,44 @@ async function getCandidates(period) {
     console.log(`Candidate discovery: ${category} contributed ${categoryWallets.size} distinct wallets (target ${perCategoryTarget}).`);
   }
 
+  // If cross-category overlap leaves the pool short, top it up only after
+  // every category has had its reserved discovery pass.
+  if (byWallet.size < target) {
+    topUpDiscovery:
+    for (const category of categories) {
+      for (const timePeriod of timePeriods) {
+        for (const orderBy of ["PNL", "VOLUME"]) {
+          let cursor = null;
+          let page = 0;
+          while (page < LEADERBOARD_PAGE_COUNT && byWallet.size < target) {
+            const params = new URLSearchParams({ category, time_period: timePeriod.toLowerCase(), sort_by: orderBy, limit: String(PAGE_SIZE) });
+            if (cursor) params.set("cursor", cursor);
+            const response = await getJson(API + "/v2/leaderboard?" + params);
+            const rows = asArray(response);
+            if (!rows.length) break;
+            for (let i = 0; i < rows.length; i++) {
+              const trader = normalizeLeader(rows[i], page * PAGE_SIZE + i + 1);
+              if (!trader.wallet) continue;
+              const wallet = String(trader.wallet).toLowerCase();
+              if (timePeriod !== period.api) { trader.pnl = null; trader.volume = null; }
+              const existing = byWallet.get(wallet);
+              if (existing) {
+                if (existing.pnl === null || existing.pnl === undefined) existing.pnl = trader.pnl;
+                if (existing.volume === null || existing.volume === undefined) existing.volume = trader.volume;
+                if ((!existing.name || existing.name === "Unknown") && trader.name) existing.name = trader.name;
+              } else { byWallet.set(wallet, trader); }
+              if (byWallet.size >= target) break;
+            }
+            if (byWallet.size >= target) break topUpDiscovery;
+            const nextCursor = response?.pagination?.next_cursor ?? null;
+            page++;
+            if (!nextCursor) break;
+            cursor = String(nextCursor);
+          }
+        }
+      }
+    }
+  }
   const candidates = [...byWallet.values()];
   console.log(`${period.key}: discovered ${candidates.length} unique traders across balanced public v2 leaderboard categories (target ${target}; per-category target ${perCategoryTarget})`);
   if (candidates.length < target) {
