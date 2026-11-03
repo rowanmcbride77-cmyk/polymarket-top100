@@ -1027,7 +1027,15 @@ function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedM
     eligibleGroups: eligibleGroups.length
   }));
   return eligibleGroups.map(group => {
-    const traders = group.traders.map(holder => {
+    // Deduplicate at the source: upstream position aggregation can contain
+    // repeated rows for one wallet. A wallet must count only once toward
+    // same-side consensus, regardless of how many position rows it has.
+    const uniqueHolders = [...new Map(
+      (Array.isArray(group.traders) ? group.traders : [])
+        .filter(holder => String(holder.wallet || '').trim())
+        .map(holder => [String(holder.wallet).trim().toLowerCase(), holder])
+    ).values()];
+    const traders = uniqueHolders.map(holder => {
       const wallet = String(holder.wallet || '').toLowerCase();
       const candidate = candidateMap.get(wallet) || {};
       const record = records[wallet] || records[candidate.wallet] || {};
