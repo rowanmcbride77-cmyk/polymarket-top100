@@ -319,14 +319,16 @@ function walletOf(trader) {
 function recordOf(trader) {
   // The leaderboard is period-scoped. Lifetime settlement totals must never
   // replace the selected week's or month's record beside period P&L.
-  if (trader?.recordComplete !== true) return null;
+  // Do not label profitable exits as prediction wins. The current public
+  // position-history scan is not a verified market-settlement ledger.
+  if (trader?.recordVerified !== true) return null;
   const wins = num(trader?.wins);
   const losses = num(trader?.losses);
   const resolved = num(trader?.resolvedMarkets);
   if (wins === null || losses === null || wins < 0 || losses < 0) return null;
   const total = wins + losses;
   if (total <= 0 || (resolved !== null && resolved !== total)) return null;
-  return {wins, losses, total, rate:wins / total * 100, verified:false, basis:"period-profitable-close"};
+  return {wins, losses, total, rate:wins / total * 100, verified:true, basis:"market-settlement"};
 }
 
 function recordText(trader) {
@@ -672,8 +674,8 @@ function renderLeaders() {
       const marketPool = Array.isArray(data?.comboCandidates) ? data.comboCandidates : [];
       const marketTrader = marketPool.find(row => walletOf(row).toLowerCase() === String(trader.wallet).toLowerCase()) ||
         baseList.find(row => walletOf(row).toLowerCase() === String(trader.wallet).toLowerCase());
-      const marketWins = num(marketTrader?.wins);
-      const marketLosses = num(marketTrader?.losses);
+      const marketWins = marketTrader?.recordVerified === true ? num(marketTrader?.wins) : null;
+      const marketLosses = marketTrader?.recordVerified === true ? num(marketTrader?.losses) : null;
       const marketRecordSuffix = marketTrader?.recordComplete === false ? "+" : "";
       const marketPnl = num(marketTrader?.pnl ?? marketTrader?.profit), marketVolume = num(marketTrader?.volume ?? marketTrader?.vol);
       return `<tr><td class="rank">${index+1}</td><td><div class="trader-name">${avatar(trader.trader)}<span class="name-text">${profileButton({...trader.trader, wallet:trader.wallet}, nameOf(trader.trader))}</span>${favoriteButton(trader.wallet)}</div></td><td class="record">${trader.wins}</td><td class="record">${trader.losses}</td><td class="record">${trader.partial}</td><td class="record">${(trader.wins + trader.losses) ? (trader.wins / (trader.wins + trader.losses) * 100).toFixed(1) + "%" : "N/A"}</td><td class="${trader.pnlKnown && trader.profit < 0 ? "negative" : "positive"}">${trader.pnlKnown ? (trader.pnlMissing ? "Partial: " : "") + (trader.profit > 0 ? "+" : "") + cash(trader.profit) : "N/A"}</td><td class="record">${trader.pnlKnown}/${trader.combos} combos</td><td class="record">${marketWins !== null && marketLosses !== null ? marketWins + marketRecordSuffix + "–" + marketLosses + marketRecordSuffix : "N/A"}</td><td class="${marketPnl !== null && marketPnl < 0 ? "negative" : "positive"}">${marketPnl !== null ? cash(marketPnl) : "N/A"}</td><td class="money">${marketVolume !== null ? cash(marketVolume) : "N/A"}</td></tr>`;
