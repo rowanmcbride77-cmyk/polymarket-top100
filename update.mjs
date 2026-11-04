@@ -460,8 +460,8 @@ function rankCandidates(candidates, records = {}) {
       // traders who actually made substantially more in the selected period.
       const aPnl = Number(a.pnl);
       const bPnl = Number(b.pnl);
-      const aHasPnl = Number.isFinite(aPnl);
-      const bHasPnl = Number.isFinite(bPnl);
+      const aHasPnl = a.pnl !== null && a.pnl !== undefined && a.pnl !== "" && Number.isFinite(aPnl);
+      const bHasPnl = b.pnl !== null && b.pnl !== undefined && b.pnl !== "" && Number.isFinite(bPnl);
       if (aHasPnl !== bHasPnl) return aHasPnl ? -1 : 1;
       if (aHasPnl && bHasPnl && aPnl !== bPnl) return bPnl - aPnl;
       const aVolume = Number(a.volume), bVolume = Number(b.volume);
