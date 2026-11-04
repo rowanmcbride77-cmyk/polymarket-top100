@@ -170,7 +170,8 @@ async function getResolvedRecord(wallet, period, nowMs, maxPositions = RANKING_R
       status: "CLOSED",
       sort_by: "TIMESTAMP",
       sort_direction: "DESC",
-      start: String(Math.floor(cutoffMs / 1000))
+      start: String(Math.floor(cutoffMs / 1000)),
+      end: String(Math.floor(nowMs / 1000))
     });
     if (cursor) params.set("cursor", cursor);
 
@@ -442,14 +443,11 @@ function rankCandidates(candidates, records = {}) {
         merged.winRate = (wins / (wins + losses)) * 100;
         merged.resolvedMarkets = wins + losses;
       }
-      // When the closed-position scan is complete, use the sum of those same
-      // period-scoped realized P&L rows so the displayed dollars agree with W-L.
-      if (record.recordComplete === true && Number.isFinite(record.realizedPnlTotal)) {
-        merged.pnl = record.realizedPnlTotal;
-        merged.pnlBasis = "Sum of unique closed-position realized P&L in selected period";
-      } else {
-        merged.pnlBasis = "Polymarket leaderboard period P&L; closed-position history incomplete";
-      }
+      // Keep P&L from Polymarket's explicit WEEK/MONTH leaderboard period.
+      // Position.realized_pnl is cumulative for that position, so summing it
+      // for positions with a recent last_event_at can incorrectly look like
+      // lifetime P&L rather than the selected period's P&L.
+      merged.pnlBasis = `Polymarket Data API v2 ${String(record.periodKey || "").toLowerCase() || "selected"} leaderboard P&L`;
       return merged;
     })
     .sort((a, b) => {
@@ -520,6 +518,16 @@ function compactPosition(position) {
       position.condition_id ??
       null,
     title: position.title || position.question || "Unknown market",
+    slug: position.slug ?? null,
+    eventSlug: position.event_slug ?? position.eventSlug ?? null,
+    eventTitle: position.event_title ?? position.eventTitle ?? null,
+    category: position.category ?? null,
+    subcategory: position.subcategory ?? null,
+    sport: position.sport ?? null,
+    sportsMarketType: position.sports_market_type ?? position.sportsMarketType ?? null,
+    gameId: position.game_id ?? position.gameId ?? null,
+    gameStartTime: position.game_start_time ?? position.gameStartTime ?? null,
+    tags: Array.isArray(position.tags) ? position.tags : [],
     outcome: position.outcome ?? position.outcome_name ?? null,
     size: num(position.size ?? position.current_size ?? position.currentSize),
     currentValue: num(position.currentValue ?? position.current_value),
@@ -871,6 +879,16 @@ async function getBroadConsensusMarkets(knownTraders, nowMs, activePositions) {
         groups.set(key, {
           conditionId,
           title: position.title || position.question || "Unknown market",
+          slug: position.slug ?? null,
+          eventSlug: position.eventSlug ?? null,
+          eventTitle: position.eventTitle ?? null,
+          category: position.category ?? null,
+          subcategory: position.subcategory ?? null,
+          sport: position.sport ?? null,
+          sportsMarketType: position.sportsMarketType ?? null,
+          gameId: position.gameId ?? null,
+          gameStartTime: position.gameStartTime ?? null,
+          tags: position.tags ?? [],
           endDate: position.endDate ?? position.end_date ?? null,
           side,
           sameSide: 0,
@@ -934,8 +952,12 @@ function classifyMarketCategory(market, group = {}) {
   const tags = Array.isArray(market?.tags) ? market.tags.map(tag => typeof tag === "string" ? tag : (tag.label || tag.slug || tag.name || "")) : [];
   const events = Array.isArray(market?.events) ? market.events : [];
   const eventText = events.flatMap(event => [event.title, event.slug, event.category, event.sport, event.seriesSlug]);
-  const raw = [market?.category, market?.subcategory, market?.sport, market?.sportsMarketType, market?.sports_market_type, market?.seriesSlug, market?.slug, market?.question, market?.title, market?.description, group?.title, group?.slug, ...tags, ...eventText].filter(Boolean).join(" ").toLowerCase();
-  if (market?.gameId || market?.game_id || market?.gameStartTime || market?.game_start_time || /\b(nba|wnba|nfl|mlb|nhl|ncaa|ncaaf|ncaab|mls|atp|wta|ufc|mma|premier league|champions league|world cup|moneyline|spread|over\/under)\b/.test(raw)) return "sports";
+  const raw = [market?.category, market?.subcategory, market?.sport, market?.sportsMarketType, market?.sports_market_type, market?.seriesSlug, market?.slug, market?.eventSlug, market?.event_slug, market?.eventTitle, market?.event_title, market?.question, market?.title, market?.description, group?.category, group?.subcategory, group?.sport, group?.sportsMarketType, group?.eventSlug, group?.eventTitle, group?.slug, group?.title, ...tags, ...(group?.tags || []), ...eventText].filter(Boolean).join(" ").toLowerCase();
+  const sportsSlug = /\b(nba|wnba|nfl|mlb|nhl|ncaab|ncaaf|ncaa|mls|epl|ucl|ufc|atp|wta|pga|f1|nascar|cfl|liga|bundesliga|laliga|serie-a|ligue-1|cricket|rugby|tennis|golf|boxing|mma|esports)\b/.test(raw);
+  if (market?.gameId || market?.game_id || market?.gameStartTime || market?.game_start_time ||
+      group?.gameId || group?.gameStartTime || group?.sportsMarketType || sportsSlug ||
+      (/\b(moneyline|spread|over\/under|point spread|total points|win the game|wins the match|versus)\b/.test(raw) &&
+       /\b(nba|wnba|nfl|mlb|nhl|ncaa|football|basketball|baseball|hockey|soccer|tennis|golf|ufc|mma|team|match|game)\b/.test(raw))) return "sports";
   if (/\b(esports|e-sports|league of legends|dota 2|counter.?strike|valorant)\b/.test(raw)) return "esports";
   if (/\b(politic|election|president|congress|senate|democrat|republican|parliament|governor|vote)\b/.test(raw)) return "politics";
   if (/\b(crypto|bitcoin|btc|ethereum|eth|solana|sol|dogecoin|token|defi)\b/.test(raw)) return "crypto";
@@ -949,7 +971,24 @@ async function enrichConsensusMarkets(holderGroups, nowMs) {
   // Position records can carry stale/missing end dates. Resolve condition IDs
   // through Gamma before applying the 30-day UI window; keep undated active
   // markets visible rather than silently deleting the entire consensus panel.
-  const scan = holderGroups.slice(0, CONSENSUS_MARKET_SCAN_LIMIT);
+  // Stratify before the scan cap: a global top-value slice let politics
+  // crowd sports and other categories out before they could be classified.
+  const categoryOrder = ["sports", "esports", "crypto", "economics", "tech", "weather", "culture", "politics", "other"];
+  const categorized = holderGroups.map(group => ({...group, category: classifyMarketCategory({}, group)}));
+  const categoryBuckets = new Map(categoryOrder.map(category => [category, categorized.filter(group => group.category === category)]));
+  const perCategoryScan = Math.floor(CONSENSUS_MARKET_SCAN_LIMIT / categoryOrder.length);
+  const scan = [];
+  for (const category of categoryOrder) scan.push(...(categoryBuckets.get(category) || []).slice(0, perCategoryScan));
+  const scanKeys = new Set(scan.map(group => group.conditionId + "|" + String(group.side || "").toLowerCase()));
+  if (scan.length < CONSENSUS_MARKET_SCAN_LIMIT) {
+    for (const group of categorized) {
+      const key = group.conditionId + "|" + String(group.side || "").toLowerCase();
+      if (scanKeys.has(key)) continue;
+      scan.push(group); scanKeys.add(key);
+      if (scan.length >= CONSENSUS_MARKET_SCAN_LIMIT) break;
+    }
+  }
+  console.log("Consensus category scan allocation: " + JSON.stringify(Object.fromEntries(categoryOrder.map(category => [category, (categoryBuckets.get(category) || []).length]))));
   const conditionIds = [...new Set(scan.map(group => String(group.conditionId || "").toLowerCase()).filter(Boolean))];
   const chunks = [];
   for (let i = 0; i < conditionIds.length; i += 40) chunks.push(conditionIds.slice(i, i + 40));
@@ -1453,8 +1492,9 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
   const leaders = ranked.slice(0, LEADER_COUNT);
   // Detailed settlement verification is only needed for the visible Top 100.
   // Scanning 1,000 wallets across three API cohorts twice per period delayed the entire publish.
-  const settlementRows = await attachSettlementStats(leaders, period, nowMs);
-  const settlementRecords = Object.fromEntries(settlementRows.map(trader => [String(trader.wallet || "").toLowerCase(), trader]));
+  // Keep W-L based on the selected-period closed-position scan; don't replace
+  // it with a second, lifetime-shaped settlement cohort scan.
+  const settlementRecords = {};
   const consensusMinimumResolved = period.key === "month" ? 10 : 5;
   console.log(`${period.key}: consensus traders require at least ${consensusMinimumResolved} closed positions and ${MIN_CONSENSUS_WIN_RATE}%+ profitable-close rate`);
   // Reuse the period-scoped record sample used for ranking; avoid a second history scan.
@@ -1484,29 +1524,13 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
   // Enrich only the visible Top 100 with verified settlement outcomes and a
   // separate count of positions whose last event preceded market resolution.
   output.leaders = await attachPeriodVolumes(output.leaders, period, nowMs);
-  output.leaders = await attachSettlementStats(output.leaders, period, nowMs);
-  output.leaders = output.leaders.map(trader => {
-    const verified = trader.settlementRecordComplete === true &&
-      (Number(trader.settlementWins) + Number(trader.settlementLosses)) > 0;
-    return {
-      ...trader,
-      profitableCloseWins: trader.wins ?? null,
-      profitableCloseLosses: trader.losses ?? null,
-      profitableCloseRate: trader.winRate ?? null,
-      wins: verified ? trader.settlementWins : null,
-      losses: verified ? trader.settlementLosses : null,
-      winRate: verified ? trader.settlementWins / (trader.settlementWins + trader.settlementLosses) * 100 : null,
-      resolvedMarkets: verified ? trader.settlementWins + trader.settlementLosses : null,
-      recordComplete: verified,
-      recordBasis: verified ? "Verified resolved-market outcomes in the selected period; early exits excluded" : "Verified settlement record incomplete; W-L and win rate withheld"
-    };
-  }).sort((x, y) => {
-    const xv = x.recordComplete === true && Number(x.resolvedMarkets) > 0;
-    const yv = y.recordComplete === true && Number(y.resolvedMarkets) > 0;
-    if (xv !== yv) return xv ? -1 : 1;
-    if (xv && yv) return (Number(y.winRate) - Number(x.winRate)) || (Number(y.resolvedMarkets) - Number(x.resolvedMarkets)) || ((Number(y.pnl) || 0) - (Number(x.pnl) || 0));
-    return (Number(y.pnl) || 0) - (Number(x.pnl) || 0);
-  }).map((trader, index) => ({...trader, rank:index+1}));
+  output.leaders = output.leaders.map(trader => ({
+    ...trader,
+    pnlBasis: `Polymarket v2 leaderboard P&L for selected ${period.key} period`,
+    recordBasis: trader.recordComplete === true
+      ? `Profitable/unprofitable closed-position markets with last_event_at in the selected ${period.key} window; close-profitability proxy, not guaranteed settlement accuracy.`
+      : `Incomplete closed-position history in the selected ${period.key} window; W-L and win rate withheld.`
+  }));
 
   // Keep consensus independent of the Top 100 JSON size guard.
   const builtConsensusRows = Array.isArray(output.consensus) ? output.consensus : [];
