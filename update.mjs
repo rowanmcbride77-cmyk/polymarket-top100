@@ -1095,13 +1095,7 @@ async function enrichConsensusMarkets(holderGroups, nowMs) {
 }
 
 function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedMarkets = MIN_TRADER_RESOLVED_MARKETS) {
-  const categoryBuckets = const candidateMap = new Map(candidates.map(trader => [String(trader.wallet || '').toLowerCase(), trader]));
-  const nowMs = Date.now();
-  // Positions are active according to the v2 OPEN lifecycle and Gamma closed
-  // state. Each holder's performance qualification is shown separately.
-  // enrichConsensusMarkets already excludes closed markets and dates beyond
-  // the configured 30-day horizon. Rechecking with isResolvingSoon used a
-  // different date interpretation and silently discarded valid shared markets.
+  const candidateMap = new Map(candidates.map(trader => [String(trader.wallet || "").toLowerCase(), trader]));
   const eligibleGroups = holderGroups.filter(group =>
     group.sameSide >= 2 && (num(group.totalValue) ?? 0) > 0
   );
@@ -1109,47 +1103,57 @@ function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedM
     enrichedGroups: holderGroups.length,
     eligibleGroups: eligibleGroups.length
   }));
-  return eligibleGroups.map(group => {
-    // Deduplicate at the source: upstream position aggregation can contain
-    // repeated rows for one wallet. A wallet must count only once toward
-    // same-side consensus, regardless of how many position rows it has.
+  const qualified = eligibleGroups.map(group => {
     const uniqueHolders = [...new Map(
       (Array.isArray(group.traders) ? group.traders : [])
-        .filter(holder => String(holder.wallet || '').trim())
+        .filter(holder => String(holder.wallet || "").trim())
         .map(holder => [String(holder.wallet).trim().toLowerCase(), holder])
     ).values()];
     const traders = uniqueHolders.map(holder => {
-      const wallet = String(holder.wallet || '').toLowerCase();
+      const wallet = String(holder.wallet || "").toLowerCase();
       const candidate = candidateMap.get(wallet) || {};
       const record = records[wallet] || records[candidate.wallet] || {};
       const wins = num(record.wins), losses = num(record.losses);
       const resolvedMarkets = wins !== null && losses !== null ? wins + losses : num(record.resolvedMarkets);
-      const winRate = wins !== null && losses !== null && resolvedMarkets > 0 ? wins / resolvedMarkets * 100 : num(record.winRate);
-      const qualified = record.recordComplete === true && resolvedMarkets !== null &&
-        resolvedMarkets >= minimumResolvedMarkets && winRate !== null && winRate >= MIN_CONSENSUS_WIN_RATE;
-      return { ...holder, wallet, name: holder.name || candidate.name || 'Trader',
+      const winRate = wins !== null && losses !== null && resolvedMarkets > 0
+        ? wins / resolvedMarkets * 100 : num(record.winRate);
+      const isQualified = record.recordComplete === true &&
+        resolvedMarkets !== null && resolvedMarkets >= minimumResolvedMarkets &&
+        winRate !== null && winRate >= MIN_CONSENSUS_WIN_RATE;
+      return {
+        ...holder, wallet, name: holder.name || candidate.name || "Trader",
         rank: candidate.sportsRank ?? candidate.rank ?? holder.rank ?? null,
-        overallRank: candidate.rank ?? null, pnl: candidate.pnl ?? holder.pnl ?? null,
-        volume: candidate.volume ?? holder.volume ?? null, wins, losses, winRate, resolvedMarkets,
-        earlyExitPositions: num(record.earlyExitPositions), recordComplete: record.recordComplete === true,
-        qualified, recordBasis: qualified ? 'Meets the selected period performance threshold' : 'Shared-position holder; performance record incomplete or below threshold' };
+        overallRank: candidate.rank ?? null,
+        pnl: candidate.pnl ?? holder.pnl ?? null,
+        volume: candidate.volume ?? holder.volume ?? null,
+        wins, losses, winRate, resolvedMarkets,
+        earlyExitPositions: num(record.earlyExitPositions),
+        recordComplete: record.recordComplete === true,
+        qualified: isQualified,
+        recordBasis: isQualified ? "Meets selected-period performance threshold" :
+          "Shared-position holder; performance record incomplete or below threshold"
+      };
     });
-    return { ...group, traders, sameSide: traders.length,
+    return {
+      ...group, traders, sameSide: traders.length,
       qualifiedTraders: traders.filter(trader => trader.qualified).length,
-      totalValue: traders.reduce((sum, trader) => sum + (num(trader.amount) ?? 0), 0) };
+      totalValue: traders.reduce((sum, trader) => sum + (num(trader.amount) ?? 0), 0)
+    };
   }).filter(group => group.sameSide >= 2)
-    // Keep the configured 90% / 5-market qualification intact, but do not
-    // let one category occupy the first page when other categories qualify.
     .filter(group => group.traders.filter(trader => trader.qualified).length >= 2)
-    .sort((a, b) => b.qualifiedTraders - a.qualifiedTraders || b.sameSide - a.sameSide || b.totalValue - a.totalValue || (b.newestBuy || 0) - (a.newestBuy || 0))
-    .reduce((buckets, group) => {
-      const category = group.category || "other";
-      if (!buckets.has(category)) buckets.set(category, []);
-      if (buckets.get(category).length < 20) buckets.get(category).push(group);
-      return buckets;
-    }, new Map())
-    .values();
-  const categoryLists = [...categoryBuckets];
+    .sort((a, b) => b.qualifiedTraders - a.qualifiedTraders ||
+      b.sameSide - a.sameSide || b.totalValue - a.totalValue ||
+      (b.newestBuy || 0) - (a.newestBuy || 0));
+
+  // Cap each category and interleave categories so politics cannot occupy
+  // the entire result set when sports, esports, crypto, or other groups qualify.
+  const buckets = new Map();
+  for (const group of qualified) {
+    const category = group.category || "other";
+    if (!buckets.has(category)) buckets.set(category, []);
+    if (buckets.get(category).length < 20) buckets.get(category).push(group);
+  }
+  const categoryLists = [...buckets.entries()];
   const diversified = [];
   for (let index = 0; diversified.length < CONSENSUS_LIMIT; index++) {
     let added = false;
@@ -1167,7 +1171,7 @@ function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedM
     const category = group.category || "other";
     categoryCounts[category] = (categoryCounts[category] || 0) + 1;
   }
-  console.log("Consensus qualified category mix: " + JSON.stringify(categoryCounts));
+  console.log("Consensus qualified category mix:", JSON.stringify(categoryCounts));
   return diversified;
 }
 function parseArrayField(value) {
