@@ -519,6 +519,7 @@ function compactPosition(position) {
       position.conditionId ??
       position.condition_id ??
       null,
+    clobTokenId: position.asset ?? position.token_id ?? position.tokenId ?? position.clobTokenId ?? null,
     title: position.title || position.question || "Unknown market",
     slug: position.slug ?? null,
     eventSlug: position.event_slug ?? position.eventSlug ?? null,
@@ -889,6 +890,7 @@ async function getBroadConsensusMarkets(knownTraders, nowMs, activePositions) {
       if (!groups.has(key)) {
         groups.set(key, {
           conditionId,
+          clobTokenIds: [],
           title: position.title || position.question || "Unknown market",
           slug: position.slug ?? null,
           eventSlug: position.eventSlug ?? null,
@@ -912,6 +914,7 @@ async function getBroadConsensusMarkets(knownTraders, nowMs, activePositions) {
         });
       }
       const group = groups.get(key);
+      if (position.clobTokenId && !group.clobTokenIds.includes(String(position.clobTokenId))) group.clobTokenIds.push(String(position.clobTokenId));
       if (group.walletsSeen.has(wallet)) continue;
       group.walletsSeen.add(wallet);
       const invested = num(position.initialValue ?? position.initial_value) ?? currentValue;
@@ -1005,15 +1008,20 @@ async function enrichConsensusMarkets(holderGroups, nowMs) {
     }
   }
   console.log("Consensus category scan allocation: " + JSON.stringify(Object.fromEntries(categoryOrder.map(category => [category, (categoryBuckets.get(category) || []).length]))));
+  // Look markets up by outcome token ID first. Position rows expose the
+  // token as `asset`; this avoids empty condition-ID lookups when the
+  // position endpoint uses a different condition identifier representation.
+  const tokenIds = [...new Set(scan.flatMap(group => Array.isArray(group.clobTokenIds) ? group.clobTokenIds : []).map(String).filter(Boolean))];
   const conditionIds = [...new Set(scan.map(group => String(group.conditionId || "").toLowerCase()).filter(Boolean))];
+  const lookupItems = tokenIds.length
+    ? tokenIds.map(id => ({key: "clob_token_ids", id}))
+    : conditionIds.map(id => ({key: "condition_ids", id}));
   const chunks = [];
-  for (let i = 0; i < conditionIds.length; i += 40) chunks.push(conditionIds.slice(i, i + 40));
+  for (let i = 0; i < lookupItems.length; i += 40) chunks.push(lookupItems.slice(i, i + 40));
 
-  const pages = await mapLimit(chunks, CONCURRENCY, async ids => {
-    // Gamma's condition_ids is an array query parameter. Send one repeated
-    // key per condition ID; comma-joining them returns no matching metadata.
+  const pages = await mapLimit(chunks, CONCURRENCY, async items => {
     const params = new URLSearchParams();
-    for (const id of ids) params.append("condition_ids", id);
+    for (const item of items) params.append(item.key, item.id);
     try {
       return {rows: asArray(await getJson(`${GAMMA_API}/markets?${params}`)), ok: true};
     } catch (error) {
@@ -1074,6 +1082,7 @@ async function enrichConsensusMarkets(holderGroups, nowMs) {
   console.log("Consensus Gamma enrichment: " + JSON.stringify({
     scannedGroups: scan.length,
     conditionIds: conditionIds.length,
+    tokenIds: tokenIds.length,
     metadataPages: pages.length,
     metadataReturned: marketByCondition.size,
     closedRemoved,
