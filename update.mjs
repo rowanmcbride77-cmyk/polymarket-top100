@@ -959,8 +959,11 @@ function classifyMarketCategory(market, group = {}) {
   // be swallowed by the general sports bucket.
   if (/\b(esports|e-sports|league of legends|lol|dota\s*2|counter.?strike|cs2|valorant|overwatch|rocket league)\b/.test(raw)) return "esports";
   const sportsSlug = /\b(nba|wnba|nfl|mlb|nhl|ncaab|ncaaf|ncaa|mls|epl|ucl|ufc|atp|wta|pga|f1|nascar|cfl|liga|bundesliga|laliga|serie-a|ligue-1|cricket|rugby|tennis|golf|boxing|mma)\b/.test(raw);
+  // Many active sports positions omit an explicit league/category field.
+  // Their market question or slug still contains the participating team.
+  const sportsTeam = /\b(lakers|celtics|warriors|knicks|nets|bulls|heat|bucks|sixers|76ers|cavaliers|cavs|clippers|suns|nuggets|mavericks|mavs|rockets|spurs|grizzlies|thunder|timberwolves|pelicans|kings|trail blazers|blazers|jazz|hawks|magic|hornets|pistons|raptors|wizards|chiefs|eagles|cowboys|49ers|niners|ravens|bills|bengals|steelers|packers|lions|vikings|bears|commanders|giants|jets|patriots|dolphins|broncos|chargers|raiders|seahawks|rams|cardinals|falcons|panthers|saints|buccaneers|bucs|titans|colts|texans|jaguars|browns|orioles|yankees|red sox|blue jays|rays|astros|mariners|rangers|dodgers|padres|giants|mets|phillies|braves|cubs|cardinals|brewers|twins|guardians|tigers|royals|athletics|angels|white sox|reds|pirates|marlins|nationals|rockies|maple leafs|bruins|rangers|penguins|capitals|lightning|panthers|oilers|canucks|flames|avalanche|golden knights|stars|wild|jets|predators|hurricanes|islanders|devils|sabres|red wings|senators|ducks|sharks|kings|kraken|blues|blackhawks|canadiens|flyers|blue jackets)\b/.test(raw);
   if (market?.gameId || market?.game_id || market?.gameStartTime || market?.game_start_time ||
-      group?.gameId || group?.gameStartTime || group?.sportsMarketType || sportsSlug ||
+      group?.gameId || group?.gameStartTime || group?.sportsMarketType || sportsSlug || sportsTeam ||
       (/\b(moneyline|spread|over\/under|point spread|total points|win the game|wins the match|versus)\b/.test(raw) &&
        /\b(nba|wnba|nfl|mlb|nhl|ncaa|football|basketball|baseball|hockey|soccer|tennis|golf|ufc|mma|team|match|game)\b/.test(raw))) return "sports";
   if (/\b(politic|election|president|congress|senate|democrat|republican|parliament|governor|vote)\b/.test(raw)) return "politics";
