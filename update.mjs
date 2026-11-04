@@ -1213,7 +1213,8 @@ async function getSettlementStats(wallet, period, nowMs, limit = 250) {
   const conditionChunks = [];
   for (let i = 0; i < conditions.length; i += 40) conditionChunks.push(conditions.slice(i, i + 40));
   const marketPages = await mapLimit(conditionChunks, CONCURRENCY, async ids => {
-    const q = new URLSearchParams({condition_ids: ids.join(",")});
+    const q = new URLSearchParams();
+    for (const id of ids) q.append("condition_ids", id);
     try {
       return {rows:asArray(await getJson(`${GAMMA_API}/markets?${q.toString()}`)), ok:true};
     } catch (error) {
@@ -1331,10 +1332,11 @@ async function attachSettlementStats(traders, period, nowMs) {
   return await mapLimit(traders, 4, async trader => {
     try {
       const wallet = String(trader.wallet || "").toLowerCase();
-      let pending = settlementStatsCache.get(wallet);
+      const cacheKey = String(period?.key || period?.api || period || "week") + "|" + wallet;
+      let pending = settlementStatsCache.get(cacheKey);
       if (!pending) {
-        pending = getSettlementStats(wallet, period, nowMs, 250);
-        settlementStatsCache.set(wallet, pending);
+        pending = getSettlementStats(wallet, period, nowMs, 100);
+        settlementStatsCache.set(cacheKey, pending);
       }
       const stats = await pending;
       return {...trader, ...stats};
@@ -1382,13 +1384,13 @@ function makeOutput(period, ranked, sportsRanked, activePositions, tradeRows, no
     period: period.key,
     rankingBasis:
       `General leaderboard ranks the discovered candidate set using the existing period ranking. Closed-position profitability is a realized-P&L proxy, not verified settlement accuracy and not proof that a trader never exits early. Candidate discovery is limited to the discovered public leaderboard universe.`,
-    recordBasis: "IMPORTANT: complete profitable/unprofitable close counts are inferred from realized P&L, not verified market prediction wins/losses. If a history scan hits its cap, counts and rate are hidden rather than shown as a misleading 1,000–0 sample. Incomplete-record traders fall back to Polymarket period P&L/volume ranking.",
+    recordBasis: "Leaderboard wins/losses are counted only from verified resolved market outcomes. If position history or Gamma settlement metadata is incomplete, counts and rate are withheld. Ranking is primarily by the selected-period Polymarket leaderboard P&L.",
     candidateCount: ranked.length,
     sportsLeaders: sportsRanked.slice(0, LEADER_COUNT),
     minResolvedMarketsForRecordRanking: 10,
     recordRankingEnabled: true,
     recordWarning:
-      `Consensus groups open positions by exact market condition ID and exact outcome. Candidate coverage is limited to the discovered public leaderboard pool and the paginated position rows scanned. Closed-position profitability figures are P&L-based proxies, not verified settlement records.`,
+      `Leaderboard records use verified market settlement outcomes when complete; incomplete samples are withheld. Consensus qualification remains based on the selected-period profitable-close proxy and the configured 90% threshold.`,
     leaders,
     // Combo discovery pool is intentionally broad: combo traders can be profitable
     // despite low win rates or small sample sizes. Rank and display their actual combo positions.
@@ -1531,16 +1533,30 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     consensusGroups,
     settlementRecords
   );
-  // Enrich only the visible Top 100 with verified settlement outcomes and a
-  // separate count of positions whose last event preceded market resolution.
+  // Publish true settlement W-L for visible leaders only. If either the
+  // position cohorts or Gamma outcome metadata are incomplete, hide the
+  // record rather than treating profitable early exits as prediction wins.
   output.leaders = await attachPeriodVolumes(output.leaders, period, nowMs);
-  output.leaders = output.leaders.map(trader => ({
-    ...trader,
-    pnlBasis: `Polymarket v2 leaderboard P&L for selected ${period.key} period`,
-    recordBasis: trader.recordComplete === true
-      ? `Profitable/unprofitable closed-position markets with last_event_at in the selected ${period.key} window; close-profitability proxy, not guaranteed settlement accuracy.`
-      : `Incomplete closed-position history in the selected ${period.key} window; W-L and win rate withheld.`
-  }));
+  output.leaders = await attachSettlementStats(output.leaders, period, nowMs);
+  output.leaders = output.leaders.map(trader => {
+    const complete = trader.settlementRecordComplete === true;
+    const wins = complete ? Number(trader.settlementWins) : null;
+    const losses = complete ? Number(trader.settlementLosses) : null;
+    const resolved = complete ? wins + losses : null;
+    return {
+      ...trader,
+      wins,
+      losses,
+      winRate: complete && resolved > 0 ? (wins / resolved) * 100 : null,
+      resolvedMarkets: resolved,
+      recordComplete: complete,
+      recordVerified: complete,
+      pnlBasis: `Polymarket v2 leaderboard P&L for selected ${period.key} period`,
+      recordBasis: complete
+        ? "Verified market-settlement outcomes; positions exited before resolution are excluded."
+        : "Settlement record incomplete: wins, losses, and win rate withheld rather than estimated from realized P&L."
+    };
+  });
 
   // Keep consensus independent of the Top 100 JSON size guard.
   const builtConsensusRows = Array.isArray(output.consensus) ? output.consensus : [];
