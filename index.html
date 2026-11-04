@@ -523,7 +523,16 @@ function marketKey(market, index) {
 
 function rankedLeaders() {
   return [...leaders()]
-    .sort((a, b) => (num(a.rank) ?? 99999) - (num(b.rank) ?? 99999))
+    // Enforce the requested period-profit ranking in the browser too. Never
+    // trust a stale API rank or a close-count sort when actual P&L is present.
+    .sort((a, b) => {
+      const ap = num(a.pnl), bp = num(b.pnl);
+      if (ap !== null && bp !== null && ap !== bp) return bp - ap;
+      if (ap !== null && bp === null) return -1;
+      if (ap === null && bp !== null) return 1;
+      return (num(a.rank) ?? 99999) - (num(b.rank) ?? 99999);
+    })
+    .slice(0, 100)
     .map((trader, index) => ({...trader, displayRank:index + 1}));
 }
 
