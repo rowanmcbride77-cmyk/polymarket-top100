@@ -453,6 +453,19 @@ function rankCandidates(candidates, records = {}) {
     .sort((a, b) => {
       // A trader is eligible for record ranking only with a complete sample,
       // consistent W-L counts, and the minimum number of classifiable closes.
+      // The primary leaderboard promise is period profit, not a huge
+      // profitable-close count. Sort by the explicit WEEK/MONTH leaderboard
+      // P&L first; use volume as a secondary signal and the close proxy only
+      // as a later tie-breaker. This prevents 964-0 / $2k rows outranking
+      // traders who actually made substantially more in the selected period.
+      const aPnl = Number(a.pnl);
+      const bPnl = Number(b.pnl);
+      const aHasPnl = Number.isFinite(aPnl);
+      const bHasPnl = Number.isFinite(bPnl);
+      if (aHasPnl !== bHasPnl) return aHasPnl ? -1 : 1;
+      if (aHasPnl && bHasPnl && aPnl !== bPnl) return bPnl - aPnl;
+      const aVolume = Number(a.volume), bVolume = Number(b.volume);
+      if (Number.isFinite(aVolume) && Number.isFinite(bVolume) && aVolume !== bVolume) return bVolume - aVolume;
       const aCountsValid = Number.isFinite(Number(a.wins)) && Number(a.wins) >= 0 &&
         Number.isFinite(Number(a.losses)) && Number(a.losses) >= 0 &&
         Number(a.resolvedMarkets) === Number(a.wins) + Number(a.losses) &&
@@ -461,21 +474,10 @@ function rankCandidates(candidates, records = {}) {
         Number.isFinite(Number(b.losses)) && Number(b.losses) >= 0 &&
         Number(b.resolvedMarkets) === Number(b.wins) + Number(b.losses) &&
         Number(b.resolvedMarkets) > 0;
-      const aComplete = a.recordComplete === true && aCountsValid &&
-        Number(a.resolvedMarkets) >= MIN_TRADER_RESOLVED_MARKETS;
-      const bComplete = b.recordComplete === true && bCountsValid &&
-        Number(b.resolvedMarkets) >= MIN_TRADER_RESOLVED_MARKETS;
+      const aComplete = a.recordComplete === true && aCountsValid && Number(a.resolvedMarkets) >= MIN_TRADER_RESOLVED_MARKETS;
+      const bComplete = b.recordComplete === true && bCountsValid && Number(b.resolvedMarkets) >= MIN_TRADER_RESOLVED_MARKETS;
       if (aComplete !== bComplete) return aComplete ? -1 : 1;
-      if (aComplete && bComplete) {
-        const aRate = Number(a.wins) / (Number(a.wins) + Number(a.losses));
-        const bRate = Number(b.wins) / (Number(b.wins) + Number(b.losses));
-        return (bRate - aRate) ||
-          (Number(b.resolvedMarkets) - Number(a.resolvedMarkets)) ||
-          ((Number(b.pnl) || 0) - (Number(a.pnl) || 0)) ||
-          ((Number(b.volume) || 0) - (Number(a.volume) || 0));
-      }
-      return ((Number(b.pnl) || 0) - (Number(a.pnl) || 0)) ||
-        ((Number(b.volume) || 0) - (Number(a.volume) || 0));
+      return (Number(b.resolvedMarkets) || 0) - (Number(a.resolvedMarkets) || 0);
     })
     .map((trader, index) => ({ ...trader, rank: index + 1 }));
 }
@@ -953,12 +955,14 @@ function classifyMarketCategory(market, group = {}) {
   const events = Array.isArray(market?.events) ? market.events : [];
   const eventText = events.flatMap(event => [event.title, event.slug, event.category, event.sport, event.seriesSlug]);
   const raw = [market?.category, market?.subcategory, market?.sport, market?.sportsMarketType, market?.sports_market_type, market?.seriesSlug, market?.slug, market?.eventSlug, market?.event_slug, market?.eventTitle, market?.event_title, market?.question, market?.title, market?.description, group?.category, group?.subcategory, group?.sport, group?.sportsMarketType, group?.eventSlug, group?.eventTitle, group?.slug, group?.title, ...tags, ...(group?.tags || []), ...eventText].filter(Boolean).join(" ").toLowerCase();
-  const sportsSlug = /\b(nba|wnba|nfl|mlb|nhl|ncaab|ncaaf|ncaa|mls|epl|ucl|ufc|atp|wta|pga|f1|nascar|cfl|liga|bundesliga|laliga|serie-a|ligue-1|cricket|rugby|tennis|golf|boxing|mma|esports)\b/.test(raw);
+  // Classify esports before sports: the substring "esports" must never
+  // be swallowed by the general sports bucket.
+  if (/\b(esports|e-sports|league of legends|lol|dota\s*2|counter.?strike|cs2|valorant|overwatch|rocket league)\b/.test(raw)) return "esports";
+  const sportsSlug = /\b(nba|wnba|nfl|mlb|nhl|ncaab|ncaaf|ncaa|mls|epl|ucl|ufc|atp|wta|pga|f1|nascar|cfl|liga|bundesliga|laliga|serie-a|ligue-1|cricket|rugby|tennis|golf|boxing|mma)\b/.test(raw);
   if (market?.gameId || market?.game_id || market?.gameStartTime || market?.game_start_time ||
       group?.gameId || group?.gameStartTime || group?.sportsMarketType || sportsSlug ||
       (/\b(moneyline|spread|over\/under|point spread|total points|win the game|wins the match|versus)\b/.test(raw) &&
        /\b(nba|wnba|nfl|mlb|nhl|ncaa|football|basketball|baseball|hockey|soccer|tennis|golf|ufc|mma|team|match|game)\b/.test(raw))) return "sports";
-  if (/\b(esports|e-sports|league of legends|dota 2|counter.?strike|valorant)\b/.test(raw)) return "esports";
   if (/\b(politic|election|president|congress|senate|democrat|republican|parliament|governor|vote)\b/.test(raw)) return "politics";
   if (/\b(crypto|bitcoin|btc|ethereum|eth|solana|sol|dogecoin|token|defi)\b/.test(raw)) return "crypto";
   if (/\b(econom|federal reserve|inflation|gdp|interest rate|recession|jobs report)\b/.test(raw)) return "economics";
@@ -994,7 +998,10 @@ async function enrichConsensusMarkets(holderGroups, nowMs) {
   for (let i = 0; i < conditionIds.length; i += 40) chunks.push(conditionIds.slice(i, i + 40));
 
   const pages = await mapLimit(chunks, CONCURRENCY, async ids => {
-    const params = new URLSearchParams({condition_ids: ids.join(",")});
+    // Gamma's condition_ids is an array query parameter. Send one repeated
+    // key per condition ID; comma-joining them returns no matching metadata.
+    const params = new URLSearchParams();
+    for (const id of ids) params.append("condition_ids", id);
     try {
       return {rows: asArray(await getJson(`${GAMMA_API}/markets?${params}`)), ok: true};
     } catch (error) {
