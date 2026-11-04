@@ -1095,7 +1095,7 @@ async function enrichConsensusMarkets(holderGroups, nowMs) {
 }
 
 function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedMarkets = MIN_TRADER_RESOLVED_MARKETS) {
-  const candidateMap = new Map(candidates.map(trader => [String(trader.wallet || '').toLowerCase(), trader]));
+  const categoryBuckets = const candidateMap = new Map(candidates.map(trader => [String(trader.wallet || '').toLowerCase(), trader]));
   const nowMs = Date.now();
   // Positions are active according to the v2 OPEN lifecycle and Gamma closed
   // state. Each holder's performance qualification is shown separately.
@@ -1138,15 +1138,37 @@ function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedM
       qualifiedTraders: traders.filter(trader => trader.qualified).length,
       totalValue: traders.reduce((sum, trader) => sum + (num(trader.amount) ?? 0), 0) };
   }).filter(group => group.sameSide >= 2)
+    // Keep the configured 90% / 5-market qualification intact, but do not
+    // let one category occupy the first page when other categories qualify.
     .filter(group => group.traders.filter(trader => trader.qualified).length >= 2)
     .sort((a, b) => b.qualifiedTraders - a.qualifiedTraders || b.sameSide - a.sameSide || b.totalValue - a.totalValue || (b.newestBuy || 0) - (a.newestBuy || 0))
-    .reduce((selected, group) => {
+    .reduce((buckets, group) => {
       const category = group.category || "other";
-      const count = selected.filter(item => (item.category || "other") === category).length;
-      if (count < 20) selected.push(group);
-      return selected;
-    }, [])
-    .slice(0, CONSENSUS_LIMIT);
+      if (!buckets.has(category)) buckets.set(category, []);
+      if (buckets.get(category).length < 20) buckets.get(category).push(group);
+      return buckets;
+    }, new Map())
+    .values();
+  const categoryLists = [...categoryBuckets];
+  const diversified = [];
+  for (let index = 0; diversified.length < CONSENSUS_LIMIT; index++) {
+    let added = false;
+    for (const [, list] of categoryLists) {
+      if (list[index]) {
+        diversified.push(list[index]);
+        added = true;
+        if (diversified.length >= CONSENSUS_LIMIT) break;
+      }
+    }
+    if (!added) break;
+  }
+  const categoryCounts = {};
+  for (const group of diversified) {
+    const category = group.category || "other";
+    categoryCounts[category] = (categoryCounts[category] || 0) + 1;
+  }
+  console.log("Consensus qualified category mix: " + JSON.stringify(categoryCounts));
+  return diversified;
 }
 function parseArrayField(value) {
   if (Array.isArray(value)) return value;
