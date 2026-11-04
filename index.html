@@ -160,11 +160,11 @@ dialog::backdrop{background:#000b}
         <div id="leaderModeNote" style="display:none"></div>
         <div class="table-wrap">
           <table>
-            <thead><tr id="leaderHeader"><th>#</th><th>Trader</th><th>Profitable / Unprofitable</th><th>Close Rate</th><th>Period P&amp;L</th><th>Volume</th></tr></thead>
+            <thead><tr id="leaderHeader"><th>#</th><th>Trader</th><th>Verified Wins–Losses</th><th>Win Rate</th><th>Period P&amp;L</th><th>Volume</th></tr></thead>
             <tbody id="leadersBody"><tr><td colspan="6" class="loading">Loading traders…</td></tr></tbody>
           </table>
         </div>
-        <div class="source-note">These counts are profitable versus unprofitable closed positions in the selected period—not verified market-settlement wins and losses. Early exits can affect the close-rate estimate.</div>
+        <div class="source-note">Wins and losses count only positions held through actual market resolution. Early exits are excluded; if the available position history or settlement metadata is incomplete, the record is shown as unavailable rather than estimated.</div>
         <button class="link-button" id="leadersMore" onclick="toggleLeaders()">View all traders →</button>
       </section>
 
@@ -654,7 +654,7 @@ function renderLeaders() {
     ? " <th>#</th><th>Trader</th><th>Weekly combo wins</th><th>Weekly combo losses</th><th>Weekly partial</th><th>Combo win rate</th><th>Weekly combo net P&amp;L</th><th>P&amp;L coverage</th><th>Weekly market wins–losses</th><th>Weekly market P&amp;L</th><th>Market volume</th>"
     : efficiencyMode
       ? "<th>#</th><th>Trader</th><th>Upcoming combo</th><th>Entry</th><th>Est. payout</th><th>Est. profit</th><th>Est. return</th>"
-      : "<th>#</th><th>Trader</th><th>" + (period === "week" ? "7-day profitable / unprofitable" : "30-day profitable / unprofitable") + "</th><th>Close rate</th><th>" + (period === "week" ? "7-day P&amp;L" : "30-day P&amp;L") + "</th><th>Volume</th>";
+      : "<th>#</th><th>Trader</th><th>" + (period === "week" ? "7-day verified W–L" : "30-day verified W–L") + "</th><th>Win rate</th><th>" + (period === "week" ? "7-day P&amp;L" : "30-day P&amp;L") + "</th><th>Volume</th>";
   $("leadersBody").innerHTML = visible.length ? visible.map((trader,index) => {
     if (comboMode) {
       // Combo traders are not necessarily in the visible Top 100 market leaderboard.
