@@ -1187,9 +1187,9 @@ async function getSettlementStats(wallet, period, nowMs, limit = 250) {
   // the existing five-page cap. Held winner/loss cohorts usually fit in one
   // page; if they do not, the record is explicitly marked incomplete.
   const cohorts = await Promise.all([
-    fetchPositionCohort("CLOSED", 5),
-    fetchPositionCohort("OPEN", 2),
-    fetchPositionCohort("REDEEMABLE_LOST", 2)
+    fetchPositionCohort("CLOSED", 2),
+    fetchPositionCohort("OPEN", 1),
+    fetchPositionCohort("REDEEMABLE_LOST", 1)
   ]);
   const allPagesComplete = cohorts.every(cohort => cohort.complete);
   const uniqueRows = new Map();
@@ -1240,7 +1240,7 @@ async function getSettlementStats(wallet, period, nowMs, limit = 250) {
 
     // An active-market holding is neither a win nor a loss. A closed position
     // on a market that is still open is an early exit and must not count as a win.
-    if (market.closed !== true) {
+    if (market.closed !== true && String(market.closed).toLowerCase() !== "true") {
       if (scanStatus === "CLOSED") {
         if (lastEventAt === null) { unclassified++; continue; }
         classified++;
