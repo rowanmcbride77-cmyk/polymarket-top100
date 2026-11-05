@@ -1419,13 +1419,17 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
   // consensus holders outside that arbitrary slice were silently discarded.
   const candidates = discoveredCandidates;
   const rankingRecordCandidates = candidates;
-  const candidateByWallet = new Map(candidates.map(trader => [String(trader.wallet || "").toLowerCase(), trader]));
+  // The weekly consensus pool verifies every wallet discovered by either
+  // leaderboard period against the same last-7-days record.
+  const recordUniverse = period.key === "week" && Array.isArray(consensusCandidates)
+    ? consensusCandidates : candidates;
+  const candidateByWallet = new Map(recordUniverse.map(trader => [String(trader.wallet || "").toLowerCase(), trader]));
   const consensusWallets = new Set(
     consensusGroups.flatMap(group => (Array.isArray(group.traders) ? group.traders : [])
       .map(holder => String(holder.wallet || "").toLowerCase())
       .filter(wallet => candidateByWallet.has(wallet)))
   );
-  const recordCandidateMap = new Map(rankingRecordCandidates.map(trader => [String(trader.wallet || "").toLowerCase(), trader]));
+  const recordCandidateMap = new Map(recordUniverse.map(trader => [String(trader.wallet || "").toLowerCase(), trader]));
   for (const wallet of consensusWallets) {
     if (!recordCandidateMap.has(wallet)) recordCandidateMap.set(wallet, candidateByWallet.get(wallet));
   }
@@ -1487,7 +1491,7 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     }).map(([wallet]) => wallet.toLowerCase());
     qualificationCount = {
       qualifiedTraderCount: qualifiedWallets.length,
-      candidateWalletsScanned: candidates.length,
+      candidateWalletsScanned: recordCandidates.length,
       recordsReturned: Object.keys(allCandidateRecords).length,
       completeRecords: completeRecordRows.length,
       incompleteOrUnavailableRecords: candidates.length - completeRecordRows.length,
