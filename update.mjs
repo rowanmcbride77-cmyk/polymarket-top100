@@ -10,9 +10,6 @@ const PERIODS = [
 
 // Discover and use a broad pool for overlap detection. Expensive per-wallet history
 // verification remains separately bounded so the scheduled workflow can finish.
-const CANDIDATE_COUNT = 10000;
-const PROCESS_CANDIDATE_COUNT = 10000;
-const RECORD_SCAN_CANDIDATE_COUNT = 1000;
 const LEADERBOARD_PAGE_COUNT = 1000;
 const MIN_CONSENSUS_WIN_RATE = 90;
 const LEADER_COUNT = 100;
@@ -307,115 +304,48 @@ async function mapLimit(items, limit, callback) {
 }
 
 async function getCandidates(period) {
-  // Build a category-balanced trader pool. The old global 5,000-wallet stop
-  // could be reached while reading "overall", before sports and other
-  // category leaderboards were ever queried.
   const byWallet = new Map();
-  const categories = [
-    "overall", "sports", "politics", "crypto", "esports", "culture",
-    "mentions", "weather", "economics", "tech", "finance"
-  ];
-  const timePeriods = [...new Set([period.api, "DAY", "WEEK", "MONTH", "ALL"])];
-  const target = CANDIDATE_COUNT;
-  const perCategoryTarget = Math.ceil(target / categories.length);
-
+  const categories = ["overall","sports","politics","crypto","esports","culture","mentions","weather","economics","tech","finance"];
+  const timePeriods = [...new Set([period.api,"DAY","WEEK","MONTH","ALL"])];
+  let pagesFetched = 0;
   for (const category of categories) {
-    const categoryWallets = new Set();
-    categoryDiscovery:
     for (const timePeriod of timePeriods) {
-      for (const orderBy of ["PNL", "VOLUME"]) {
-        let cursor = null;
-        let page = 0;
-        while (page < LEADERBOARD_PAGE_COUNT && categoryWallets.size < perCategoryTarget) {
-          const params = new URLSearchParams({
-            category,
-            time_period: timePeriod.toLowerCase(),
-            sort_by: orderBy,
-            limit: String(PAGE_SIZE)
-          });
-          if (cursor) params.set("cursor", cursor);
+      for (const orderBy of ["PNL","VOLUME"]) {
+        let cursor = null, page = 0;
+        while (page < LEADERBOARD_PAGE_COUNT) {
+          const params = new URLSearchParams({category,time_period:timePeriod.toLowerCase(),sort_by:orderBy,limit:String(PAGE_SIZE)});
+          if (cursor) params.set("cursor",cursor);
           const response = await getJson(`${API}/v2/leaderboard?${params}`);
           const rows = asArray(response);
+          pagesFetched++;
           if (!rows.length) break;
-          for (let i = 0; i < rows.length; i++) {
-            const trader = normalizeLeader(rows[i], page * PAGE_SIZE + i + 1);
-            if (!trader.wallet) continue;
-            const wallet = String(trader.wallet).toLowerCase();
-            categoryWallets.add(wallet);
-
-            // Only requested-period leaderboard values may populate period P&L/volume.
-            if (timePeriod !== period.api) {
-              trader.pnl = null;
-              trader.volume = null;
-            }
-            const existing = byWallet.get(wallet);
-            if (existing) {
-              if (existing.pnl === null || existing.pnl === undefined) existing.pnl = trader.pnl;
-              if (existing.volume === null || existing.volume === undefined) existing.volume = trader.volume;
-              if ((!existing.name || existing.name === "Unknown") && trader.name) existing.name = trader.name;
-            } else if (byWallet.size < target) {
-              byWallet.set(wallet, trader);
-            }
-            if (categoryWallets.size >= perCategoryTarget) break;
+          for (let i=0;i<rows.length;i++) {
+            const trader=normalizeLeader(rows[i],page*PAGE_SIZE+i+1);
+            if(!trader.wallet) continue;
+            const wallet=String(trader.wallet).toLowerCase();
+            if(timePeriod!==period.api){trader.pnl=null;trader.volume=null;}
+            const existing=byWallet.get(wallet);
+            if(existing){
+              if((existing.pnl===null||existing.pnl===undefined)&&trader.pnl!==null)existing.pnl=trader.pnl;
+              if((existing.volume===null||existing.volume===undefined)&&trader.volume!==null)existing.volume=trader.volume;
+              if((!existing.name||existing.name==="Unknown")&&trader.name)existing.name=trader.name;
+            } else byWallet.set(wallet,trader);
           }
-          if (categoryWallets.size >= perCategoryTarget) break categoryDiscovery;
-          const nextCursor = response?.pagination?.next_cursor ?? null;
+          const nextCursor=response?.pagination?.next_cursor??null;
           page++;
-          if (!nextCursor) break;
-          cursor = String(nextCursor);
+          if(!nextCursor||response?.pagination?.has_more===false)break;
+          cursor=String(nextCursor);
         }
       }
     }
-    console.log(`Candidate discovery: ${category} contributed ${categoryWallets.size} distinct wallets (target ${perCategoryTarget}).`);
+    console.log(`Candidate discovery: ${category} complete; ${byWallet.size.toLocaleString()} unique wallets accumulated.`);
   }
-
-  // If cross-category overlap leaves the pool short, top it up only after
-  // every category has had its reserved discovery pass.
-  if (byWallet.size < target) {
-    topUpDiscovery:
-    for (const category of categories) {
-      for (const timePeriod of timePeriods) {
-        for (const orderBy of ["PNL", "VOLUME"]) {
-          let cursor = null;
-          let page = 0;
-          while (page < LEADERBOARD_PAGE_COUNT && byWallet.size < target) {
-            const params = new URLSearchParams({ category, time_period: timePeriod.toLowerCase(), sort_by: orderBy, limit: String(PAGE_SIZE) });
-            if (cursor) params.set("cursor", cursor);
-            const response = await getJson(API + "/v2/leaderboard?" + params);
-            const rows = asArray(response);
-            if (!rows.length) break;
-            for (let i = 0; i < rows.length; i++) {
-              const trader = normalizeLeader(rows[i], page * PAGE_SIZE + i + 1);
-              if (!trader.wallet) continue;
-              const wallet = String(trader.wallet).toLowerCase();
-              if (timePeriod !== period.api) { trader.pnl = null; trader.volume = null; }
-              const existing = byWallet.get(wallet);
-              if (existing) {
-                if (existing.pnl === null || existing.pnl === undefined) existing.pnl = trader.pnl;
-                if (existing.volume === null || existing.volume === undefined) existing.volume = trader.volume;
-                if ((!existing.name || existing.name === "Unknown") && trader.name) existing.name = trader.name;
-              } else { byWallet.set(wallet, trader); }
-              if (byWallet.size >= target) break;
-            }
-            if (byWallet.size >= target) break topUpDiscovery;
-            const nextCursor = response?.pagination?.next_cursor ?? null;
-            page++;
-            if (!nextCursor) break;
-            cursor = String(nextCursor);
-          }
-        }
-      }
-    }
-  }
-  const candidates = [...byWallet.values()];
-  console.log(`${period.key}: discovered ${candidates.length} unique traders across balanced public v2 leaderboard categories (target ${target}; per-category target ${perCategoryTarget})`);
-  if (candidates.length < target) {
-    throw new Error(
-      `${period.key}: only discovered ${candidates.length} unique trader wallets across category-balanced leaderboards; required ${target}. Refusing to publish an undersized candidate pool.`
-    );
-  }
-  return candidates.slice(0, target);
+  const candidates=[...byWallet.values()];
+  console.log(`${period.key}: discovered ${candidates.length.toLocaleString()} unique traders across ${pagesFetched.toLocaleString()} public leaderboard pages; no 10,000-wallet cap.`);
+  if(!candidates.length)throw new Error(`${period.key}: public leaderboard discovery returned no trader wallets.`);
+  return candidates;
 }
+
 function rankSportsCandidates(candidates, records = {}) {
   const rows = candidates.map(trader => ({ ...trader, ...(records[trader.wallet] || {}) }));
   return rows.filter(trader => (trader.sportsResolvedMarkets || 0) >= 5 && trader.sportsWinRate !== null)
@@ -821,7 +751,7 @@ function isLiveConsensusPosition(position) {
 async function getBroadConsensusMarkets(knownTraders, nowMs, activePositions) {
   // Group positions directly from the Data API. Page beyond the first 100
   // holdings so lower-value active markets are not silently omitted.
-  const MAX_POSITION_PAGES_PER_TRADER = 2; // 200 open positions per wallet; avoid spending most of the run on deep low-value pagination.
+  // Follow every available position cursor page; no first-200-position cutoff.
   const consensusPositions = await mapLimit(knownTraders, CONCURRENCY, async trader => {
     const wallet = String(trader.wallet || "").toLowerCase();
     if (!wallet) return [wallet, []];
@@ -831,7 +761,7 @@ async function getBroadConsensusMarkets(knownTraders, nowMs, activePositions) {
       let cursor = null;
       let pages = 0;
       let hasMore = false;
-      while (pages < MAX_POSITION_PAGES_PER_TRADER) {
+      while (true) {
         const params = new URLSearchParams({
           user: wallet,
           limit: "100",
@@ -956,8 +886,8 @@ async function getBroadConsensusMarkets(knownTraders, nowMs, activePositions) {
     positionsWithConditionAndSide,
     walletsWithMorePositions,
     sameSideGroups: holderGroups.length,
-    pageCapPerWallet: MAX_POSITION_PAGES_PER_TRADER,
-    note: "walletsWithMorePositions indicates candidate wallets whose open positions exceed the scanned pages"
+    pageCapPerWallet: null,
+    note: "Every available cursor page was requested for each discovered wallet; API pagination is the coverage boundary."
   };
   console.log("Consensus scan diagnostics: " + JSON.stringify(lastConsensusDiagnostics));
   const activePositionsByWallet = Object.fromEntries(consensusPositions.map(([wallet, positions]) => [wallet, positions]));
@@ -1143,8 +1073,7 @@ function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedM
       totalValue: traders.reduce((sum, trader) => sum + (num(trader.amount) ?? 0), 0)
     };
   }).filter(group => group.sameSide >= 2)
-    .filter(group => group.traders.filter(trader => trader.qualified).length >= 2)
-    .sort((a, b) => b.qualifiedTraders - a.qualifiedTraders ||
+     .sort((a, b) => b.sameSide - a.sameSide ||
       b.sameSide - a.sameSide || b.totalValue - a.totalValue ||
       (b.newestBuy || 0) - (a.newestBuy || 0));
 
@@ -1530,8 +1459,8 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
   // every wallet actually present in a discovered consensus market. Previously
   // only the first 1,000 leaderboard wallets received period records, so valid
   // consensus holders outside that arbitrary slice were silently discarded.
-  const candidates = discoveredCandidates.slice(0, PROCESS_CANDIDATE_COUNT);
-  const rankingRecordCandidates = candidates.slice(0, RECORD_SCAN_CANDIDATE_COUNT);
+  const candidates = discoveredCandidates;
+  const rankingRecordCandidates = candidates;
   const candidateByWallet = new Map(candidates.map(trader => [String(trader.wallet || "").toLowerCase(), trader]));
   const consensusWallets = new Set(
     consensusGroups.flatMap(group => (Array.isArray(group.traders) ? group.traders : [])
@@ -1544,7 +1473,7 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
   }
   const recordCandidates = [...recordCandidateMap.values()];
   console.log(`Discovered ${discoveredCandidates.length} ${period.key} candidates; scanning active positions across ${candidates.length} wallets, leaderboard records for ${rankingRecordCandidates.length}, and consensus-holder records for ${consensusWallets.size} (unique record scan: ${recordCandidates.length}).`);
-  const records = await attachRecords(recordCandidates, period, nowMs, RANKING_RECORD_LIMIT, fullRecordCache);
+  const records = await attachRecords(recordCandidates, period, nowMs, null, fullRecordCache);
   console.log(`${period.key}: verifying settlement outcomes for the top ${rankingRecordCandidates.length} wallets...`);
   const ranked = rankCandidates(candidates, records);
   const sportsRanked = rankSportsCandidates(candidates, records);
@@ -1585,7 +1514,7 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
   // Reuse cached records so each wallet is queried only once in this period.
   let qualificationCount = null;
   if (period.key === "week") {
-    const allCandidateRecords = await attachRecords(candidates, period, nowMs, RANKING_RECORD_LIMIT, fullRecordCache);
+    const allCandidateRecords = records;
     const completeRecordRows = Object.entries(allCandidateRecords)
       .filter(([, record]) => record?.recordComplete === true);
     const qualifiedWallets = completeRecordRows.filter(([, record]) => {
@@ -1680,8 +1609,8 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     minimumWinRate: MIN_CONSENSUS_WIN_RATE,
     minimumResolvedMarkets: MIN_TRADER_RESOLVED_MARKETS,
     qualificationBasis: period.key === "week"
-      ? "Markets show 2+ discovered wallets holding the same active outcome. Each trader is separately marked qualified only with a complete last-7-days record of at least 10 closed markets and a 90%+ profitable-close rate."
-      : "Markets show 2+ qualified wallets holding the same active outcome. Each trader must have a complete last-30-days record of at least 10 closed markets and a 90%+ profitable-close rate.",
+      ? "Markets show every discovered group of 2+ wallets holding the same active outcome. Traders are individually marked against a complete last-7-days record of at least 10 closed markets and a 90%+ profitable-close rate; trader qualification never removes a shared market."
+      : "Markets show every discovered group of 2+ wallets holding the same active outcome. Traders are individually marked against a complete last-30-days record; trader qualification never removes a shared market.",
     minimumSameSideTraders: 2,
     entryWindowMinutes: null,
     candidateCount: ranked.length,
@@ -1690,7 +1619,7 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     consensusHolderRecordCandidateCount: consensusWallets.size,
     totalRecordCandidateCount: recordCandidates.length,
     scanDiagnostics: lastConsensusDiagnostics,
-    candidatePoolBasis: "Expanded 10,000-wallet discovery pool collected from Polymarket public Data API v2 PnL and volume leaderboards, following opaque cursors across overall, sports, politics, crypto, esports, culture, mentions, weather, economics, tech, and finance categories and multiple time periods. This is a broad cross-category leaderboard sample, not a literal enumeration of every Polymarket wallet; the public API does not expose an endpoint to enumerate all traders. Consensus market overlap counts active same-outcome positions of at least $1; Gamma-closed markets are excluded, upcoming dates within 30 days are retained, and active markets with unavailable or stale dates remain visible as undated.",
+    candidatePoolBasis: "All unique wallets exposed by available public Data API v2 leaderboard cursors across overall, sports, politics, crypto, esports, culture, mentions, weather, economics, tech, and finance categories and DAY/WEEK/MONTH/ALL periods, sorted by PnL and volume. The public API does not expose a literal all-wallet directory, so this is the broadest discoverable leaderboard pool rather than a guaranteed census." Consensus market overlap counts active same-outcome positions of at least $1; Gamma-closed markets are excluded, upcoming dates within 30 days are retained, and active markets with unavailable or stale dates remain visible as undated.",
     resolutionWindowHours: CONSENSUS_WINDOW_HOURS,
     entryActivityWindowHours: null,
     recordBasis: "Consensus markets include only holders with a complete selected-period closed-market profitable-close record of at least 90% and at least 10 closed markets. At least 2 qualified holders are required per market. Verified lifetime settlement data is separate and never substituted for period metrics.",
@@ -1719,8 +1648,8 @@ async function main() {
   // Use the full discovered pool for overlap detection; only the detailed
   // period-history scan is bounded separately.
   const positionCandidates = [
-    ...weekCandidates.slice(0, PROCESS_CANDIDATE_COUNT),
-    ...monthCandidates.slice(0, PROCESS_CANDIDATE_COUNT)
+    ...weekCandidates,
+    ...monthCandidates
   ];
   for (const trader of positionCandidates) {
     if (!unique.has(trader.wallet)) unique.set(trader.wallet, trader);
