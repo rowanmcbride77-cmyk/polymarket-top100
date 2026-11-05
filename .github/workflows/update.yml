@@ -14,11 +14,12 @@ permissions:
   contents: write
 
 concurrency:
-  group: polymarket-scanner-update-v4
+  group: polymarket-scanner-update-v4-${{ github.event_name == 'push' && github.run_id || 'scheduled' }}
   cancel-in-progress: true
 
 jobs:
   update:
+    if: github.event_name != 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 90
 
