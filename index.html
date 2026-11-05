@@ -457,11 +457,13 @@ function consensus() {
   const rows = Array.isArray(consensusData?.consensus) ? consensusData.consensus :
     Array.isArray(consensusData?.consensusMarkets) ? consensusData.consensusMarkets : [];
   return rows.map(market => {
-    const traders = (Array.isArray(market.traders) ? market.traders : [])
-      .filter(trader => trader?.qualified === true && trader?.recordComplete === true &&
-        num(trader?.winRate) !== null && num(trader.winRate) >= 90 &&
-        num(trader?.resolvedMarkets) !== null && num(trader.resolvedMarkets) >= 5);
-    return {...market, traders, sameSide:traders.length, qualifiedTraders:traders.length};
+    const traders = Array.isArray(market.traders) ? market.traders :
+      Array.isArray(market.members) ? market.members : [];
+    const qualifiedTraders = traders.filter(trader => trader?.qualified === true &&
+      trader?.recordComplete === true && num(trader?.winRate) !== null &&
+      num(trader.winRate) >= 90 && num(trader?.resolvedMarkets) !== null &&
+      num(trader.resolvedMarkets) >= 10).length;
+    return {...market, traders, sameSide:traders.length, qualifiedTraders};
   }).filter(market => market.traders.length >= 2);
 }
 
@@ -493,8 +495,8 @@ async function loadConsensusData() {
 
 function traderCount(market) {
   const members = market?.traders || market?.members || [];
-  return num(market?.qualifiedTraders) ?? num(market?.traderCount ?? market?.tradersCount ?? market?.count) ??
-    (Array.isArray(members) ? members.filter(member => member?.qualified === true).length : 0);
+  return num(market?.sameSide) ?? num(market?.traderCount ?? market?.tradersCount ?? market?.count) ??
+    (Array.isArray(members) ? members.length : 0);
 }
 
 function marketTitle(market) {
@@ -801,7 +803,7 @@ function renderConsensus() {
     const side = String(marketSide(market));
     const sideClass = side.toLowerCase() === "no" ? "side-tag no" : "side-tag";
     const members = (Array.isArray(market.traders) ? market.traders :
-      Array.isArray(market.members) ? market.members : []).filter(member => member?.qualified === true);
+      Array.isArray(market.members) ? market.members : []);
     const expanded = expandedMarkets.has(key);
     const count = traderCount(market);
     const time = marketTime(market);
