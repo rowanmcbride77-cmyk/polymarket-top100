@@ -259,11 +259,12 @@ async function attachRecords(traders, period, nowMs, maxPositions = RANKING_RECO
   const rows = await mapLimit(traders, CONCURRENCY, async trader => {
     try {
       let recordPromise;
-      if (cache && cache.has(trader.wallet)) {
-        recordPromise = cache.get(trader.wallet);
+      const cacheKey = String(period?.key || period?.api || period || "week") + "|" + String(trader.wallet || "").toLowerCase();
+      if (cache && cache.has(cacheKey)) {
+        recordPromise = cache.get(cacheKey);
       } else {
         recordPromise = getResolvedRecord(trader.wallet, period, nowMs, maxPositions);
-        if (cache) cache.set(trader.wallet, recordPromise);
+        if (cache) cache.set(cacheKey, recordPromise);
       }
       const record = await recordPromise;
       return record ? [trader.wallet, record] : null;
@@ -1543,7 +1544,7 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
   }
   const recordCandidates = [...recordCandidateMap.values()];
   console.log(`Discovered ${discoveredCandidates.length} ${period.key} candidates; scanning active positions across ${candidates.length} wallets, leaderboard records for ${rankingRecordCandidates.length}, and consensus-holder records for ${consensusWallets.size} (unique record scan: ${recordCandidates.length}).`);
-  const records = await attachRecords(recordCandidates, period, nowMs, RANKING_RECORD_LIMIT);
+  const records = await attachRecords(recordCandidates, period, nowMs, RANKING_RECORD_LIMIT, fullRecordCache);
   console.log(`${period.key}: verifying settlement outcomes for the top ${rankingRecordCandidates.length} wallets...`);
   const ranked = rankCandidates(candidates, records);
   const sportsRanked = rankSportsCandidates(candidates, records);
@@ -1579,6 +1580,38 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     consensusGroups,
     settlementRecords
   );
+
+  // Count every discovered weekly wallet, not only Top 100 traders or shared-market holders.
+  // Reuse cached records so each wallet is queried only once in this period.
+  let qualificationCount = null;
+  if (period.key === "week") {
+    const allCandidateRecords = await attachRecords(candidates, period, nowMs, RANKING_RECORD_LIMIT, fullRecordCache);
+    const completeRecordRows = Object.entries(allCandidateRecords)
+      .filter(([, record]) => record?.recordComplete === true);
+    const qualifiedWallets = completeRecordRows.filter(([, record]) => {
+      const wins = Number(record.wins);
+      const losses = Number(record.losses);
+      const resolved = Number(record.resolvedMarkets);
+      const rate = Number(record.winRate);
+      return Number.isFinite(wins) && Number.isFinite(losses) &&
+        Number.isFinite(resolved) && resolved === wins + losses &&
+        resolved >= MIN_TRADER_RESOLVED_MARKETS &&
+        Number.isFinite(rate) && rate >= MIN_CONSENSUS_WIN_RATE;
+    }).map(([wallet]) => wallet.toLowerCase());
+    qualificationCount = {
+      qualifiedTraderCount: qualifiedWallets.length,
+      candidateWalletsScanned: candidates.length,
+      recordsReturned: Object.keys(allCandidateRecords).length,
+      completeRecords: completeRecordRows.length,
+      incompleteOrUnavailableRecords: candidates.length - completeRecordRows.length,
+      minimumWinRate: MIN_CONSENSUS_WIN_RATE,
+      minimumResolvedMarkets: MIN_TRADER_RESOLVED_MARKETS,
+      windowDays: 7,
+      basis: "Unique wallets from the discovered public leaderboard candidate pool; complete closed-position records within the last 7 days; one net profitable/unprofitable result per market. Early exits count as closes. This is a sampled candidate-pool count, not a census of every Polymarket wallet."
+    };
+    output.qualificationCount = qualificationCount;
+    console.log("Weekly all-candidate qualification count: " + JSON.stringify(qualificationCount));
+  }
   // The public position API does not provide a complete, bounded settlement
   // history for every wallet. Keep the period-scoped close-profitability
   // counts computed by rankCandidates; never relabel them as settled W-L.
@@ -1661,6 +1694,7 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     resolutionWindowHours: CONSENSUS_WINDOW_HOURS,
     entryActivityWindowHours: null,
     recordBasis: "Consensus markets include only holders with a complete selected-period closed-market profitable-close record of at least 90% and at least 10 closed markets. At least 2 qualified holders are required per market. Verified lifetime settlement data is separate and never substituted for period metrics.",
+    qualificationCount,
     consensus: consensusRows
   });
 
