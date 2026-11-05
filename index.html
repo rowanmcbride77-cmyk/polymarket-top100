@@ -187,15 +187,14 @@ dialog::backdrop{background:#000b}
     <div class="column">
       <section class="panel">
         <div class="panel-heading">
-          <div class="heading-left"><span class="heading-icon">👥</span><h2>Top Consensus Markets</h2></div>
+          <div class="heading-left"><span class="heading-icon">👥</span><h2>All Shared Markets</h2></div>
           <span class="pill" id="consensusPeriod">Weekly pool · 24h</span>
         </div>
         
         <div class="filters">
           <label>Trader pool
             <select id="consensusPool" onchange="loadConsensusData()">
-              <option value="week" selected>Weekly traders</option>
-              <option value="month">30-day traders</option>
+              <option value="week" selected>7-day trader records</option>
             </select>
           </label>
           <label>Min. traders
@@ -209,15 +208,13 @@ dialog::backdrop{background:#000b}
               <option value="100">100+</option>
             </select>
           </label>
-          <label>Resolves within
-            <select id="recency" onchange="renderConsensus()">
-              <option value="25">25 hours</option>
-              <option value="72">3 days</option>
-              <option value="168">7 days</option><option value="720" selected>30 days</option>
+          <label>Market window
+            <select id="recency" disabled>
+              <option value="all" selected>All active markets</option>
             </select>
           </label>
         </div>
-        <div class="source-note" id="consensusQualificationNote">Only markets with at least 2 qualified traders are shown. Every counted trader must have a complete selected-period record of at least 10 closed markets and a 90%+ profitable-close rate. Weekly qualification uses the last 7 days.</div>
+        <div class="source-note" id="consensusQualificationNote">Every active market shared by 2+ discovered wallets is shown. Each trader is separately marked as meeting or not meeting the 90%+ profitable-close test over the last 7 days, with at least 10 closed markets required. Qualification does not hide shared markets.</div>
         <div class="table-wrap">
           <table>
             <thead><tr><th>#</th><th>Market</th><th>Side</th><th>Traders</th><th>Combined Value</th><th>Resolves</th></tr></thead>
@@ -470,8 +467,7 @@ function consensus() {
 async function loadConsensusData() {
   const pool = $("consensusPool").value;
   $("consensusBody").innerHTML = `<tr><td colspan="6" class="loading">Loading ${esc(pool)} consensus pool…</td></tr>`;
-  const horizon = Number($("recency").value || 168);
-  $("consensusPeriod").textContent = (pool === "week" ? "Weekly traders" : "30-day traders") + " · " + (horizon === 25 ? "25h" : horizon === 72 ? "3 days" : "7 days");
+  $("consensusPeriod").textContent = "7-day trader records · all active markets";
   const filename = CONSENSUS_FILES[pool];
   try {
     let result = null;
@@ -780,21 +776,9 @@ async function loadConsensusTradeHistory(wallet, conditionId, outcome) {
 
 function renderConsensus() {
   const minCount = Number($("minTraders").value || 2);
-  const hours = Number($("recency").value || 720);
-  const now = Date.now() / 1000;
-  const cutoff = now + hours * 3600;
-
   const filtered = consensus().map((market, index) => ({...market, _index:index}))
     .filter(market => traderCount(market) >= minCount)
-    .filter(market => {
-      const endTime = timestamp(marketEndTime(market));
-      // Some live markets omit a parseable end date in the public API.
-      // Include those in the default 7-day view instead of hiding otherwise
-      // valid consensus entirely; shorter windows still require a known date.
-      if (endTime === null) return hours === 168 || hours === 720;
-      return endTime > now && endTime <= cutoff;
-    })
-    .sort((a, b) => traderCount(b) - traderCount(a) || marketAmount(b) - marketAmount(a) || String(marketTitle(a)).localeCompare(String(marketTitle(b)))); // Highest qualifying-trader count first; combined value breaks ties.
+    .sort((a, b) => traderCount(b) - traderCount(a) || marketAmount(b) - marketAmount(a) || String(marketTitle(a)).localeCompare(String(marketTitle(b)))); // Show every active shared market, ranked by number of holders.
 
   const visible = allMarkets ? filtered : filtered.slice(0, 15);
 
