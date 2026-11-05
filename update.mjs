@@ -1523,18 +1523,26 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     const allCandidateRecords = records;
     const completeRecordRows = Object.entries(allCandidateRecords)
       .filter(([, record]) => record?.recordComplete === true);
-    const qualifiedWallets = completeRecordRows.filter(([, record]) => {
+    const qualifies = (record, minimumTrades) => {
       const wins = Number(record.wins);
       const losses = Number(record.losses);
       const resolved = Number(record.resolvedMarkets);
       const rate = Number(record.winRate);
       return Number.isFinite(wins) && Number.isFinite(losses) &&
         Number.isFinite(resolved) && resolved === wins + losses &&
-        resolved >= MIN_TRADER_RESOLVED_MARKETS &&
+        resolved >= minimumTrades &&
         Number.isFinite(rate) && rate >= MIN_CONSENSUS_WIN_RATE;
-    }).map(([wallet]) => wallet.toLowerCase());
+    };
+    const qualifiedWallets = completeRecordRows
+      .filter(([, record]) => qualifies(record, MIN_TRADER_RESOLVED_MARKETS))
+      .map(([wallet]) => wallet.toLowerCase());
+    const qualifiedAtLeastFiveTrades = completeRecordRows
+      .filter(([, record]) => qualifies(record, 5))
+      .map(([wallet]) => wallet.toLowerCase());
     qualificationCount = {
       qualifiedTraderCount: qualifiedWallets.length,
+      qualifiedTraderCountAtLeastFiveTrades: qualifiedAtLeastFiveTrades.length,
+      minimumTradesForRequestedCount: 5,
       candidateWalletsScanned: recordCandidates.length,
       recordsReturned: Object.keys(allCandidateRecords).length,
       completeRecords: completeRecordRows.length,
