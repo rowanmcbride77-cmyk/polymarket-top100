@@ -209,8 +209,8 @@ dialog::backdrop{background:#000b}
             </select>
           </label>
           <label>Market window
-            <select id="recency" disabled>
-              <option value="all" selected>All active markets</option>
+            <select id="recency" onchange="renderConsensus()">
+              <option value="24h" selected>Next 24 hours</option>
             </select>
           </label>
         </div>
@@ -467,7 +467,7 @@ function consensus() {
 async function loadConsensusData() {
   const pool = $("consensusPool").value;
   $("consensusBody").innerHTML = `<tr><td colspan="6" class="loading">Loading ${esc(pool)} consensus pool…</td></tr>`;
-  $("consensusPeriod").textContent = "7-day trader records · all active markets";
+  $("consensusPeriod").textContent = "90%+ qualified · resolves within 24 hours";
   const filename = CONSENSUS_FILES[pool];
   try {
     let result = null;
@@ -513,7 +513,7 @@ function marketTime(market) {
 }
 
 function marketEndTime(market) {
-  return market?.endDate ?? market?.end_date ?? market?.endDateIso ?? market?.endDateISO ?? market?.end_date_iso ?? market?.resolveTime ?? market?.resolve_time ?? market?.endTime ?? market?.end_time ?? market?.gameStartTime ?? market?.game_start_time ?? market?.eventStartTime ?? market?.event_start_time ?? null;
+  return market?.endDate ?? market?.end_date ?? market?.endDateIso ?? market?.endDateISO ?? market?.end_date_iso ?? market?.resolveTime ?? market?.resolve_time ?? market?.endTime ?? market?.end_time ?? null;
 }
 
 function marketKey(market, index) {
@@ -776,9 +776,18 @@ async function loadConsensusTradeHistory(wallet, conditionId, outcome) {
 
 function renderConsensus() {
   const minCount = Number($("minTraders").value || 2);
-  const filtered = consensus().map((market, index) => ({...market, _index:index}))
-    .filter(market => traderCount(market) >= minCount)
-    .sort((a, b) => traderCount(b) - traderCount(a) || marketAmount(b) - marketAmount(a) || String(marketTitle(a)).localeCompare(String(marketTitle(b)))); // Show every active shared market, ranked by number of holders.
+  const nowSeconds = Date.now() / 1000;
+  const cutoffSeconds = nowSeconds + 24 * 60 * 60;
+  const filtered = consensus().map((market, index) => {
+      const endSeconds = timestamp(marketEndTime(market));
+      return {...market, _index:index, _endSeconds:endSeconds};
+    })
+    .filter(market => market._endSeconds !== null &&
+      market._endSeconds > nowSeconds &&
+      market._endSeconds <= cutoffSeconds &&
+      traderCount(market) >= minCount)
+    .sort((a, b) => a._endSeconds - b._endSeconds ||
+      traderCount(b) - traderCount(a) || marketAmount(b) - marketAmount(a));
 
   const visible = allMarkets ? filtered : filtered.slice(0, 15);
 
@@ -836,7 +845,7 @@ function renderConsensus() {
     </td></tr>` : "";
 
     return row + detail;
-  }).join("") : `<tr><td colspan="6" class="empty">No markets match these filters. Try lowering the trader threshold or expanding the time window.</td></tr>`;
+  }).join("") : `<tr><td colspan="6" class="empty">No qualified shared markets have a confirmed resolution time within the next 24 hours.</td></tr>`;
 
   $("consensusMore").textContent = allMarkets ? "Show fewer ↑" : "View all consensus markets →";
   $("consensusMore").style.display = filtered.length > 15 ? "inline-block" : "none";
