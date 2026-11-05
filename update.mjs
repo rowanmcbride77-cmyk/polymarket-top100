@@ -20,7 +20,7 @@ const POSITIONS_PER_TRADER = 10;
 const RANKING_RECORD_LIMIT = 1000;
 const LEADER_RECORD_LIMIT = RANKING_RECORD_LIMIT;
 // Keep upcoming markets in the data so the UI can filter 24h / 3d / 7d accurately.
-const CONSENSUS_WINDOW_HOURS = 720; // 30-day upcoming-market window to avoid dropping nearly all shared positions
+const CONSENSUS_WINDOW_HOURS = 24; // Only show markets with a confirmed end/resolution time in the next 24 hours
 const CONSENSUS_HOLDERS_PER_MARKET = 1500;
 const MIN_CONSENSUS_POSITION_VALUE = 1;
 const CONSENSUS_ENTRY_WINDOW_MINUTES = 1440;
@@ -685,15 +685,15 @@ async function getMarketConsensus(market, knownNames) {
 }
 
 function marketEndDate(market) {
+  // Do not mistake event/game start dates for a market resolution deadline.
+  // Only explicit market end/resolution fields are valid for the 24-hour filter.
   const direct = market.endDate ?? market.end_date ?? market.endDateIso ?? market.endDateISO ??
-    market.end_date_iso ?? market.resolveTime ?? market.resolve_time ?? market.endTime ?? market.end_time ??
-    market.gameStartTime ?? market.game_start_time ?? market.eventStartTime ?? market.event_start_time ?? null;
+    market.end_date_iso ?? market.resolveTime ?? market.resolve_time ?? market.endTime ?? market.end_time ?? null;
   if (direct) return direct;
   const events = Array.isArray(market.events) ? market.events : [];
   for (const event of events) {
     const eventDate = event?.endDate ?? event?.end_date ?? event?.endDateIso ??
-      event?.resolveTime ?? event?.resolve_time ?? event?.endTime ?? event?.end_time ??
-      event?.gameStartTime ?? event?.game_start_time ?? event?.startDate ?? event?.start_date ?? null;
+      event?.resolveTime ?? event?.resolve_time ?? event?.endTime ?? event?.end_time ?? null;
     if (eventDate) return eventDate;
   }
   return null;
@@ -996,17 +996,21 @@ async function enrichConsensusMarkets(holderGroups, nowMs) {
       endMs = Date.parse(endDate + "T23:59:59.999Z");
     }
 
-    // Gamma's endDate is not always the actual resolution deadline. If the
-    // market is still not closed but its listed date has passed, retain it as
-    // undated instead of incorrectly treating the active holding as expired.
-    if (endMs !== null && endMs < nowMs) {
-      endDate = null;
-      staleDateCleared++;
-      endMs = null;
+    // The panel is intentionally limited to the next 24 hours.
+    // Exclude overdue, undated, and long-dated markets rather than relabeling
+    // them as active opportunities or substituting an event start date.
+    if (endMs === null) {
+      unknownDateKept++;
+      continue;
     }
-    // Do not remove active shared markets because their end date is far away.
-    // The panel is intended to show all currently shared active markets.
-    if (endMs === null) unknownDateKept++;
+    if (endMs <= nowMs) {
+      staleDateCleared++;
+      continue;
+    }
+    if (endMs > nowMs + CONSENSUS_WINDOW_HOURS * 60 * 60 * 1000) {
+      outsideWindowRemoved++;
+      continue;
+    }
 
     enriched.push({
       ...group,
