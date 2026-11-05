@@ -476,9 +476,20 @@ function compactPosition(position) {
     gameStartTime: position.game_start_time ?? position.gameStartTime ?? null,
     tags: Array.isArray(position.tags) ? position.tags : [],
     outcome: position.outcome ?? position.outcome_name ?? null,
-    size: num(position.size ?? position.current_size ?? position.currentSize),
-    currentValue: num(position.currentValue ?? position.current_value),
-    initialValue: num(position.entry_cost_usdc ?? position.total_cost_usdc ?? position.initialValue ?? position.initial_value ?? position.initial_value_usd) ?? (() => { const avg = num(position.avgPrice ?? position.avg_price ?? position.averagePrice ?? position.average_price); const size = num(position.size ?? position.current_size ?? position.currentSize); return avg !== null && size !== null && avg >= 0 && size > 0 ? avg * size : null; })(),
+    size: num(position.current_size ?? position.currentSize ?? position.size),
+    currentPrice: num(position.current_price ?? position.currentPrice ?? position.curPrice ?? position.cur_price),
+    currentValue: num(position.current_value ?? position.currentValue) ??
+      (() => {
+        const shares = num(position.current_size ?? position.currentSize ?? position.size);
+        const price = num(position.current_price ?? position.currentPrice ?? position.curPrice ?? position.cur_price);
+        return shares !== null && price !== null && shares >= 0 && price >= 0 ? shares * price : null;
+      })(),
+    initialValue: num(position.entry_cost_usdc ?? position.total_cost_usdc ?? position.initialValue ?? position.initial_value ?? position.initial_value_usd) ??
+      (() => {
+        const avg = num(position.avg_price ?? position.avgPrice ?? position.averagePrice ?? position.average_price);
+        const shares = num(position.total_size ?? position.totalSize ?? position.current_size ?? position.currentSize ?? position.size);
+        return avg !== null && shares !== null && avg >= 0 && shares > 0 ? avg * shares : null;
+      })(),
     realizedPnl: num(position.realizedPnl ?? position.realized_pnl ?? position.cashPnl ?? position.cash_pnl ?? position.total_pnl ?? position.totalPnl),
     lastEventAt: timestampMs(
       position.lastEventAt ?? position.last_event_at
@@ -868,7 +879,7 @@ async function getBroadConsensusMarkets(knownTraders, nowMs, activePositions) {
       if (position.clobTokenId && !group.clobTokenIds.includes(String(position.clobTokenId))) group.clobTokenIds.push(String(position.clobTokenId));
       if (group.walletsSeen.has(wallet)) continue;
       group.walletsSeen.add(wallet);
-      const invested = num(position.initialValue ?? position.initial_value) ?? currentValue;
+      const invested = num(position.initialValue ?? position.initial_value);
       const lastEventAt = timestampMs(position.lastEventAt ?? position.last_event_at ?? position.firstEntryAt ?? position.first_entry_at);
       group.sameSide++;
       group.totalValue += currentValue;
@@ -885,6 +896,7 @@ async function getBroadConsensusMarkets(knownTraders, nowMs, activePositions) {
         volume: trader.volume ?? null,
         side,
         amount: invested,
+        entryValue: invested,
         currentValue,
         buyTime: lastEventAt
       });
@@ -1107,7 +1119,9 @@ function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedM
       traders,
       sameSide: traders.length,
       qualifiedTraders: traders.length,
-      totalValue: traders.reduce((sum, trader) => sum + (num(trader.amount) ?? 0), 0)
+      // Combined Value is the current mark-to-market value, not historical entry cost.
+      totalValue: traders.reduce((sum, trader) => sum + (num(trader.currentValue) ?? 0), 0),
+      totalEntry: traders.reduce((sum, trader) => sum + (num(trader.entryValue ?? trader.amount) ?? 0), 0)
     });
   }
 
