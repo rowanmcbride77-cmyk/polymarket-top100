@@ -985,10 +985,8 @@ async function enrichConsensusMarkets(holderGroups, nowMs) {
       staleDateCleared++;
       endMs = null;
     }
-    if (endMs !== null && endMs > nowMs + CONSENSUS_WINDOW_HOURS * 60 * 60 * 1000) {
-      outsideWindowRemoved++;
-      continue;
-    }
+    // Do not remove active shared markets because their end date is far away.
+    // The panel is intended to show all currently shared active markets.
     if (endMs === null) unknownDateKept++;
 
     enriched.push({
@@ -1019,9 +1017,7 @@ async function enrichConsensusMarkets(holderGroups, nowMs) {
 
 function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedMarkets = MIN_TRADER_RESOLVED_MARKETS) {
   const candidateMap = new Map(candidates.map(trader => [String(trader.wallet || "").toLowerCase(), trader]));
-  const eligibleGroups = holderGroups.filter(group =>
-    group.sameSide >= 2 && (num(group.totalValue) ?? 0) > 0
-  );
+  const eligibleGroups = holderGroups.filter(group => group.sameSide >= 2);
   console.log("Consensus build inputs:", JSON.stringify({
     enrichedGroups: holderGroups.length,
     eligibleGroups: eligibleGroups.length
