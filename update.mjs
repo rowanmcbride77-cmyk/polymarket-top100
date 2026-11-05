@@ -1577,10 +1577,12 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     consensusHolderRecordCandidateCount: consensusWallets.size,
     totalRecordCandidateCount: recordCandidates.length,
     scanDiagnostics: lastConsensusDiagnostics,
-    candidatePoolBasis: "All unique wallets exposed by available public Data API v2 leaderboard cursors across overall, sports, politics, crypto, esports, culture, mentions, weather, economics, tech, and finance categories and DAY/WEEK/MONTH/ALL periods, sorted by PnL and volume. The public API does not expose a literal all-wallet directory, so this is the broadest discoverable leaderboard pool rather than a guaranteed census." Consensus market overlap counts active same-outcome positions of at least $1; Gamma-closed markets are excluded, upcoming dates within 30 days are retained, and active markets with unavailable or stale dates remain visible as undated.",
+    candidatePoolBasis: "All unique wallets exposed by available public Data API v2 leaderboard cursors across overall, sports, politics, crypto, esports, culture, mentions, weather, economics, tech, and finance categories and DAY/WEEK/MONTH/ALL periods, sorted by PnL and volume. The public API does not expose a literal all-wallet directory, so this is the broadest discoverable leaderboard pool rather than a guaranteed census. Every available open-position page is scanned; all active same-outcome groups with 2+ wallets are retained regardless of market end date or position value.",
     resolutionWindowHours: CONSENSUS_WINDOW_HOURS,
     entryActivityWindowHours: null,
-    recordBasis: "Consensus markets include only holders with a complete selected-period closed-market profitable-close record of at least 90% and at least 10 closed markets. At least 2 qualified holders are required per market. Verified lifetime settlement data is separate and never substituted for period metrics.",
+    recordBasis: period.key === "week"
+      ? "Every active market shared by 2+ discovered wallets is retained. Each holder is independently qualified only with a complete last-7-days record of at least 10 closed markets and a 90%+ profitable-close rate; qualification does not gate market visibility."
+      : "Every active market shared by 2+ discovered wallets is retained. Each holder is independently marked using the selected 30-day period; qualification does not gate market visibility.",
     qualificationCount,
     consensus: consensusRows
   });
