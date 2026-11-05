@@ -37,27 +37,56 @@ let lastConsensusDiagnostics = null;
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
-async function getJson(url, attempts = 4) {
+// One shared request gate for every Data API call. Ten concurrent workers
+// previously produced bursts that exceeded the positions endpoint's allowance.
+const API_MIN_INTERVAL_MS = 125;
+let nextApiRequestAt = 0;
+let apiPauseUntil = 0;
+
+async function waitForApiSlot() {
+  while (true) {
+    const now = Date.now();
+    const waitMs = Math.max(nextApiRequestAt, apiPauseUntil) - now;
+    if (waitMs > 0) {
+      await sleep(waitMs);
+      continue;
+    }
+    nextApiRequestAt = Date.now() + API_MIN_INTERVAL_MS;
+    return;
+  }
+}
+
+function retryAfterMs(response, attempt) {
+  const header = response.headers.get("retry-after");
+  if (header) {
+    const seconds = Number(header);
+    if (Number.isFinite(seconds) && seconds >= 0) return seconds * 1000;
+    const dateMs = Date.parse(header);
+    if (Number.isFinite(dateMs)) return Math.max(0, dateMs - Date.now());
+  }
+  return Math.min(30000, 1500 * (2 ** attempt));
+}
+
+async function getJson(url, attempts = 6) {
   let lastError;
 
   for (let attempt = 0; attempt < attempts; attempt++) {
     try {
+      await waitForApiSlot();
       const response = await fetch(url, {
         headers: {
           Accept: "application/json",
           "User-Agent": "PolymarketConsensusScanner/1.0"
         },
-        signal: AbortSignal.timeout(20000)
+        signal: AbortSignal.timeout(30000)
       });
 
-      if (response.status === 429 || response.status >= 500) {
-        const retryAfter = Number(response.headers.get("retry-after"));
-        await sleep(
-          retryAfter > 0
-            ? Math.min(retryAfter * 1000, 15000)
-            : 1000 * (attempt + 1)
-        );
-        throw new Error(`HTTP ${response.status}`);
+      if (response.status === 429 || response.status === 503 || response.status >= 500) {
+        const delayMs = retryAfterMs(response, attempt);
+        // A rate-limit response pauses all workers, not just the worker that
+        // received it, so queued requests do not immediately trigger more 429s.
+        apiPauseUntil = Math.max(apiPauseUntil, Date.now() + delayMs);
+        throw new Error(`HTTP ${response.status} (retry after ${Math.ceil(delayMs / 1000)}s)`);
       }
 
       if (!response.ok) {
@@ -70,7 +99,8 @@ async function getJson(url, attempts = 4) {
     } catch (error) {
       lastError = error;
       if (attempt < attempts - 1) {
-        await sleep(500 * (attempt + 1));
+        const backoffMs = Math.min(30000, 750 * (2 ** attempt));
+        await sleep(backoffMs);
       }
     }
   }
@@ -817,10 +847,19 @@ async function getBroadConsensusMarkets(knownTraders, nowMs, activePositions) {
       }
       return [wallet, all, hasMore, pages];
     } catch (error) {
-      console.warn("Consensus positions fetch failed for " + wallet + ": " + error.message);
-      return [wallet, Array.isArray(activePositions?.[wallet]) ? activePositions[wallet] : [], false, 0];
+      console.error("Consensus positions fetch failed for " + wallet + ": " + error.message);
+      // Mark the wallet as failed. The scan must not publish a partial consensus
+      // dataset as if every wallet had been checked successfully.
+      return [wallet, Array.isArray(activePositions?.[wallet]) ? activePositions[wallet] : [], false, 0, true];
     }
   });
+
+  const failedWallets = consensusPositions.filter(row => row?.[4] === true);
+  if (failedWallets.length) {
+    throw new Error(
+      `Consensus scan aborted: positions could not be fetched for ${failedWallets.length} wallets. Existing published data will be preserved rather than replaced with incomplete results.`
+    );
+  }
 
   const allPositionsByWallet = new Map(consensusPositions.map(row => [row[0], row[1]]));
   const traderByWallet = new Map(knownTraders.map(trader => [String(trader.wallet || "").toLowerCase(), trader]));
