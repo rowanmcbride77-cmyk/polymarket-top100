@@ -1027,52 +1027,85 @@ async function enrichConsensusMarkets(holderGroups, nowMs) {
 
 function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedMarkets = MIN_TRADER_RESOLVED_MARKETS) {
   const candidateMap = new Map(candidates.map(trader => [String(trader.wallet || "").toLowerCase(), trader]));
-  const eligibleGroups = holderGroups.filter(group => group.sameSide >= 2);
-  console.log("Consensus build inputs:", JSON.stringify({
-    enrichedGroups: holderGroups.length,
-    eligibleGroups: eligibleGroups.length
-  }));
-  const qualified = eligibleGroups.map(group => {
+  const qualifiedGroups = [];
+  let rawGroupsWithTwoHolders = 0;
+  let groupsWithTwoQualified = 0;
+
+  for (const group of holderGroups) {
     const uniqueHolders = [...new Map(
       (Array.isArray(group.traders) ? group.traders : [])
         .filter(holder => String(holder.wallet || "").trim())
         .map(holder => [String(holder.wallet).trim().toLowerCase(), holder])
     ).values()];
+    if (uniqueHolders.length < 2) continue;
+    rawGroupsWithTwoHolders++;
+
     const traders = uniqueHolders.map(holder => {
       const wallet = String(holder.wallet || "").toLowerCase();
       const candidate = candidateMap.get(wallet) || {};
       const record = records[wallet] || records[candidate.wallet] || {};
-      const wins = num(record.wins), losses = num(record.losses);
-      const resolvedMarkets = wins !== null && losses !== null ? wins + losses : num(record.resolvedMarkets);
+      const wins = num(record.wins);
+      const losses = num(record.losses);
+      const resolvedMarkets = wins !== null && losses !== null
+        ? wins + losses
+        : num(record.resolvedMarkets);
       const winRate = wins !== null && losses !== null && resolvedMarkets > 0
-        ? wins / resolvedMarkets * 100 : num(record.winRate);
+        ? wins / resolvedMarkets * 100
+        : num(record.winRate);
       const isQualified = record.recordComplete === true &&
-        resolvedMarkets !== null && resolvedMarkets >= minimumResolvedMarkets &&
-        winRate !== null && winRate >= MIN_CONSENSUS_WIN_RATE;
+        resolvedMarkets !== null &&
+        resolvedMarkets >= minimumResolvedMarkets &&
+        winRate !== null &&
+        winRate >= MIN_CONSENSUS_WIN_RATE;
+
       return {
-        ...holder, wallet, name: holder.name || candidate.name || "Trader",
+        ...holder,
+        wallet,
+        name: holder.name || candidate.name || "Trader",
         rank: candidate.sportsRank ?? candidate.rank ?? holder.rank ?? null,
         overallRank: candidate.rank ?? null,
         pnl: candidate.pnl ?? holder.pnl ?? null,
         volume: candidate.volume ?? holder.volume ?? null,
-        wins, losses, winRate, resolvedMarkets,
+        wins,
+        losses,
+        winRate,
+        resolvedMarkets,
         earlyExitPositions: num(record.earlyExitPositions),
         recordComplete: record.recordComplete === true,
         qualified: isQualified,
-        recordBasis: isQualified ? "Meets selected-period performance threshold" :
-          "Shared-position holder; performance record incomplete or below threshold"
+        recordBasis: isQualified
+          ? "Complete selected-period record; meets the 90%+ profitable-close rate and 10+ closed-market requirement"
+          : "Excluded: incomplete record, fewer than 10 closed markets, or profitable-close rate below 90%"
       };
-    });
-    return {
-      ...group, traders, sameSide: traders.length,
-      qualifiedTraders: traders.filter(trader => trader.qualified).length,
+    }).filter(trader => trader.qualified);
+
+    // A consensus market is valid only when at least two distinct holders
+    // independently pass the period's performance and sample-size tests.
+    if (traders.length < 2) continue;
+    groupsWithTwoQualified++;
+    qualifiedGroups.push({
+      ...group,
+      traders,
+      sameSide: traders.length,
+      qualifiedTraders: traders.length,
       totalValue: traders.reduce((sum, trader) => sum + (num(trader.amount) ?? 0), 0)
-    };
-  }).filter(group => group.sameSide >= 2)
-    .sort((a, b) => b.sameSide - a.sameSide || b.totalValue - a.totalValue ||
-      (b.newestBuy || 0) - (a.newestBuy || 0));
-  console.log("Consensus shared-market count (all groups with 2+ holders): " + qualified.length);
-  return qualified;
+    });
+  }
+
+  const result = qualifiedGroups.sort((a, b) =>
+    b.sameSide - a.sameSide ||
+    b.totalValue - a.totalValue ||
+    (b.newestBuy || 0) - (a.newestBuy || 0)
+  );
+  console.log("Consensus qualification:", JSON.stringify({
+    rawGroupsWithTwoHolders,
+    groupsWithTwoQualified,
+    publishedGroups: result.length,
+    minimumWinRate: MIN_CONSENSUS_WIN_RATE,
+    minimumResolvedMarkets,
+    qualificationWindowDays: 7
+  }));
+  return result;
 }
 function parseArrayField(value) {
   if (Array.isArray(value)) return value;
@@ -1526,38 +1559,9 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
 
   // Keep consensus independent of the Top 100 JSON size guard.
   const builtConsensusRows = Array.isArray(output.consensus) ? output.consensus : [];
-  // Preserve the raw, verified same-outcome overlap groups if a downstream
-  // qualification/enrichment step unexpectedly drops every built row. These
-  // are real OPEN-position overlaps from distinct wallets, not inferred picks.
-  const fallbackConsensusRows = (Array.isArray(consensusGroups) ? consensusGroups : [])
-    .map(group => {
-      const seenWallets = new Set();
-      const traders = (Array.isArray(group.traders) ? group.traders : []).filter(holder => {
-        const wallet = String(holder.wallet || "").toLowerCase();
-        if (!wallet || seenWallets.has(wallet)) return false;
-        seenWallets.add(wallet);
-        return true;
-      }).map(holder => ({
-        ...holder,
-        wallet: String(holder.wallet || "").toLowerCase(),
-        wins: null,
-        losses: null,
-        winRate: null,
-        resolvedMarkets: null,
-        recordComplete: false,
-        qualified: false,
-        recordBasis: "Shared active-position holder; period performance record unavailable"
-      }));
-      return {
-        ...group,
-        traders,
-        sameSide: traders.length,
-        qualifiedTraders: 0
-      };
-    })
-    .filter(group => group.sameSide >= 2)
-    .sort((a, b) => b.sameSide - a.sameSide || b.totalValue - a.totalValue || (b.newestBuy || 0) - (a.newestBuy || 0))
-    ;
+  // Never fall back to raw shared-position groups: unverified holders must not
+  // be published as qualified consensus traders.
+  const fallbackConsensusRows = [];
   const consensusRows = builtConsensusRows;
   console.log(`${period.key}: consensus serialization diagnostics: ${JSON.stringify({
     builtRows: builtConsensusRows.length,
@@ -1577,8 +1581,8 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     minimumWinRate: MIN_CONSENSUS_WIN_RATE,
     minimumResolvedMarkets: MIN_TRADER_RESOLVED_MARKETS,
     qualificationBasis: period.key === "week"
-      ? "Markets show every discovered group of 2+ wallets holding the same active outcome. Traders are individually marked against a complete last-7-days record of at least 10 closed markets and a 90%+ profitable-close rate; trader qualification never removes a shared market."
-      : "Markets show every discovered group of 2+ wallets holding the same active outcome. Traders are individually marked against a complete last-30-days record; trader qualification never removes a shared market.",
+      ? "A market is published only when at least 2 distinct holders on the same outcome each have a complete last-7-days record, at least 10 closed markets, and a 90%+ profitable-close rate. Only qualifying traders are counted."
+      : "A market is published only when at least 2 distinct holders on the same outcome each have a complete last-30-days record, at least 10 closed markets, and a 90%+ profitable-close rate. Only qualifying traders are counted.",
     minimumSameSideTraders: 2,
     entryWindowMinutes: null,
     candidateCount: ranked.length,
@@ -1587,12 +1591,12 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     consensusHolderRecordCandidateCount: consensusWallets.size,
     totalRecordCandidateCount: recordCandidates.length,
     scanDiagnostics: lastConsensusDiagnostics,
-    candidatePoolBasis: "All unique wallets exposed by available public Data API v2 leaderboard cursors across overall, sports, politics, crypto, esports, culture, mentions, weather, economics, tech, and finance categories and DAY/WEEK/MONTH/ALL periods, sorted by PnL and volume. The public API does not expose a literal all-wallet directory, so this is the broadest discoverable leaderboard pool rather than a guaranteed census. Every available open-position page is scanned; all active same-outcome groups with 2+ wallets are retained regardless of market end date or position value.",
+    candidatePoolBasis: "All unique wallets exposed by available public Data API v2 leaderboard cursors across overall, sports, politics, crypto, esports, culture, mentions, weather, economics, tech, and finance categories and DAY/WEEK/MONTH/ALL periods, sorted by PnL and volume. The public API does not expose a literal all-wallet directory, so this is the broadest discoverable leaderboard pool rather than a guaranteed census. Every available open-position page is scanned; final consensus includes only same-outcome groups with at least 2 independently qualified traders.",
     resolutionWindowHours: CONSENSUS_WINDOW_HOURS,
     entryActivityWindowHours: null,
     recordBasis: period.key === "week"
-      ? "Every active market shared by 2+ discovered wallets is retained. Each holder is independently qualified only with a complete last-7-days record of at least 10 closed markets and a 90%+ profitable-close rate; qualification does not gate market visibility."
-      : "Every active market shared by 2+ discovered wallets is retained. Each holder is independently marked using the selected 30-day period; qualification does not gate market visibility.",
+      ? "Only active markets with at least 2 distinct same-outcome traders who each pass the complete last-7-days 90%+ profitable-close rate and 10+ closed-market requirements are published. Markets with qualifying consensus on both opposing outcomes are excluded."
+      : "Only active markets with at least 2 distinct same-outcome traders who each pass the complete last-30-days 90%+ profitable-close rate and 10+ closed-market requirements are published. Markets with qualifying consensus on both opposing outcomes are excluded.",
     qualificationCount,
     consensus: consensusRows
   });
