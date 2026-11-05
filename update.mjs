@@ -1564,17 +1564,9 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
 
   // Keep consensus independent of the Top 100 JSON size guard.
   const builtConsensusRows = Array.isArray(output.consensus) ? output.consensus : [];
-  // Never fall back to raw shared-position groups: unverified holders must not
-  // be published as qualified consensus traders.
-  const fallbackConsensusRows = [];
+  // Publish the independently qualified consensus groups; never discard them.
   const consensusRows = builtConsensusRows;
-  console.log(`${period.key}: consensus serialization diagnostics: ${JSON.stringify({
-    builtRows: builtConsensusRows.length,
-    rawEligibleFallbackRows: fallbackConsensusRows.length,
-    rawGroups: Array.isArray(consensusGroups) ? consensusGroups.length : 0,
-    firstRawGroupHolderCount: Array.isArray(consensusGroups?.[0]?.traders) ? consensusGroups[0].traders.length : 0
-  })}`);
-  output.consensus = [];
+  console.log(`${period.key}: publishing ${consensusRows.length} qualified consensus markets.`);
   await writeJsonUnderLimit(`${period.key}.json`, output);
 
   // Keep consensus data independent from the Top 100 period tabs. These
