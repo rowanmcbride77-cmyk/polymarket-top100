@@ -17,8 +17,6 @@ const POSITION_FETCH_LIMIT = 100;
 const POSITIONS_PER_TRADER = 10;
 const RANKING_RECORD_LIMIT = 1000;
 const LEADER_RECORD_LIMIT = RANKING_RECORD_LIMIT;
-const CONSENSUS_LIMIT = 100;
-const CONSENSUS_MARKET_SCAN_LIMIT = 3000;
 // Keep upcoming markets in the data so the UI can filter 24h / 3d / 7d accurately.
 const CONSENSUS_WINDOW_HOURS = 720; // 30-day upcoming-market window to avoid dropping nearly all shared positions
 const CONSENSUS_HOLDERS_PER_MARKET = 1500;
@@ -27,7 +25,7 @@ const CONSENSUS_ENTRY_WINDOW_MINUTES = 1440;
 const MIN_TRADER_RESOLVED_MARKETS = 10;
 const TRADERS_PER_MARKET = 500;
 const TRADE_LIMIT = 10;
-const MAX_JSON_BYTES = 5 * 1024 * 1024;
+const MAX_JSON_BYTES = 20 * 1024 * 1024;
 const CONCURRENCY = 6;
 const DELAY_MS = 150;
 let lastConsensusDiagnostics = null;
@@ -928,24 +926,10 @@ async function enrichConsensusMarkets(holderGroups, nowMs) {
   // Position records can carry stale/missing end dates. Resolve condition IDs
   // through Gamma before applying the 30-day UI window; keep undated active
   // markets visible rather than silently deleting the entire consensus panel.
-  // Stratify before the scan cap: a global top-value slice let politics
-  // crowd sports and other categories out before they could be classified.
-  const categoryOrder = ["sports", "esports", "crypto", "economics", "tech", "weather", "culture", "politics", "other"];
-  const categorized = holderGroups.map(group => ({...group, category: classifyMarketCategory({}, group)}));
-  const categoryBuckets = new Map(categoryOrder.map(category => [category, categorized.filter(group => group.category === category)]));
-  const perCategoryScan = Math.floor(CONSENSUS_MARKET_SCAN_LIMIT / categoryOrder.length);
-  const scan = [];
-  for (const category of categoryOrder) scan.push(...(categoryBuckets.get(category) || []).slice(0, perCategoryScan));
-  const scanKeys = new Set(scan.map(group => group.conditionId + "|" + String(group.side || "").toLowerCase()));
-  if (scan.length < CONSENSUS_MARKET_SCAN_LIMIT) {
-    for (const group of categorized) {
-      const key = group.conditionId + "|" + String(group.side || "").toLowerCase();
-      if (scanKeys.has(key)) continue;
-      scan.push(group); scanKeys.add(key);
-      if (scan.length >= CONSENSUS_MARKET_SCAN_LIMIT) break;
-    }
-  }
-  console.log("Consensus category scan allocation: " + JSON.stringify(Object.fromEntries(categoryOrder.map(category => [category, (categoryBuckets.get(category) || []).length]))));
+  // Enrich every discovered same-side group; do not cap the market list
+  // or let a popular category crowd other categories out.
+  const scan = holderGroups;
+  console.log("Consensus enrichment: processing all " + scan.length + " discovered shared groups.");
   // Look markets up by outcome token ID first. Position rows expose the
   // token as `asset`; this avoids empty condition-ID lookups when the
   // position endpoint uses a different condition identifier representation.
@@ -1079,38 +1063,10 @@ function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedM
       totalValue: traders.reduce((sum, trader) => sum + (num(trader.amount) ?? 0), 0)
     };
   }).filter(group => group.sameSide >= 2)
-     .sort((a, b) => b.sameSide - a.sameSide ||
-      b.sameSide - a.sameSide || b.totalValue - a.totalValue ||
+    .sort((a, b) => b.sameSide - a.sameSide || b.totalValue - a.totalValue ||
       (b.newestBuy || 0) - (a.newestBuy || 0));
-
-  // Cap each category and interleave categories so politics cannot occupy
-  // the entire result set when sports, esports, crypto, or other groups qualify.
-  const buckets = new Map();
-  for (const group of qualified) {
-    const category = group.category || "other";
-    if (!buckets.has(category)) buckets.set(category, []);
-    if (buckets.get(category).length < 20) buckets.get(category).push(group);
-  }
-  const categoryLists = [...buckets.entries()];
-  const diversified = [];
-  for (let index = 0; diversified.length < CONSENSUS_LIMIT; index++) {
-    let added = false;
-    for (const [, list] of categoryLists) {
-      if (list[index]) {
-        diversified.push(list[index]);
-        added = true;
-        if (diversified.length >= CONSENSUS_LIMIT) break;
-      }
-    }
-    if (!added) break;
-  }
-  const categoryCounts = {};
-  for (const group of diversified) {
-    const category = group.category || "other";
-    categoryCounts[category] = (categoryCounts[category] || 0) + 1;
-  }
-  console.log("Consensus qualified category mix:", JSON.stringify(categoryCounts));
-  return diversified;
+  console.log("Consensus shared-market count (all groups with 2+ holders): " + qualified.length);
+  return qualified;
 }
 function parseArrayField(value) {
   if (Array.isArray(value)) return value;
@@ -1407,15 +1363,11 @@ async function writeJsonUnderLimit(filename, output) {
   let json = compact();
   let bytes = Buffer.byteLength(json, "utf8");
 
-  // Progressively trim large sections until the actual serialized
-  // file is below the workflow's 5 MB limit.
+  // Preserve every consensus market. Trim only optional leader detail if
+  // needed; if the full consensus itself exceeds the limit, fail loudly
+  // rather than silently publishing an incomplete market list.
   while (bytes > MAX_JSON_BYTES) {
-    if (output.consensus.length > 0) {
-      output.consensus = output.consensus.slice(
-        0,
-        Math.floor(output.consensus.length / 2)
-      );
-    } else if (output.traderActivePositions && output.traderActiveTrades) {
+    if (output.traderActivePositions && output.traderActiveTrades) {
       for (const wallet of Object.keys(output.traderActivePositions)) {
         output.traderActivePositions[wallet] =
           (output.traderActivePositions[wallet] || []).slice(0, 3);
@@ -1595,7 +1547,7 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     })
     .filter(group => group.sameSide >= 2)
     .sort((a, b) => b.sameSide - a.sameSide || b.totalValue - a.totalValue || (b.newestBuy || 0) - (a.newestBuy || 0))
-    .slice(0, CONSENSUS_LIMIT);
+    ;
   const consensusRows = builtConsensusRows;
   console.log(`${period.key}: consensus serialization diagnostics: ${JSON.stringify({
     builtRows: builtConsensusRows.length,
