@@ -10,7 +10,6 @@ const PERIODS = [
 
 // Discover and use a broad pool for overlap detection. Expensive per-wallet history
 // verification remains separately bounded so the scheduled workflow can finish.
-const LEADERBOARD_PAGE_COUNT = 1000;
 const MIN_CONSENSUS_WIN_RATE = 90;
 const LEADER_COUNT = 100;
 const PAGE_SIZE = 50;
@@ -312,7 +311,8 @@ async function getCandidates(period) {
     for (const timePeriod of timePeriods) {
       for (const orderBy of ["PNL","VOLUME"]) {
         let cursor = null, page = 0;
-        while (page < LEADERBOARD_PAGE_COUNT) {
+        const seenCursors = new Set();
+        while (true) {
           const params = new URLSearchParams({category,time_period:timePeriod.toLowerCase(),sort_by:orderBy,limit:String(PAGE_SIZE)});
           if (cursor) params.set("cursor",cursor);
           const response = await getJson(`${API}/v2/leaderboard?${params}`);
@@ -334,7 +334,13 @@ async function getCandidates(period) {
           const nextCursor=response?.pagination?.next_cursor??null;
           page++;
           if(!nextCursor||response?.pagination?.has_more===false)break;
-          cursor=String(nextCursor);
+          const next=String(nextCursor);
+          if(seenCursors.has(next)) {
+            console.warn(`Leaderboard cursor repeated for ${category}/${timePeriod}/${orderBy}; ending this cursor stream safely.`);
+            break;
+          }
+          seenCursors.add(next);
+          cursor=next;
         }
       }
     }
