@@ -28,8 +28,12 @@ const MIN_TRADER_RESOLVED_MARKETS = 10;
 const TRADERS_PER_MARKET = 500;
 const TRADE_LIMIT = 10;
 const MAX_JSON_BYTES = 20 * 1024 * 1024;
-const CONCURRENCY = 6;
-const DELAY_MS = 150;
+const CONCURRENCY = 10;
+const DELAY_MS = 50;
+// Cap the open-position discovery pass: deep cursor pagination across every
+// wallet was generating tens of thousands of requests and blocking publication.
+// The highest-value 200 open positions per wallet are sufficient for overlap discovery.
+const MAX_CONSENSUS_POSITION_PAGES_PER_WALLET = 2;
 let lastConsensusDiagnostics = null;
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -792,7 +796,7 @@ async function getBroadConsensusMarkets(knownTraders, nowMs, activePositions) {
         }
         cursor = pagination.next_cursor || null;
         hasMore = pagination.has_more === true && Boolean(cursor);
-        if (!hasMore || !rows.length) break;
+        if (!hasMore || !rows.length || pages >= MAX_CONSENSUS_POSITION_PAGES_PER_WALLET) break;
       }
       return [wallet, all, hasMore, pages];
     } catch (error) {
@@ -905,8 +909,8 @@ async function getBroadConsensusMarkets(knownTraders, nowMs, activePositions) {
     positionsWithConditionAndSide,
     walletsWithMorePositions,
     sameSideGroups: holderGroups.length,
-    pageCapPerWallet: null,
-    note: "Every available cursor page was requested for each discovered wallet; API pagination is the coverage boundary."
+    pageCapPerWallet: MAX_CONSENSUS_POSITION_PAGES_PER_WALLET,
+    note: "Performance cap: up to 200 highest-current-value open positions per wallet are scanned for overlap discovery; closed-position profitability records are separately scanned over the full requested 7/30-day window."
   };
   console.log("Consensus scan diagnostics: " + JSON.stringify(lastConsensusDiagnostics));
   const activePositionsByWallet = Object.fromEntries(consensusPositions.map(([wallet, positions]) => [wallet, positions]));
