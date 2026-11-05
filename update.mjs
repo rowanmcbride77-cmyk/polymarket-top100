@@ -13,6 +13,8 @@ const PERIODS = [
 const MIN_CONSENSUS_WIN_RATE = 90;
 const LEADER_COUNT = 100;
 const PAGE_SIZE = 50;
+const MAX_CANDIDATES_PER_PERIOD = 5000;
+const MAX_LEADERBOARD_PAGES_PER_STREAM = 20;
 const POSITION_FETCH_LIMIT = 100;
 const POSITIONS_PER_TRADER = 10;
 const RANKING_RECORD_LIMIT = 1000;
@@ -306,11 +308,14 @@ async function getCandidates(period) {
   const timePeriods = [...new Set([period.api,"DAY","WEEK","MONTH","ALL"])];
   let pagesFetched = 0;
   for (const category of categories) {
+    if (byWallet.size >= MAX_CANDIDATES_PER_PERIOD) break;
     for (const timePeriod of timePeriods) {
+      if (byWallet.size >= MAX_CANDIDATES_PER_PERIOD) break;
       for (const orderBy of ["PNL","VOLUME"]) {
+        if (byWallet.size >= MAX_CANDIDATES_PER_PERIOD) break;
         let cursor = null, page = 0;
         const seenCursors = new Set();
-        while (true) {
+        while (page < MAX_LEADERBOARD_PAGES_PER_STREAM && byWallet.size < MAX_CANDIDATES_PER_PERIOD) {
           const params = new URLSearchParams({category,time_period:timePeriod.toLowerCase(),sort_by:orderBy,limit:String(PAGE_SIZE)});
           if (cursor) params.set("cursor",cursor);
           const response = await getJson(`${API}/v2/leaderboard?${params}`);
@@ -1631,7 +1636,8 @@ async function main() {
 
   console.log(`Loading positions for ${unique.size} unique traders...`);
   const fullRecordCache = new Map();
-  const consensusCandidatePool = [...unique.values()];
+  const consensusCandidatePool = [...unique.values()].slice(0, MAX_CANDIDATES_PER_PERIOD);
+  console.log(`Consensus scan bounded to ${consensusCandidatePool.length.toLocaleString()} unique wallets per update to keep the scheduled job within runtime limits.`);
   const consensusScan = await getBroadConsensusMarkets(consensusCandidatePool, nowMs, {});
   const activePositions = consensusScan.activePositionsByWallet;
   const consensusGroups = await enrichConsensusMarkets(consensusScan.holderGroups, nowMs);
