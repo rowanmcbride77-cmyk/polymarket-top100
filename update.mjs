@@ -876,11 +876,21 @@ async function getBroadConsensusMarkets(knownTraders, nowMs, activePositions) {
     }
   }
 
+  // A market is only a directional consensus when 2+ traders agree on
+  // exactly one outcome. If both YES and NO have 2+ holders, the market is
+  // contradictory and must be excluded entirely (not shown as two rows).
+  const qualifyingSidesByCondition = new Map();
+  for (const group of groups.values()) {
+    if (group.sameSide < 2) continue;
+    qualifyingSidesByCondition.set(
+      group.conditionId,
+      (qualifyingSidesByCondition.get(group.conditionId) || 0) + 1
+    );
+  }
   const holderGroups = [...groups.values()]
     .filter(group => group.sameSide >= 2)
+    .filter(group => qualifyingSidesByCondition.get(group.conditionId) === 1)
     .map(({ walletsSeen, ...group }) => group)
-    // Do not truncate the raw groups before checking the weekly 90% filter.
-    // Otherwise a few popular but ineligible markets can crowd out valid ones.
     .sort((a, b) => b.sameSide - a.sameSide || b.totalValue - a.totalValue || (b.newestBuy || 0) - (a.newestBuy || 0));
 
   lastConsensusDiagnostics = {
