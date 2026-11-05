@@ -691,7 +691,7 @@ function renderLeaders() {
   }).join("") : `<tr><td colspan="${comboMode || efficiencyMode ? 7 : 6}" class="empty">${comboMode ? (comboLoadFinished ? "No traders cleared the $100 minimum in fully reconciled net combo profit for the last 7 days." : "Scanning combo positions…") : efficiencyMode ? (comboLoadFinished ? "No open combos with a positive estimated return and no resolved legs were found in the checked traders." : "Scanning combo positions…") : "No traders currently meet the 90% minimum, complete-record requirement, and " + minimumRecordSample + "-close sample for this period."}</td></tr>`;
   $("leadersMore").textContent = allLeaders ? "Show fewer ↑" : "View all traders →";
   $("leadersMore").style.display = list.length > 10 ? "inline-block" : "none";
-  const overviewList = comboMode ? list : efficiencyMode ? [] : baseList;
+  const overviewList = comboMode ? list : efficiencyMode ? [] : qualifiedLeaderboard;
   const pnlTotal = comboMode || efficiencyMode ? overviewList.reduce((sum,row)=>sum+row.profit,0) : overviewList.reduce((sum,trader)=>sum+(num(trader.pnl ?? trader.profit)??0),0);
   const volumeTotal = comboMode ? overviewList.reduce((sum,row)=>sum+row.volume,0) : efficiencyMode ? overviewList.reduce((sum,row)=>sum+row.entry,0) : overviewList.reduce((sum,trader)=>sum+(num(trader.volume ?? trader.vol)??0),0);
   const records = efficiencyMode ? [] : overviewList.map(recordOf).filter(record => record && record.rate !== null);
