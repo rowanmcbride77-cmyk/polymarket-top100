@@ -468,19 +468,25 @@ async function loadConsensusData() {
   $("consensusPeriod").textContent = "2+ same-side holders · 90%+ 30-day record · open market";
   const filename = CONSENSUS_FILES[pool];
   try {
-    let result = null;
-    for (const url of [filename + "?t=" + Date.now(), "https://raw.githubusercontent.com/rowanmcbride77-cmyk/polymarket-top100/main/" + filename + "?t=" + Date.now()]) {
+    const urls = [
+      filename + "?t=" + Date.now(),
+      "https://raw.githubusercontent.com/rowanmcbride77-cmyk/polymarket-top100/main/" + filename + "?t=" + Date.now()
+    ];
+    // Read both Pages and the GitHub source, then use the newest generated file.
+    // A successful but stale Pages response must not hide newer scanner output.
+    const candidates = (await Promise.all(urls.map(async url => {
       try {
         const response = await fetch(url, {cache:"no-store"});
-        if (!response.ok) throw new Error("HTTP " + response.status);
+        if (!response.ok) return null;
         const parsed = await response.json();
-        if (!parsed || !Array.isArray(parsed.consensus)) throw new Error("Invalid consensus file");
-        result = parsed; break;
-      } catch (_) {}
-    }
-    if (!result) throw new Error(filename + " is not available yet. Run the repository updater after the new generator is deployed.");
-    consensusData = result;
+        return parsed && Array.isArray(parsed.consensus) ? parsed : null;
+      } catch (_) { return null; }
+    }))).filter(Boolean);
+    if (!candidates.length) throw new Error(filename + " is not available yet. Run the repository updater after the new generator is deployed.");
+    candidates.sort((a, b) => (Date.parse(b.generatedAt || "") || 0) - (Date.parse(a.generatedAt || "") || 0));
+    consensusData = candidates[0];
     renderConsensus();
+    $("consensusPeriod").textContent = (consensusData.consensus.length || 0) + " markets loaded · 2+ same-side traders · 90%+ 30-day record";
   } catch (error) {
     consensusData = {consensus:[]};
     $("consensusBody").innerHTML = `<tr><td colspan="7" class="empty">${esc(error.message)}</td></tr>`;
