@@ -467,7 +467,7 @@ function consensus() {
 async function loadConsensusData() {
   const pool = $("consensusPool").value;
   $("consensusBody").innerHTML = `<tr><td colspan="6" class="loading">Loading ${esc(pool)} consensus pool…</td></tr>`;
-  $("consensusPeriod").textContent = "90%+ qualified · resolves within 24 hours";
+  $("consensusPeriod").textContent = "90%+ qualified · ends within 24 hours";
   const filename = CONSENSUS_FILES[pool];
   try {
     let result = null;
@@ -514,6 +514,18 @@ function marketTime(market) {
 
 function marketEndTime(market) {
   return market?.endDate ?? market?.end_date ?? market?.endDateIso ?? market?.endDateISO ?? market?.end_date_iso ?? market?.resolveTime ?? market?.resolve_time ?? market?.endTime ?? market?.end_time ?? null;
+}
+
+function marketEndTimestamp(market) {
+  const value = marketEndTime(market);
+  // The scanner treats date-only Polymarket end dates as the end of that UTC
+  // calendar day. Match that rule here instead of Date.parse("YYYY-MM-DD"),
+  // which incorrectly interprets the date as midnight and hides live markets.
+  if (typeof value === "string" && /^\\d{4}-\\d{2}-\\d{2}$/.test(value.trim())) {
+    const parsed = Date.parse(value.trim() + "T23:59:59.999Z");
+    return Number.isFinite(parsed) ? parsed / 1000 : null;
+  }
+  return timestamp(value);
 }
 
 function marketKey(market, index) {
@@ -779,7 +791,7 @@ function renderConsensus() {
   const nowSeconds = Date.now() / 1000;
   const cutoffSeconds = nowSeconds + 24 * 60 * 60;
   const filtered = consensus().map((market, index) => {
-      const endSeconds = timestamp(marketEndTime(market));
+      const endSeconds = marketEndTimestamp(market);
       return {...market, _index:index, _endSeconds:endSeconds};
     })
     .filter(market => market._endSeconds !== null &&
@@ -845,7 +857,7 @@ function renderConsensus() {
     </td></tr>` : "";
 
     return row + detail;
-  }).join("") : `<tr><td colspan="6" class="empty">No qualified shared markets have a confirmed resolution time within the next 24 hours.</td></tr>`;
+  }).join("") : `<tr><td colspan="6" class="empty">No qualified shared markets have an end date/time within the next 24 hours.</td></tr>`;
 
   $("consensusMore").textContent = allMarkets ? "Show fewer ↑" : "View all consensus markets →";
   $("consensusMore").style.display = filtered.length > 15 ? "inline-block" : "none";
