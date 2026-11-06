@@ -87,6 +87,7 @@ jobs:
               const invalidGroups = groups.filter(group => {
                 const traders = Array.isArray(group.traders) ? group.traders : [];
                 const wallets = new Set(traders.map(row => String(row.wallet || "").toLowerCase()).filter(Boolean));
+                const generatedMs = Date.parse(parsed.generatedAt);
                 const invalidTrader = traders.some(row => {
                   // Every published consensus member must independently pass
                   // the all-time qualification and sample-size requirements.
@@ -106,7 +107,6 @@ jobs:
                 const endRaw = group.endDate ?? group.end_date ?? null;
                 let endMs = endRaw ? Date.parse(String(endRaw)) : NaN;
                 if (typeof endRaw === "string" && /^\d{4}-\d{2}-\d{2}$/.test(endRaw)) endMs = Date.parse(endRaw + "T23:59:59.999Z");
-                const generatedMs = Date.parse(parsed.generatedAt);
                 const invalidMarket = group.marketMetadataVerified !== true || group.marketClosed !== false ||
                   !Number.isFinite(endMs) || endMs <= generatedMs || endMs > generatedMs + 24 * 60 * 60 * 1000;
                 return invalidMarket || wallets.size < 2 || wallets.size !== traders.length ||
