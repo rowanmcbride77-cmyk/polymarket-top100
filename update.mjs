@@ -893,11 +893,9 @@ async function getBroadConsensusMarkets(knownTraders, nowMs, activePositions) {
       if (!conditionId || !side) continue;
       const currentValue = num(position.currentValue ?? position.current_value) ?? 0;
       const size = num(position.size ?? position.current_size ?? position.currentSize) ?? 0;
-      const invested = num(position.initialValue ?? position.initial_value);
-      // Require a verifiable $10+ entry per trader. Unknown entry cost is
-      // excluded rather than allowing tiny or unverified positions into consensus.
+      const invested = num(position.initialValue ?? position.initial_value) ?? 0;
+      // Count every genuine active holding, regardless of original entry size or whether entry cost is available.
       if (currentValue <= 0 && size <= 0) continue;
-      if (invested === null || invested < MIN_CONSENSUS_ENTRY_VALUE) continue;
 
       positionsWithConditionAndSide++;
       const key = conditionId + "|" + side.toLowerCase();
@@ -981,7 +979,7 @@ async function getBroadConsensusMarkets(knownTraders, nowMs, activePositions) {
     walletsWithMorePositions,
     sameSideGroups: holderGroups.length,
     pageCapPerWallet: MAX_CONSENSUS_POSITION_PAGES_PER_WALLET,
-    note: "Open-position discovery scans up to 4 pages (400 positions) for each of up to 5,000 wallets. Candidate holdings require at least $10 original entry cost; published signals require a verified active same-side holding and a complete rolling-30-day record with at least 20 closed markets at 90%+ profitable-close rate. No recent BUY is required."
+    note: "Open-position discovery scans up to 4 pages (400 positions) for each of up to 5,000 wallets. Any positive active holding counts; no minimum entry size or recent BUY requirement. Published groups require 2+ same-side holders and a complete 30-day record at 90%+."
   };
   console.log("Consensus scan diagnostics: " + JSON.stringify(lastConsensusDiagnostics));
   const activePositionsByWallet = Object.fromEntries(consensusPositions.map(([wallet, positions]) => [wallet, positions]));
