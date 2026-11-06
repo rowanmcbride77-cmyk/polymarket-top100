@@ -1551,25 +1551,27 @@ async function writeJsonUnderLimit(filename, output) {
 }
 
 async function buildPeriod(period, discoveredCandidates, activePositions, nowMs, consensusCandidates, fullRecordCache, consensusGroups) {
-  // Rank the leaderboard using a bounded top-wallet history sample, but verify
-  // every wallet actually present in a discovered consensus market. Previously
-  // only the first 1,000 leaderboard wallets received period records, so valid
-  // consensus holders outside that arbitrary slice were silently discarded.
+  // Keep the general leaderboard history scan bounded, but separately
+  // verify every wallet that actually appears in a live, time-qualified
+  // consensus group. This applies equally to weekly and monthly records.
   const candidates = discoveredCandidates;
   const rankingRecordCandidates = candidates.slice(0, RANKING_RECORD_LIMIT);
-  // The weekly consensus pool verifies every wallet discovered by either
-  // leaderboard period against the same last-7-days record.
-  const recordUniverse = period.key === "week" && Array.isArray(consensusCandidates)
-    ? consensusCandidates : rankingRecordCandidates;
-  const candidateByWallet = new Map(recordUniverse.map(trader => [String(trader.wallet || "").toLowerCase(), trader]));
+  const candidateByWallet = new Map(
+    (Array.isArray(consensusCandidates) ? consensusCandidates : [])
+      .map(trader => [String(trader.wallet || "").toLowerCase(), trader])
+  );
   const consensusWallets = new Set(
     consensusGroups.flatMap(group => (Array.isArray(group.traders) ? group.traders : [])
       .map(holder => String(holder.wallet || "").toLowerCase())
-      .filter(wallet => candidateByWallet.has(wallet)))
+      .filter(Boolean))
   );
-  const recordCandidateMap = new Map(recordUniverse.map(trader => [String(trader.wallet || "").toLowerCase(), trader]));
+  const recordCandidateMap = new Map(
+    rankingRecordCandidates.map(trader => [String(trader.wallet || "").toLowerCase(), trader])
+  );
   for (const wallet of consensusWallets) {
-    if (!recordCandidateMap.has(wallet)) recordCandidateMap.set(wallet, candidateByWallet.get(wallet));
+    if (!recordCandidateMap.has(wallet)) {
+      recordCandidateMap.set(wallet, candidateByWallet.get(wallet) || {wallet});
+    }
   }
   const recordCandidates = [...recordCandidateMap.values()];
   console.log(`Discovered ${discoveredCandidates.length} ${period.key} candidates; scanning active positions across ${candidates.length} wallets, leaderboard records for ${rankingRecordCandidates.length}, and consensus-holder records for ${consensusWallets.size} (unique record scan: ${recordCandidates.length}).`);
