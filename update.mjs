@@ -27,7 +27,7 @@ const CONSENSUS_WALLET_LIMIT = 5000;
 const MAX_CONSENSUS_POSITION_PAGES_PER_WALLET = 4;
 const LEADER_RECORD_LIMIT = RANKING_RECORD_LIMIT;
 // Keep upcoming markets in the data so the UI can filter 24h / 3d / 7d accurately.
-const CONSENSUS_WINDOW_HOURS = 24; // Only show markets with a confirmed end/resolution time in the next 24 hours
+const CONSENSUS_WINDOW_HOURS = 168; // Include active markets ending within 7 days; exclude long-dated markets years away
 const CONSENSUS_HOLDERS_PER_MARKET = 1500;
 const MIN_CONSENSUS_POSITION_VALUE = 1;
 const MIN_CONSENSUS_ENTRY_VALUE = 0; // No minimum original entry size.
@@ -1077,7 +1077,7 @@ async function enrichConsensusMarkets(holderGroups, nowMs) {
       endMs = Date.parse(endDate + "T23:59:59.999Z");
     }
 
-    // The panel is intentionally limited to the next 24 hours.
+    // Include active markets ending within the next 7 days, matching the dashboard filter.
     // Exclude overdue, undated, and long-dated markets rather than relabeling
     // them as active opportunities or substituting an event start date.
     if (endMs === null) {
