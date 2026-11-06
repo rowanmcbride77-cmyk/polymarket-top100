@@ -1198,7 +1198,11 @@ function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedM
       const winRate = wins !== null && losses !== null && resolvedMarkets > 0
         ? wins / resolvedMarkets * 100
         : num(record.winRate);
-      const isQualified = record.recordComplete === true &&
+      const buyTimeMs = num(holder.buyTime);
+      const freshBuy = holder.verifiedBuy === true && buyTimeMs !== null &&
+        buyTimeMs >= Date.now() - CONSENSUS_ENTRY_WINDOW_MINUTES * 60 * 1000 &&
+        buyTimeMs <= Date.now() + 60 * 1000;
+      const isQualified = freshBuy && record.recordComplete === true &&
         resolvedMarkets !== null &&
         resolvedMarkets >= minimumResolvedMarkets &&
         winRate !== null &&
