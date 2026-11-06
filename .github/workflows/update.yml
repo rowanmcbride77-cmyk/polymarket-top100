@@ -19,7 +19,7 @@ concurrency:
 
 jobs:
   update:
-    if: github.event_name != 'push'
+    if: github.event_name != 'push' || contains(github.event.head_commit.message, '[run-scanner]')
     runs-on: ubuntu-latest
     timeout-minutes: 35
 
@@ -98,7 +98,9 @@ jobs:
                     !Number.isFinite(winRate) || winRate < 90 ||
                     Math.abs(winRate - (wins / resolved * 100)) > 0.11;
                 });
-                return wallets.size < 2 || wallets.size !== traders.length ||
+                const invalidMarket = group.marketMetadataVerified !== true ||
+                  group.marketClosed !== false;
+                return invalidMarket || wallets.size < 2 || wallets.size !== traders.length ||
                   group.sameSide !== traders.length || invalidTrader;
               });
               if (invalidGroups.length) {
