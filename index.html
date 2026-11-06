@@ -188,7 +188,7 @@ dialog::backdrop{background:#000b}
       <section class="panel">
         <div class="panel-heading">
           <div class="heading-left"><span class="heading-icon">👥</span><h2>Copy Signals</h2></div>
-          <span class="pill" id="consensusPeriod">30-day records · fresh BUYs</span>
+          <span class="pill" id="consensusPeriod" title="Open same-side holdings; 30-day profitable-close history is a proxy, not verified settlement wins.">30-day records · open holdings</span>
         </div>
         
         <div class="filters">
@@ -210,13 +210,15 @@ dialog::backdrop{background:#000b}
           </label>
           <label>Market window
             <select id="recency" onchange="renderConsensus()">
-              <option value="24h" selected>Next 24 hours</option>
+              <option value="24h">Next 24 hours</option>
+              <option value="3d">Next 3 days</option>
+              <option value="7d" selected>Next 7 days</option>
             </select>
           </label>
         </div>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>#</th><th>Market</th><th>Side</th><th>Traders</th><th>Signal score</th><th>Combined Value</th><th>Resolves</th></tr></thead>
+            <thead><tr><th>#</th><th>Market</th><th>Side</th><th>Traders</th><th title="Heuristic ranking: 50% number of traders, 30% average profitable-close rate, 20% record sample size. Not a probability of winning.">Consensus strength</th><th>Combined Value</th><th>Resolves</th></tr></thead>
             <tbody id="consensusBody"><tr><td colspan="7" class="loading">Loading copy signals…</td></tr></tbody>
           </table>
         </div>
@@ -785,7 +787,9 @@ async function loadConsensusTradeHistory(wallet, conditionId, outcome) {
 function renderConsensus() {
   const minCount = Number($("minTraders").value || 2);
   const nowSeconds = Date.now() / 1000;
-  const cutoffSeconds = nowSeconds + 24 * 60 * 60;
+  const windowValue = $("recency").value || "7d";
+  const windowHours = windowValue === "24h" ? 24 : windowValue === "3d" ? 72 : 168;
+  const cutoffSeconds = nowSeconds + windowHours * 60 * 60;
   const filtered = consensus().map((market, index) => {
       const endSeconds = marketEndTimestamp(market);
       return {...market, _index:index, _endSeconds:endSeconds};
@@ -850,7 +854,7 @@ function renderConsensus() {
         const hasReportedEntry = !buy && reportedAvgPrice !== null;
         const sellCost = sell?._cost;
         return '<div class="member member-compact">' +
-          '<div class="member-identity"><strong>' + profileButton(member, memberName) + favoriteButton(wallet) + '</strong><small class="member-record">' + "30-day record: " + (num(member.wins) !== null && num(member.losses) !== null ? num(member.wins) + "–" + num(member.losses) + " · " + (num(member.winRate) !== null ? num(member.winRate).toFixed(1) + "% profitable-close rate" : "profitable-close rate N/A") + " · early exits " + (num(member.earlyExitRate) !== null ? num(member.earlyExitRate).toFixed(1) + "%" : "N/A") + " · " + (num(member.resolvedMarkets) ?? (num(member.wins)+num(member.losses))) + " closed markets" : "Qualified period record unavailable") + '</small><small>' + (hasObservedBuy ? "Observed BUY · "+esc(dateText(buy?.timestamp)) : "Open position confirmed · original BUY timestamp not required") + '</small><small>' + (sell ? "SELL observed · "+esc(dateText(sell.timestamp)) : (!events ? "Checking later SELL trades…" : (member.isStillHolding === true || String(member.positionStatus || "").toUpperCase() === "OPEN" ? "Still listed as an open position; no SELL required" : "No matching SELL found in returned trade history"))) + '</small></div>' +
+          '<div class="member-identity"><strong>' + profileButton(member, memberName) + favoriteButton(wallet) + '</strong><small class="member-record">' + "30-day profitable closes: " + (num(member.wins) !== null && num(member.losses) !== null ? num(member.wins).toLocaleString() + "–" + num(member.losses).toLocaleString() + " · " + (num(member.winRate) !== null ? num(member.winRate).toFixed(1) + "% profitable-close rate" : "profitable-close rate N/A") + " · " + (num(member.resolvedMarkets) ?? (num(member.wins)+num(member.losses))).toLocaleString() + " closed positions grouped by market" : "Qualified period record unavailable") + '</small><small>' + (hasObservedBuy ? "Observed BUY · "+esc(dateText(buy?.timestamp)) : "Open position confirmed · original BUY timestamp not required") + '</small><small>' + (sell ? "SELL observed · "+esc(dateText(sell.timestamp)) : (!events ? "Checking later SELL trades…" : (member.isStillHolding === true || String(member.positionStatus || "").toUpperCase() === "OPEN" ? "Still listed as an open position; no SELL required" : "No matching SELL found in returned trade history"))) + '</small></div>' +
           '<div><strong>' + (buyPrice === null || buyPrice === undefined ? "—" : (buyPrice*100).toFixed(1)+"¢") + '</strong><small>' + (hasObservedBuy ? "Observed buy price" : (reportedAvgPrice !== null ? "Reported position average entry" : "Entry price unavailable")) + '</small><small>' + (bought === null || bought === undefined ? (memberEntry !== null ? "Reported position entry value "+cash(memberEntry)+" · exact trade cost unavailable" : "Entry cost unavailable; no matching BUY trade found") : (hasObservedBuy ? "Observed BUY / position entry "+cash(bought) : "Reported position entry "+cash(bought))+(shares !== null ? " · "+shares.toFixed(1)+" shares" : "")) + '</small>' + (bought !== null && memberValue !== null ? '<small>' + (buy ? "Approx. unrealized change: " : "Approx. change vs estimated entry: ") + (memberValue-bought>0?"+":"") + cash(memberValue-bought) + " (" + (bought>0?((memberValue-bought)/bought*100).toFixed(1):"N/A") + "%)" + '</small>' : "") + '</div>' +
           '<div><strong>' + (sell && sell._price !== null ? (sell._price*100).toFixed(1)+"¢" : "—") + '</strong><small>Observed sell price</small><small>' + (sell ? "SELL transaction "+(sellCost === null ? "amount unavailable" : cash(sellCost)) : (!events ? "Loading transaction history" : "No matching SELL found")) + '</small><small>' + (memberValue !== null ? "Position value reported "+cash(memberValue) : "Current held value unavailable") + '</small></div>' +
         '</div>';
