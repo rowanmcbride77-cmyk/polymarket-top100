@@ -30,7 +30,7 @@ const LEADER_RECORD_LIMIT = RANKING_RECORD_LIMIT;
 const CONSENSUS_WINDOW_HOURS = 24; // Only show markets with a confirmed end/resolution time in the next 24 hours
 const CONSENSUS_HOLDERS_PER_MARKET = 1500;
 const MIN_CONSENSUS_POSITION_VALUE = 1;
-const MIN_CONSENSUS_ENTRY_VALUE = 10; // Minimum USD originally invested by each trader in a consensus position
+const MIN_CONSENSUS_ENTRY_VALUE = 0; // No minimum original entry size.
 const CONSENSUS_ENTRY_WINDOW_MINUTES = 60;
 const MIN_TRADER_RESOLVED_MARKETS = 10;
 const MIN_CONSENSUS_CLOSED_MARKETS = 0; // Only a complete 30-day record and 90%+ rate; no extra trade-count floor.
@@ -183,9 +183,7 @@ function normalizeLeader(row, index) {
 async function getResolvedRecord(wallet, period, nowMs, maxPositions = RANKING_RECORD_LIMIT) {
   if (!wallet) return null;
 
-  // Consensus eligibility uses all-time closed-market history. Weekly and
-  // monthly leaderboard statistics remain period-scoped and are calculated
-  // separately. Capped/incomplete all-time samples are withheld.
+  // Consensus eligibility uses the selected rolling 30-day period. Capped or incomplete samples are withheld.
   const periodKey = String(period?.api || period?.key || period || "").toUpperCase();
   const allTime = periodKey === "ALL" || periodKey === "ALL_TIME" || periodKey === "ALLTIME";
   const periodDays = periodKey === "MONTH" ? 30 : 7;
@@ -1158,9 +1156,8 @@ function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedM
       const winRate = wins !== null && losses !== null && resolvedMarkets > 0
         ? wins / resolvedMarkets * 100
         : num(record.winRate);
-      // A Copy Signal requires a genuinely strong, complete rolling-30-day
-      // profitable-close record with a meaningful sample. The position itself
-      // was independently confirmed as currently OPEN by the positions API.
+      // Require a complete rolling-30-day profitable-close record at 90%+.
+      // No extra minimum number of closed markets is imposed.
       const isQualified =
         record.recordComplete === true &&
         resolvedMarkets !== null &&
@@ -1737,7 +1734,7 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     scanDiagnostics: lastConsensusDiagnostics,
     candidatePoolBasis: "All unique wallets exposed by available public Data API v2 leaderboard cursors across overall, sports, politics, crypto, esports, culture, mentions, weather, economics, tech, and finance categories and DAY/WEEK/MONTH/ALL periods, sorted by PnL and volume. The public API does not expose a literal all-wallet directory, so this is the broadest discoverable leaderboard pool rather than a guaranteed census. Every available open-position page is scanned; final consensus includes only same-outcome groups with at least 2 independently qualified traders.",
     resolutionWindowHours: CONSENSUS_WINDOW_HOURS,
-    recordBasis: "Active markets with at least 2 distinct same-outcome holders, each independently passing a complete rolling-30-day 90%+ profitable-close rate and complete rolling-30-day 90%+ profitable-close rate; no extra trade-count minimum. Current holdings are confirmed by the live OPEN positions endpoint. This is a research signal, not a proven profitable strategy.",
+    recordBasis: "Active markets with at least 2 distinct same-outcome holders, each independently passing a complete rolling-30-day 90%+ profitable-close rate; no extra trade-count minimum. Current holdings are confirmed by the live OPEN positions endpoint. This is a research signal, not a proven profitable strategy.",
     qualificationCount,
     consensus: consensusRows
   });
