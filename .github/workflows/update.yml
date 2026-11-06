@@ -95,7 +95,8 @@ jobs:
                   const losses = Number(row.losses);
                   const resolved = Number(row.resolvedMarkets);
                   const winRate = Number(row.winRate);
-                  return row.recordComplete !== true || row.verifiedBuy !== true ||
+                  const buyMs = Number(row.buyTime) < 1e12 ? Number(row.buyTime) * 1000 : Number(row.buyTime);
+                  return row.recordComplete !== true || row.verifiedBuy !== true || !Number.isFinite(buyMs) || buyMs < generatedMs - 60 * 60 * 1000 || buyMs > generatedMs + 60 * 1000 ||
                     !Number.isFinite(wins) || !Number.isFinite(losses) ||
                     !Number.isFinite(resolved) || resolved < minimumResolved ||
                     wins + losses !== resolved ||
@@ -104,7 +105,7 @@ jobs:
                 });
                 const endRaw = group.endDate ?? group.end_date ?? null;
                 let endMs = endRaw ? Date.parse(String(endRaw)) : NaN;
-                if (typeof endRaw === "string" && /^\\d{4}-\\d{2}-\\d{2}$/.test(endRaw)) endMs = Date.parse(endRaw + "T23:59:59.999Z");
+                if (typeof endRaw === "string" && /^\d{4}-\d{2}-\d{2}$/.test(endRaw)) endMs = Date.parse(endRaw + "T23:59:59.999Z");
                 const generatedMs = Date.parse(parsed.generatedAt);
                 const invalidMarket = group.marketMetadataVerified !== true || group.marketClosed !== false ||
                   !Number.isFinite(endMs) || endMs <= generatedMs || endMs > generatedMs + 24 * 60 * 60 * 1000;
