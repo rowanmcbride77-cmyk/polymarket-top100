@@ -1176,6 +1176,15 @@ function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedM
   const qualifiedGroups = [];
   let rawGroupsWithTwoHolders = 0;
   let groupsWithTwoQualified = 0;
+  const qualificationDiagnostics = {
+    holdersEvaluated: 0,
+    failedFreshBuy: 0,
+    incompleteRecord: 0,
+    fewerThanMinimumCloses: 0,
+    belowMinimumWinRate: 0,
+    qualifiedHolders: 0,
+    recordSamples: []
+  };
 
   for (const group of holderGroups) {
     const uniqueHolders = [...new Map(
@@ -1207,6 +1216,19 @@ function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedM
         resolvedMarkets >= minimumResolvedMarkets &&
         winRate !== null &&
         winRate >= MIN_CONSENSUS_WIN_RATE;
+
+      qualificationDiagnostics.holdersEvaluated++;
+      if (!freshBuy) qualificationDiagnostics.failedFreshBuy++;
+      if (record.recordComplete !== true) qualificationDiagnostics.incompleteRecord++;
+      if (resolvedMarkets === null || resolvedMarkets < minimumResolvedMarkets) qualificationDiagnostics.fewerThanMinimumCloses++;
+      if (winRate === null || winRate < MIN_CONSENSUS_WIN_RATE) qualificationDiagnostics.belowMinimumWinRate++;
+      if (isQualified) qualificationDiagnostics.qualifiedHolders++;
+      qualificationDiagnostics.recordSamples.push({
+        resolvedMarkets,
+        winRate: winRate === null ? null : Math.round(winRate * 100) / 100,
+        recordComplete: record.recordComplete === true,
+        scannedPositions: num(record.scannedPositions)
+      });
 
       return {
         ...holder,
@@ -1255,6 +1277,7 @@ function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedM
     const consensusScore = Math.round(breadthScore + accuracyScore + sampleScore + freshnessScore);
     return {...group, consensusScore, signalTier: group.sameSide >= 10 ? "Strong overlap" : group.sameSide >= 5 ? "High overlap" : "Early overlap"};
   }).sort((a, b) => b.consensusScore - a.consensusScore || b.sameSide - a.sameSide || b.totalValue - a.totalValue || (b.newestBuy || 0) - (a.newestBuy || 0));
+  console.log("Consensus holder qualification diagnostics:", JSON.stringify(qualificationDiagnostics));
   console.log("Consensus qualification:", JSON.stringify({
     rawGroupsWithTwoHolders,
     groupsWithTwoQualified,
