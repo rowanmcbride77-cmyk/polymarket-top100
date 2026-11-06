@@ -1,5 +1,6 @@
 
 name: Update Polymarket Scanner
+# [run-scanner] Rebuild 7-day Copy Signals with corrected consensus scoring.
 # [run-scanner] Rebuild Copy Signals using live same-side holders and qualified 30-day records.
 # [run-scanner] Rebuild Copy Signals using verified same-side BUY overlap.
 # Re-run with period-matched records for every shared-market holder.
@@ -117,7 +118,7 @@ jobs:
                 let endMs = endRaw ? Date.parse(String(endRaw)) : NaN;
                 if (typeof endRaw === "string" && /^\d{4}-\d{2}-\d{2}$/.test(endRaw)) endMs = Date.parse(endRaw + "T23:59:59.999Z");
                 const invalidMarket = group.marketMetadataVerified !== true || group.marketClosed !== false ||
-                  !Number.isFinite(endMs) || endMs <= validationNow || endMs > validationNow + 24 * 60 * 60 * 1000;
+                  !Number.isFinite(endMs) || endMs <= validationNow || endMs > validationNow + 7 * 24 * 60 * 60 * 1000;
                 return invalidMarket || wallets.size < 2 || wallets.size !== traders.length ||
                   group.sameSide !== traders.length || invalidTrader;
               });
