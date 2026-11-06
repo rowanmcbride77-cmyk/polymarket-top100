@@ -33,7 +33,7 @@ const MIN_CONSENSUS_POSITION_VALUE = 1;
 const MIN_CONSENSUS_ENTRY_VALUE = 10; // Minimum USD originally invested by each trader in a consensus position
 const CONSENSUS_ENTRY_WINDOW_MINUTES = 60;
 const MIN_TRADER_RESOLVED_MARKETS = 10;
-const MIN_CONSENSUS_CLOSED_MARKETS = 20;
+const MIN_CONSENSUS_CLOSED_MARKETS = 0; // No extra trade-count minimum; require a complete 30-day record and 90%+ rate.
 const CONSENSUS_RECORD_PERIOD = {key: "month", api: "MONTH"};
 const TRADERS_PER_MARKET = 500;
 const TRADE_LIMIT = 10;
@@ -1166,7 +1166,7 @@ function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedM
       const isQualified =
         record.recordComplete === true &&
         resolvedMarkets !== null &&
-        resolvedMarkets >= MIN_CONSENSUS_CLOSED_MARKETS &&
+        resolvedMarkets >= minimumResolvedMarkets &&
         winRate !== null &&
         winRate >= MIN_CONSENSUS_WIN_RATE;
 
@@ -1203,8 +1203,8 @@ function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedM
       };
     }).filter(trader => trader.qualified);
 
-    // A consensus market is valid only when at least two distinct holders
-    // independently pass the period's performance and sample-size tests.
+    // A consensus market is valid when at least two distinct holders
+    // independently have a complete 30-day record and a 90%+ win rate.
     if (traders.length < 2) continue;
     groupsWithTwoQualified++;
     qualifiedGroups.push({
@@ -1633,7 +1633,7 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
   // it with a second, lifetime-shaped settlement cohort scan.
   const settlementRecords = {};
   const consensusMinimumResolved = MIN_CONSENSUS_CLOSED_MARKETS;
-  console.log(`${period.key}: Copy Signals require 2+ distinct same-side open holders, each with a complete rolling-30-day record of 20+ closed markets and a 90%+ profitable-close rate.`);
+  console.log(`${period.key}: Copy Signals require 2+ distinct same-side open holders, each with a complete rolling-30-day record and a 90%+ profitable-close rate; no extra trade-count minimum.`);
   // Reuse the period-scoped record sample used for ranking; avoid a second history scan.
   const leaderRecords = records;
   const tradeRows = await mapLimit(
@@ -1729,7 +1729,7 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     qualificationWindowDays: 30,
     minimumWinRate: MIN_CONSENSUS_WIN_RATE,
     minimumResolvedMarkets: MIN_CONSENSUS_CLOSED_MARKETS,
-    qualificationBasis: "A market is published when at least 2 distinct wallets are confirmed holding the same side in the live OPEN positions endpoint, and each has a complete rolling-30-day record with at least 20 closed markets and a 90%+ profitable-close rate. No recent BUY is required.",
+    qualificationBasis: "A market is published when at least 2 distinct wallets are confirmed holding the same side in the live OPEN positions endpoint, and each has a complete rolling-30-day record with a 90%+ profitable-close rate; no extra trade-count minimum. No recent BUY is required.",
     minimumSameSideTraders: 2,
     candidateCount: ranked.length,
     discoveredCandidateCount: discoveredCandidates.length,
@@ -1739,7 +1739,7 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     scanDiagnostics: lastConsensusDiagnostics,
     candidatePoolBasis: "All unique wallets exposed by available public Data API v2 leaderboard cursors across overall, sports, politics, crypto, esports, culture, mentions, weather, economics, tech, and finance categories and DAY/WEEK/MONTH/ALL periods, sorted by PnL and volume. The public API does not expose a literal all-wallet directory, so this is the broadest discoverable leaderboard pool rather than a guaranteed census. Every available open-position page is scanned; final consensus includes only same-outcome groups with at least 2 independently qualified traders.",
     resolutionWindowHours: CONSENSUS_WINDOW_HOURS,
-    recordBasis: "Active markets with at least 2 distinct same-outcome holders, each independently passing a complete rolling-30-day 90%+ profitable-close rate and 20+ closed-market sample. Current holdings are confirmed by the live OPEN positions endpoint. This is a research signal, not a proven profitable strategy.",
+    recordBasis: "Active markets with at least 2 distinct same-outcome holders, each independently passing a complete rolling-30-day 90%+ profitable-close rate and complete rolling-30-day 90%+ profitable-close rate; no extra trade-count minimum. Current holdings are confirmed by the live OPEN positions endpoint. This is a research signal, not a proven profitable strategy.",
     qualificationCount,
     consensus: consensusRows
   });
