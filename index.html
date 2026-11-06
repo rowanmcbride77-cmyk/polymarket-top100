@@ -456,18 +456,15 @@ function consensus() {
   return rows.map(market => {
     const traders = Array.isArray(market.traders) ? market.traders :
       Array.isArray(market.members) ? market.members : [];
-    const qualifiedTraders = traders.filter(trader => trader?.qualified === true &&
-      trader?.recordComplete === true && trader?.verifiedBuy === true && num(trader?.winRate) !== null &&
-      num(trader.winRate) >= 90 && num(trader?.resolvedMarkets) !== null &&
-      num(trader.resolvedMarkets) >= 20).length;
+    const qualifiedTraders = traders.filter(trader => trader?.verifiedBuy === true).length;
     return {...market, traders, sameSide:traders.length, qualifiedTraders};
-  }).filter(market => market.traders.length >= 2 && market.traders.every(t => t.qualified === true && t.recordComplete === true && t.verifiedBuy === true && num(t.resolvedMarkets) >= 20 && num(t.winRate) >= 90));
+  }).filter(market => market.traders.length >= 2 && market.traders.every(t => t.verifiedBuy === true));
 }
 
 async function loadConsensusData() {
   const pool = $("consensusPool").value;
   $("consensusBody").innerHTML = `<tr><td colspan="7" class="loading">Loading ${esc(pool)} copy signals…</td></tr>`;
-  $("consensusPeriod").textContent = "90%+ · 20+ closes · BUY ≤60m";
+  $("consensusPeriod").textContent = "2+ same-side holders · verified BUY ≤60m · open market";
   const filename = CONSENSUS_FILES[pool];
   try {
     let result = null;
@@ -796,7 +793,7 @@ function renderConsensus() {
     })
     .filter(market => market.marketMetadataVerified === true &&
       market.marketClosed === false &&
-      market.traders.every(t => t.qualified === true && t.recordComplete === true && t.verifiedBuy === true && num(t.resolvedMarkets) >= 20 && num(t.winRate) >= 90) &&
+      market.traders.every(t => t.verifiedBuy === true) &&
       market._endSeconds !== null &&
       market._endSeconds > nowSeconds &&
       market._endSeconds <= cutoffSeconds &&
@@ -862,7 +859,7 @@ function renderConsensus() {
     </td></tr>` : "";
 
     return row + detail;
-  }).join("") : `<tr><td colspan="7" class="empty">No verified copy signals currently meet every requirement. The scanner will not substitute old holdings or unverified trades.</td></tr>`;
+  }).join("") : `<tr><td colspan="7" class="empty">No recent verified same-side BUY overlap currently meets the market filters. Historical trader records are shown when available.</td></tr>`;
 
   $("consensusMore").textContent = allMarkets ? "Show fewer ↑" : "View all consensus markets →";
   $("consensusMore").style.display = filtered.length > 15 ? "inline-block" : "none";
