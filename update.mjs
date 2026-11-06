@@ -1053,12 +1053,24 @@ async function enrichConsensusMarkets(holderGroups, nowMs) {
   const enriched = [];
   for (const group of scan) {
     const market = marketByCondition.get(String(group.conditionId || "").toLowerCase());
-    if (market && (market.closed === true || String(market.closed).toLowerCase() === "true")) {
+    // Fail closed: a stale position row is not proof that a market is still
+    // tradable. Require Gamma metadata and an explicit open status.
+    if (!market) {
+      unknownDateKept++;
+      continue;
+    }
+    const isClosed = market.closed === true || String(market.closed).toLowerCase() === "true";
+    const isExplicitlyOpen = market.closed === false || String(market.closed).toLowerCase() === "false";
+    if (isClosed) {
       closedRemoved++;
       continue;
     }
+    if (!isExplicitlyOpen || market.active === false || String(market.active).toLowerCase() === "false") {
+      unknownDateKept++;
+      continue;
+    }
 
-    let endDate = (market ? marketEndDate(market) : null) ?? marketEndDate(group);
+    let endDate = marketEndDate(market);
     let endMs = timestampMs(endDate);
     if (typeof endDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(endDate)) {
       endMs = Date.parse(endDate + "T23:59:59.999Z");
@@ -1086,8 +1098,8 @@ async function enrichConsensusMarkets(holderGroups, nowMs) {
       slug: market?.slug || group.slug || null,
       category: classifyMarketCategory(market || {}, group),
       endDate,
-      marketClosed: market ? false : null,
-      marketMetadataVerified: Boolean(market)
+      marketClosed: false,
+      marketMetadataVerified: true
     });
   }
 
