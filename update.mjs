@@ -1646,7 +1646,7 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     CLOSED_POSITION_SCAN_LIMIT,
     fullRecordCache
   );
-  console.log(period.key + ": checked rolling 30-day closed-market records for "
+  console.log(period.key + ": checked rolling 30-day closed-market records for " +
     consensusRecordCandidates.length + " consensus holders; minimum " +
     MIN_CONSENSUS_CLOSED_MARKETS + " markets at " + MIN_CONSENSUS_WIN_RATE + "%+.");
   console.log(`${period.key}: verifying settlement outcomes for the top ${rankingRecordCandidates.length} wallets...`);
