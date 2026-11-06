@@ -87,17 +87,17 @@ jobs:
               const invalidGroups = groups.filter(group => {
                 const traders = Array.isArray(group.traders) ? group.traders : [];
                 const wallets = new Set(traders.map(row => String(row.wallet || "").toLowerCase()).filter(Boolean));
-                const generatedMs = Date.parse(parsed.generatedAt);
+                const validationNow = Date.now();
                 const invalidTrader = traders.some(row => {
                   // Every published consensus member must independently pass
-                  // the all-time qualification and sample-size requirements.
+                  // the rolling-30-day qualification and sample-size requirements.
                   if (row.qualified !== true) return true;
                   const wins = Number(row.wins);
                   const losses = Number(row.losses);
                   const resolved = Number(row.resolvedMarkets);
                   const winRate = Number(row.winRate);
                   const buyMs = Number(row.buyTime) < 1e12 ? Number(row.buyTime) * 1000 : Number(row.buyTime);
-                  return row.recordComplete !== true || row.verifiedBuy !== true || !Number.isFinite(buyMs) || buyMs < generatedMs - 60 * 60 * 1000 || buyMs > generatedMs + 60 * 1000 ||
+                  return row.recordComplete !== true || row.verifiedBuy !== true || !Number.isFinite(buyMs) || buyMs < validationNow - 60 * 60 * 1000 || buyMs > validationNow + 60 * 1000 ||
                     !Number.isFinite(wins) || !Number.isFinite(losses) ||
                     !Number.isFinite(resolved) || resolved < minimumResolved ||
                     wins + losses !== resolved ||
@@ -108,7 +108,7 @@ jobs:
                 let endMs = endRaw ? Date.parse(String(endRaw)) : NaN;
                 if (typeof endRaw === "string" && /^\d{4}-\d{2}-\d{2}$/.test(endRaw)) endMs = Date.parse(endRaw + "T23:59:59.999Z");
                 const invalidMarket = group.marketMetadataVerified !== true || group.marketClosed !== false ||
-                  !Number.isFinite(endMs) || endMs <= generatedMs || endMs > generatedMs + 24 * 60 * 60 * 1000;
+                  !Number.isFinite(endMs) || endMs <= validationNow || endMs > validationNow + 24 * 60 * 60 * 1000;
                 return invalidMarket || wallets.size < 2 || wallets.size !== traders.length ||
                   group.sameSide !== traders.length || invalidTrader;
               });
