@@ -1221,13 +1221,13 @@ function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedM
   const result = qualifiedGroups.map(group => {
     const avgRate = group.traders.reduce((sum,t) => sum + (num(t.winRate) || 0),0) / group.traders.length;
     const avgSample = group.traders.reduce((sum,t) => sum + Math.min(100, num(t.resolvedMarkets) || 0),0) / group.traders.length;
-    const avgFreshness = group.traders.reduce((sum,t) => sum + Math.max(0, 1 - (Date.now() - (num(t.buyTime) || 0)) / (CONSENSUS_ENTRY_WINDOW_MINUTES * 60000)),0) / group.traders.length;
-    const breadthScore = Math.min(group.sameSide,20) / 20 * 40;
-    const accuracyScore = avgRate / 100 * 25;
-    const sampleScore = avgSample / 100 * 15;
-    const freshnessScore = avgFreshness * 20;
-    const consensusScore = Math.round(breadthScore + accuracyScore + sampleScore + freshnessScore);
-    return {...group, consensusScore, signalTier: group.sameSide >= 10 ? "Strong overlap" : group.sameSide >= 5 ? "High overlap" : "Early overlap"};
+    // Heuristic strength score (not a win probability): 50% breadth,
+    // 30% average profitable-close rate, 20% record sample size.
+    const breadthScore = Math.min(group.sameSide,20) / 20 * 50;
+    const accuracyScore = avgRate / 100 * 30;
+    const sampleScore = Math.min(avgSample,100) / 100 * 20;
+    const consensusScore = Math.round(breadthScore + accuracyScore + sampleScore);
+    return {...group, consensusScore, signalTier: group.sameSide >= 10 ? "Strong consensus" : group.sameSide >= 5 ? "High consensus" : "2–4 traders"};
   }).sort((a, b) => b.consensusScore - a.consensusScore || b.sameSide - a.sameSide || b.totalValue - a.totalValue || (b.newestBuy || 0) - (a.newestBuy || 0));
   console.log("Consensus holder qualification diagnostics:", JSON.stringify(qualificationDiagnostics));
   console.log("Consensus qualification:", JSON.stringify({
