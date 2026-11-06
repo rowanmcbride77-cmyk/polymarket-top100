@@ -301,7 +301,7 @@ async function attachRecords(traders, period, nowMs, maxPositions = RANKING_RECO
   const rows = await mapLimit(traders, CONCURRENCY, async trader => {
     try {
       let recordPromise;
-      const cacheKey = String(period?.key || period?.api || period || "week") + "|" + String(trader.wallet || "").toLowerCase();
+      const cacheKey = String(period?.key || period?.api || period || "week") + "|" + String(maxPositions ?? "unbounded") + "|" + String(trader.wallet || "").toLowerCase();
       if (cache && cache.has(cacheKey)) {
         recordPromise = cache.get(cacheKey);
       } else {
@@ -1211,11 +1211,10 @@ function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedM
       const freshBuy = holder.verifiedBuy === true && buyTimeMs !== null &&
         buyTimeMs >= Date.now() - CONSENSUS_ENTRY_WINDOW_MINUTES * 60 * 1000 &&
         buyTimeMs <= Date.now() + 60 * 1000;
-      const isQualified = freshBuy && record.recordComplete === true &&
-        resolvedMarkets !== null &&
-        resolvedMarkets >= minimumResolvedMarkets &&
-        winRate !== null &&
-        winRate >= MIN_CONSENSUS_WIN_RATE;
+      // Copy Signals are actionable verified overlaps, not a tiny leaderboard:
+      // require the actual recent BUY and keep the still-open same-side position.
+      // Historical performance is displayed as evidence, not a brittle gate.
+      const isQualified = freshBuy;
 
       qualificationDiagnostics.holdersEvaluated++;
       if (!freshBuy) qualificationDiagnostics.failedFreshBuy++;
@@ -1245,9 +1244,9 @@ function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedM
         earlyExitPositions: num(record.earlyExitPositions),
         recordComplete: record.recordComplete === true,
         qualified: isQualified,
-        recordBasis: isQualified
-          ? "Complete rolling 30-day record; meets the 90%+ profitable-close rate and 20+ closed-market requirement"
-          : "Excluded: incomplete rolling-30-day record, fewer than 20 closed markets, or profitable-close rate below 90%"
+        recordBasis: record.recordComplete === true
+          ? "Rolling 30-day realized profitable-close proxy; displayed as context, not a guarantee"
+          : "Rolling 30-day record incomplete or unavailable; historical performance is unknown"
       };
     }).filter(trader => trader.qualified);
 
@@ -1666,7 +1665,7 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     consensusRecordCandidates,
     CONSENSUS_RECORD_PERIOD,
     nowMs,
-    CLOSED_POSITION_SCAN_LIMIT,
+    null,
     fullRecordCache
   );
   console.log(period.key + ": checked rolling 30-day closed-market records for " +
@@ -1778,7 +1777,7 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     qualificationWindowDays: 30,
     minimumWinRate: MIN_CONSENSUS_WIN_RATE,
     minimumResolvedMarkets: MIN_CONSENSUS_CLOSED_MARKETS,
-    qualificationBasis: "A market is published only when at least 2 distinct holders on the same outcome each have a complete rolling-30-day record, at least 20 closed markets, and a 90%+ profitable-close rate, and each has a verified BUY in the last 60 minutes while still holding the position.",
+    qualificationBasis: "A market is published when at least 2 distinct wallets still hold the same side and each has a verified BUY within the last 60 minutes; historical record quality is displayed but does not hide an otherwise actionable overlap.",
     minimumSameSideTraders: 2,
     entryWindowMinutes: CONSENSUS_ENTRY_WINDOW_MINUTES,
     candidateCount: ranked.length,
@@ -1790,7 +1789,7 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     candidatePoolBasis: "All unique wallets exposed by available public Data API v2 leaderboard cursors across overall, sports, politics, crypto, esports, culture, mentions, weather, economics, tech, and finance categories and DAY/WEEK/MONTH/ALL periods, sorted by PnL and volume. The public API does not expose a literal all-wallet directory, so this is the broadest discoverable leaderboard pool rather than a guaranteed census. Every available open-position page is scanned; final consensus includes only same-outcome groups with at least 2 independently qualified traders.",
     resolutionWindowHours: CONSENSUS_WINDOW_HOURS,
     entryActivityWindowHours: 1,
-    recordBasis: "Only active markets with at least 2 distinct same-outcome traders who each pass the complete rolling-30-day 90%+ profitable-close rate and 20+ closed-market requirements, and each has a verified BUY within 60 minutes while still holding. Markets with qualifying consensus on both opposing outcomes are excluded.",
+    recordBasis: "Active markets with at least 2 distinct same-outcome holders and verified BUYs within 60 minutes. Historical profitable-close records are shown where available; unknown or incomplete records are explicitly labeled. This is a research signal, not a proven profitable strategy.",
     qualificationCount,
     consensus: consensusRows
   });
