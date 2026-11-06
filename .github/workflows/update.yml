@@ -83,7 +83,7 @@ jobs:
               const groups = Array.isArray(parsed.consensus) ? parsed.consensus : [];
               // An empty result is valid when no market has two qualified traders.
               // Publishing an empty, accurate panel is safer than retaining stale/unqualified rows.
-              const minimumResolved = 5;
+              const minimumResolved = 20;
               const invalidGroups = groups.filter(group => {
                 const traders = Array.isArray(group.traders) ? group.traders : [];
                 const wallets = new Set(traders.map(row => String(row.wallet || "").toLowerCase()).filter(Boolean));
@@ -95,22 +95,26 @@ jobs:
                   const losses = Number(row.losses);
                   const resolved = Number(row.resolvedMarkets);
                   const winRate = Number(row.winRate);
-                  return row.recordComplete !== true ||
+                  return row.recordComplete !== true || row.verifiedBuy !== true ||
                     !Number.isFinite(wins) || !Number.isFinite(losses) ||
                     !Number.isFinite(resolved) || resolved < minimumResolved ||
                     wins + losses !== resolved ||
                     !Number.isFinite(winRate) || winRate < 90 ||
                     Math.abs(winRate - (wins / resolved * 100)) > 0.11;
                 });
-                const invalidMarket = group.marketMetadataVerified !== true ||
-                  group.marketClosed !== false;
+                const endRaw = group.endDate ?? group.end_date ?? null;
+                let endMs = endRaw ? Date.parse(String(endRaw)) : NaN;
+                if (typeof endRaw === "string" && /^\\d{4}-\\d{2}-\\d{2}$/.test(endRaw)) endMs = Date.parse(endRaw + "T23:59:59.999Z");
+                const generatedMs = Date.parse(parsed.generatedAt);
+                const invalidMarket = group.marketMetadataVerified !== true || group.marketClosed !== false ||
+                  !Number.isFinite(endMs) || endMs <= generatedMs || endMs > generatedMs + 24 * 60 * 60 * 1000;
                 return invalidMarket || wallets.size < 2 || wallets.size !== traders.length ||
                   group.sameSide !== traders.length || invalidTrader;
               });
               if (invalidGroups.length) {
                 throw new Error(`${file} contains ${invalidGroups.length} consensus groups without at least two distinct, unique wallets`);
               }
-              console.log(`${file}: ${groups.length} consensus groups; every member passed distinct-wallet, complete-record, 90%+, and 5+ all-time closed-market checks`);
+              console.log(`${file}: ${groups.length} copy signals; every member passed distinct-wallet, verified fresh-BUY, complete rolling-30-day, 90%+, and 20+ closed-market checks`);
             }
 
             console.log(`${file}: ${(stat.size / 1024 / 1024).toFixed(2)} MB; valid JSON`);
