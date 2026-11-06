@@ -1117,8 +1117,8 @@ async function enrichConsensusMarkets(holderGroups, nowMs) {
     .sort((a,b) => b.sameSide - a.sameSide || (b.newestBuy || 0) - (a.newestBuy || 0))
     .slice(0, MAX_FRESH_TRADE_MARKETS);
   const tradeVerified = await mapLimit(tradeCandidates, CONCURRENCY, async group => {
-    const params = new URLSearchParams({market: String(group.conditionId), limit: "500"});
-    const rows = asArray(await getJson(`${API}/trades?${params}`));
+    const params = new URLSearchParams({condition: String(group.conditionId), limit: "500"});
+    const rows = asArray(await getJson(`${API}/v2/trades?${params}`));
     const freshBuys = rows.filter(row => {
       if (String(row.side || "").toUpperCase() !== "BUY") return false;
       const wallet = String(row.proxyWallet ?? row.proxy_wallet ?? row.wallet ?? row.user ?? "").toLowerCase();
