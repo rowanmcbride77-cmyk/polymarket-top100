@@ -187,14 +187,14 @@ dialog::backdrop{background:#000b}
     <div class="column">
       <section class="panel">
         <div class="panel-heading">
-          <div class="heading-left"><span class="heading-icon">👥</span><h2>Top Consensus Markets</h2></div>
-          <span class="pill" id="consensusPeriod">90%+ qualified · 7 days</span>
+          <div class="heading-left"><span class="heading-icon">👥</span><h2>Copy Signals</h2></div>
+          <span class="pill" id="consensusPeriod">30-day records · fresh BUYs</span>
         </div>
         
         <div class="filters">
           <label>Trader pool
             <select id="consensusPool" onchange="loadConsensusData()">
-              <option value="week" selected>7-day trader records</option>
+              <option value="week" selected>30-day trader records</option>
             </select>
           </label>
           <label>Min. traders
@@ -214,11 +214,11 @@ dialog::backdrop{background:#000b}
             </select>
           </label>
         </div>
-        <div class="source-note" id="consensusQualificationNote">Only active markets with at least 2 distinct traders on the same outcome are shown, and every counted trader must have a complete last-7-days record, at least 10 closed markets, and a 90%+ profitable-close rate. Markets with qualifying consensus on both YES and NO are excluded.</div>
+        <div class="source-note" id="consensusQualificationNote">Only verified active markets are shown. Every counted trader needs a complete rolling 30-day record, at least 20 profitable/unprofitable closed markets, a 90%+ profitable-close rate, a $10+ original position, and a verified BUY within the last 60 minutes while still holding. The agreement score weighs trader count, record quality, sample size and BUY recency; it is not a probability of winning. Multiple wallets are not proof of independent research.</div>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>#</th><th>Market</th><th>Side</th><th>Traders</th><th>Combined Value</th><th>Resolves</th></tr></thead>
-            <tbody id="consensusBody"><tr><td colspan="6" class="loading">Loading consensus…</td></tr></tbody>
+            <thead><tr><th>#</th><th>Market</th><th>Side</th><th>Traders</th><th>Signal score</th><th>Combined Value</th><th>Resolves</th></tr></thead>
+            <tbody id="consensusBody"><tr><td colspan="7" class="loading">Loading copy signals…</td></tr></tbody>
           </table>
         </div>
         <button class="link-button" id="consensusMore" onclick="toggleConsensus()">View all consensus markets →</button>
@@ -457,17 +457,17 @@ function consensus() {
     const traders = Array.isArray(market.traders) ? market.traders :
       Array.isArray(market.members) ? market.members : [];
     const qualifiedTraders = traders.filter(trader => trader?.qualified === true &&
-      trader?.recordComplete === true && num(trader?.winRate) !== null &&
+      trader?.recordComplete === true && trader?.verifiedBuy === true && num(trader?.winRate) !== null &&
       num(trader.winRate) >= 90 && num(trader?.resolvedMarkets) !== null &&
-      num(trader.resolvedMarkets) >= 10).length;
+      num(trader.resolvedMarkets) >= 20).length;
     return {...market, traders, sameSide:traders.length, qualifiedTraders};
-  }).filter(market => market.traders.length >= 2);
+  }).filter(market => market.traders.length >= 2 && market.traders.every(t => t.qualified === true && t.recordComplete === true && t.verifiedBuy === true && num(t.resolvedMarkets) >= 20 && num(t.winRate) >= 90));
 }
 
 async function loadConsensusData() {
   const pool = $("consensusPool").value;
-  $("consensusBody").innerHTML = `<tr><td colspan="6" class="loading">Loading ${esc(pool)} consensus pool…</td></tr>`;
-  $("consensusPeriod").textContent = "90%+ qualified · ends within 24 hours";
+  $("consensusBody").innerHTML = `<tr><td colspan="7" class="loading">Loading ${esc(pool)} copy signals…</td></tr>`;
+  $("consensusPeriod").textContent = "90%+ · 20+ closes · BUY ≤60m";
   const filename = CONSENSUS_FILES[pool];
   try {
     let result = null;
@@ -485,7 +485,7 @@ async function loadConsensusData() {
     renderConsensus();
   } catch (error) {
     consensusData = {consensus:[]};
-    $("consensusBody").innerHTML = `<tr><td colspan="6" class="empty">${esc(error.message)}</td></tr>`;
+    $("consensusBody").innerHTML = `<tr><td colspan="7" class="empty">${esc(error.message)}</td></tr>`;
   }
 }
 
@@ -796,6 +796,7 @@ function renderConsensus() {
     })
     .filter(market => market.marketMetadataVerified === true &&
       market.marketClosed === false &&
+      market.traders.every(t => t.qualified === true && t.recordComplete === true && t.verifiedBuy === true && num(t.resolvedMarkets) >= 20 && num(t.winRate) >= 90) &&
       market._endSeconds !== null &&
       market._endSeconds > nowSeconds &&
       market._endSeconds <= cutoffSeconds &&
@@ -820,13 +821,14 @@ function renderConsensus() {
       <td>${index + 1}</td>
       <td><div class="market-name"><span class="market-symbol">◈</span><span class="market-title">${esc(marketTitle(market))}</span></div></td>
       <td><span class="${sideClass}">${esc(side)}</span></td>
-      <td><strong>${count}</strong></td>
+      <td><strong>${count}</strong><small class="subtitle">${esc(market.signalTier || "Overlap")}</small></td>
+      <td><strong>${num(market.consensusScore) ?? "—"}/100</strong></td>
       <td class="money">${cash(amount)}</td>
       <td title="${esc(market._endSeconds ? new Date(market._endSeconds * 1000).toLocaleString() : "Unavailable")}">${esc(timeUntil(market._endSeconds))}</td>
     </tr>`;
 
-    const detail = expanded ? `<tr class="expand-row"><td colspan="6">
-      <div class="expand-title">Shared traders · ${count}</div>
+    const detail = expanded ? `<tr class="expand-row"><td colspan="7">
+      <div class="expand-title">Verified recent BUYs · ${count}</div>
       ${members.length ? `<div class="member-list">${members.map(member => {
         const memberName = member.name || member.username || member.userName || "Trader";
         const wallet = walletOf(member);
@@ -844,22 +846,23 @@ function renderConsensus() {
         // omits or delays the corresponding print for a wallet/condition.
         const memberEntry = num(member.entryValue ?? member.amount), memberValue = num(member.currentValue);
         const reportedAvgPrice = num(member.avgPrice ?? member.averagePrice ?? member.avg_price);
-        const buyPrice = buy?._price ?? reportedAvgPrice;
+        const hasVerifiedBuy = !!buy || member.verifiedBuy === true;
+        const buyPrice = buy?._price ?? num(member.verifiedBuyPrice) ?? reportedAvgPrice;
         const shares = buy?._shares ?? num(member.shares ?? member.size);
-        const bought = buy?._cost ?? (reportedAvgPrice !== null && shares !== null ? reportedAvgPrice * shares : memberEntry);
+        const bought = buy?._cost ?? num(member.verifiedBuyAmount) ?? (reportedAvgPrice !== null && shares !== null ? reportedAvgPrice * shares : memberEntry);
         const buyTime = buy?.timestamp ?? member.buyTime ?? member.firstEntryAt ?? member.first_entry_at ?? member.lastEventAt;
         const hasReportedEntry = !buy && reportedAvgPrice !== null;
         const sellCost = sell?._cost;
         return '<div class="member member-compact">' +
-          '<div class="member-identity"><strong>' + profileButton(member, memberName) + favoriteButton(wallet) + '</strong><small class="member-record">' + (consensusData?.pool === "month" ? "30-day record: " : "7-day record: ") + (num(member.wins) !== null && num(member.losses) !== null ? num(member.wins) + "–" + num(member.losses) + " · " + (num(member.winRate) !== null ? num(member.winRate).toFixed(1) + "% profitable-close rate" : "profitable-close rate N/A") + " · early exits " + (num(member.earlyExitRate) !== null ? num(member.earlyExitRate).toFixed(1) + "%" : "N/A") + " · " + (num(member.resolvedMarkets) ?? (num(member.wins)+num(member.losses))) + " closed markets" : "Qualified period record unavailable") + '</small><small>' + (buy ? "BUY trade observed · "+esc(dateText(buy.timestamp)) : (hasReportedEntry ? "Consensus position entry reported · "+esc(dateText(buyTime)) : (!events ? "Loading exact market trade history…" : "Exact BUY trade not found in recent trade feed; position API still reports a holding"))) + '</small><small>' + (sell ? "SELL observed · "+esc(dateText(sell.timestamp)) : (!events ? "Checking later SELL trades…" : (member.isStillHolding === true || String(member.positionStatus || "").toUpperCase() === "OPEN" ? "Still listed as an open position; no SELL required" : "No matching SELL found in returned trade history"))) + '</small></div>' +
-          '<div><strong>' + (buyPrice === null || buyPrice === undefined ? "—" : (buyPrice*100).toFixed(1)+"¢") + '</strong><small>' + (buy ? "Observed buy price" : (reportedAvgPrice !== null ? "Reported position average entry" : "Observed buy price unavailable")) + '</small><small>' + (bought === null || bought === undefined ? (memberEntry !== null ? "Reported position entry value "+cash(memberEntry)+" · exact trade cost unavailable" : "Entry cost unavailable; no matching BUY trade found") : (buy ? "Matched BUY transaction "+cash(bought) : "Estimated entry cost "+cash(bought))+(shares !== null ? " · "+shares.toFixed(1)+" shares" : "")) + '</small>' + (bought !== null && memberValue !== null ? '<small>' + (buy ? "Approx. unrealized change: " : "Approx. change vs estimated entry: ") + (memberValue-bought>0?"+":"") + cash(memberValue-bought) + " (" + (bought>0?((memberValue-bought)/bought*100).toFixed(1):"N/A") + "%)" + '</small>' : "") + '</div>' +
+          '<div class="member-identity"><strong>' + profileButton(member, memberName) + favoriteButton(wallet) + '</strong><small class="member-record">' + (consensusData?.pool === "month" ? "30-day record: " : "7-day record: ") + (num(member.wins) !== null && num(member.losses) !== null ? num(member.wins) + "–" + num(member.losses) + " · " + (num(member.winRate) !== null ? num(member.winRate).toFixed(1) + "% profitable-close rate" : "profitable-close rate N/A") + " · early exits " + (num(member.earlyExitRate) !== null ? num(member.earlyExitRate).toFixed(1) + "%" : "N/A") + " · " + (num(member.resolvedMarkets) ?? (num(member.wins)+num(member.losses))) + " closed markets" : "Qualified period record unavailable") + '</small><small>' + (hasVerifiedBuy ? "Verified BUY · "+esc(dateText(buy?.timestamp ?? member.buyTime)) : "BUY not verified") + '</small><small>' + (sell ? "SELL observed · "+esc(dateText(sell.timestamp)) : (!events ? "Checking later SELL trades…" : (member.isStillHolding === true || String(member.positionStatus || "").toUpperCase() === "OPEN" ? "Still listed as an open position; no SELL required" : "No matching SELL found in returned trade history"))) + '</small></div>' +
+          '<div><strong>' + (buyPrice === null || buyPrice === undefined ? "—" : (buyPrice*100).toFixed(1)+"¢") + '</strong><small>' + (hasVerifiedBuy ? (buy ? "Observed buy price" : "Verified BUY price") : (reportedAvgPrice !== null ? "Reported position average entry" : "Observed buy price unavailable")) + '</small><small>' + (bought === null || bought === undefined ? (memberEntry !== null ? "Reported position entry value "+cash(memberEntry)+" · exact trade cost unavailable" : "Entry cost unavailable; no matching BUY trade found") : (hasVerifiedBuy ? "Verified BUY / position entry "+cash(bought) : "Estimated entry cost "+cash(bought))+(shares !== null ? " · "+shares.toFixed(1)+" shares" : "")) + '</small>' + (bought !== null && memberValue !== null ? '<small>' + (buy ? "Approx. unrealized change: " : "Approx. change vs estimated entry: ") + (memberValue-bought>0?"+":"") + cash(memberValue-bought) + " (" + (bought>0?((memberValue-bought)/bought*100).toFixed(1):"N/A") + "%)" + '</small>' : "") + '</div>' +
           '<div><strong>' + (sell && sell._price !== null ? (sell._price*100).toFixed(1)+"¢" : "—") + '</strong><small>Observed sell price</small><small>' + (sell ? "SELL transaction "+(sellCost === null ? "amount unavailable" : cash(sellCost)) : (!events ? "Loading transaction history" : "No matching SELL found")) + '</small><small>' + (memberValue !== null ? "Position value reported "+cash(memberValue) : "Current held value unavailable") + '</small></div>' +
         '</div>';
       }).join("")}</div>` : `<div class="empty">No trader-level position details were supplied for this market.</div>`}
     </td></tr>` : "";
 
     return row + detail;
-  }).join("") : `<tr><td colspan="6" class="empty">No qualified shared markets have an end date/time within the next 24 hours.</td></tr>`;
+  }).join("") : `<tr><td colspan="7" class="empty">No verified copy signals currently meet every requirement. The scanner will not substitute old holdings or unverified trades.</td></tr>`;
 
   $("consensusMore").textContent = allMarkets ? "Show fewer ↑" : "View all consensus markets →";
   $("consensusMore").style.display = filtered.length > 15 ? "inline-block" : "none";
