@@ -1222,7 +1222,7 @@ function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedM
         qualified: isQualified,
         recordBasis: isQualified
           ? "Complete rolling 30-day record; meets the 90%+ profitable-close rate and 20+ closed-market requirement"
-          : "Excluded: incomplete all-time record, fewer than 5 closed markets, or profitable-close rate below 90%"
+          : "Excluded: incomplete rolling-30-day record, fewer than 20 closed markets, or profitable-close rate below 90%"
       };
     }).filter(trader => trader.qualified);
 
@@ -1241,18 +1241,24 @@ function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedM
     });
   }
 
-  const result = qualifiedGroups.sort((a, b) =>
-    b.sameSide - a.sameSide ||
-    b.totalValue - a.totalValue ||
-    (b.newestBuy || 0) - (a.newestBuy || 0)
-  );
+  const result = qualifiedGroups.map(group => {
+    const avgRate = group.traders.reduce((sum,t) => sum + (num(t.winRate) || 0),0) / group.traders.length;
+    const avgSample = group.traders.reduce((sum,t) => sum + Math.min(100, num(t.resolvedMarkets) || 0),0) / group.traders.length;
+    const avgFreshness = group.traders.reduce((sum,t) => sum + Math.max(0, 1 - (Date.now() - (num(t.buyTime) || 0)) / (CONSENSUS_ENTRY_WINDOW_MINUTES * 60000)),0) / group.traders.length;
+    const breadthScore = Math.min(group.sameSide,20) / 20 * 40;
+    const accuracyScore = avgRate / 100 * 25;
+    const sampleScore = avgSample / 100 * 15;
+    const freshnessScore = avgFreshness * 20;
+    const consensusScore = Math.round(breadthScore + accuracyScore + sampleScore + freshnessScore);
+    return {...group, consensusScore, signalTier: group.sameSide >= 10 ? "Strong overlap" : group.sameSide >= 5 ? "High overlap" : "Early overlap"};
+  }).sort((a, b) => b.consensusScore - a.consensusScore || b.sameSide - a.sameSide || b.totalValue - a.totalValue || (b.newestBuy || 0) - (a.newestBuy || 0));
   console.log("Consensus qualification:", JSON.stringify({
     rawGroupsWithTwoHolders,
     groupsWithTwoQualified,
     publishedGroups: result.length,
     minimumWinRate: MIN_CONSENSUS_WIN_RATE,
     minimumResolvedMarkets,
-    qualificationWindowDays: 7
+    qualificationWindowDays: 30
   }));
   return result;
 }
