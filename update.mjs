@@ -977,8 +977,8 @@ async function getBroadConsensusMarkets(knownTraders, nowMs, activePositions) {
     positionsWithConditionAndSide,
     walletsWithMorePositions,
     sameSideGroups: holderGroups.length,
-    pageCapPerWallet: null,
-    note: "All available Data API v2 cursor pages of open positions are scanned per discovered wallet; walletsWithMorePositions flags cursor pagination that could not be exhausted. Closed-position profitability records are separately scanned over the full requested 7/30-day window."
+    pageCapPerWallet: MAX_CONSENSUS_POSITION_PAGES_PER_WALLET,
+    note: "Open-position discovery is bounded to 4 pages (up to 400 positions) per wallet; walletsWithMorePositions flags wallets whose holdings exceeded that cap. Closed-position profitability records are separately scanned with a 250-position safety cap; incomplete samples are withheld."
   };
   console.log("Consensus scan diagnostics: " + JSON.stringify(lastConsensusDiagnostics));
   const activePositionsByWallet = Object.fromEntries(consensusPositions.map(([wallet, positions]) => [wallet, positions]));
