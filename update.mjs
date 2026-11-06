@@ -30,6 +30,7 @@ const LEADER_RECORD_LIMIT = RANKING_RECORD_LIMIT;
 const CONSENSUS_WINDOW_HOURS = 24; // Only show markets with a confirmed end/resolution time in the next 24 hours
 const CONSENSUS_HOLDERS_PER_MARKET = 1500;
 const MIN_CONSENSUS_POSITION_VALUE = 1;
+const MIN_CONSENSUS_ENTRY_VALUE = 10; // Minimum USD originally invested by each trader in a consensus position
 const CONSENSUS_ENTRY_WINDOW_MINUTES = 1440;
 const MIN_TRADER_RESOLVED_MARKETS = 10;
 const TRADERS_PER_MARKET = 500;
@@ -891,7 +892,11 @@ async function getBroadConsensusMarkets(knownTraders, nowMs, activePositions) {
       if (!conditionId || !side) continue;
       const currentValue = num(position.currentValue ?? position.current_value) ?? 0;
       const size = num(position.size ?? position.current_size ?? position.currentSize) ?? 0;
+      const invested = num(position.initialValue ?? position.initial_value);
+      // Require a verifiable $10+ entry per trader. Unknown entry cost is
+      // excluded rather than allowing tiny or unverified positions into consensus.
       if (currentValue <= 0 && size <= 0) continue;
+      if (invested === null || invested < MIN_CONSENSUS_ENTRY_VALUE) continue;
 
       positionsWithConditionAndSide++;
       const key = conditionId + "|" + side.toLowerCase();
@@ -925,7 +930,6 @@ async function getBroadConsensusMarkets(knownTraders, nowMs, activePositions) {
       if (position.clobTokenId && !group.clobTokenIds.includes(String(position.clobTokenId))) group.clobTokenIds.push(String(position.clobTokenId));
       if (group.walletsSeen.has(wallet)) continue;
       group.walletsSeen.add(wallet);
-      const invested = num(position.initialValue ?? position.initial_value);
       const lastEventAt = timestampMs(position.lastEventAt ?? position.last_event_at ?? position.firstEntryAt ?? position.first_entry_at);
       group.sameSide++;
       group.totalValue += currentValue;
