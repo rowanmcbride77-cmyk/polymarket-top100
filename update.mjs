@@ -35,7 +35,6 @@ const CONSENSUS_ENTRY_WINDOW_MINUTES = 60;
 const MIN_TRADER_RESOLVED_MARKETS = 10;
 const MIN_CONSENSUS_CLOSED_MARKETS = 20;
 const CONSENSUS_RECORD_PERIOD = {key: "month", api: "MONTH"};
-const MAX_FRESH_TRADE_MARKETS = 500;
 const TRADERS_PER_MARKET = 500;
 const TRADE_LIMIT = 10;
 const MAX_JSON_BYTES = 20 * 1024 * 1024;
@@ -982,7 +981,7 @@ async function getBroadConsensusMarkets(knownTraders, nowMs, activePositions) {
     walletsWithMorePositions,
     sameSideGroups: holderGroups.length,
     pageCapPerWallet: MAX_CONSENSUS_POSITION_PAGES_PER_WALLET,
-    note: "Open-position discovery scans up to 4 pages (400 positions) for each of up to 5,000 wallets. Candidate holdings require at least $10 original entry cost; published signals additionally require a verified BUY within 60 minutes, a still-open position, and complete rolling-30-day records with at least 20 closed markets at 90%+ profitable-close rate."
+    note: "Open-position discovery scans up to 4 pages (400 positions) for each of up to 5,000 wallets. Candidate holdings require at least $10 original entry cost; published signals require a verified active same-side holding and a complete rolling-30-day record with at least 20 closed markets at 90%+ profitable-close rate. No recent BUY is required."
   };
   console.log("Consensus scan diagnostics: " + JSON.stringify(lastConsensusDiagnostics));
   const activePositionsByWallet = Object.fromEntries(consensusPositions.map(([wallet, positions]) => [wallet, positions]));
@@ -1634,7 +1633,7 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
   // it with a second, lifetime-shaped settlement cohort scan.
   const settlementRecords = {};
   const consensusMinimumResolved = MIN_CONSENSUS_CLOSED_MARKETS;
-  console.log(`${period.key}: Copy Signals require 2+ distinct same-side holders with verified BUYs within 60 minutes; historical records are contextual evidence.`);
+  console.log(`${period.key}: Copy Signals require 2+ distinct same-side open holders, each with a complete rolling-30-day record of 20+ closed markets and a 90%+ profitable-close rate.`);
   // Reuse the period-scoped record sample used for ranking; avoid a second history scan.
   const leaderRecords = records;
   const tradeRows = await mapLimit(
