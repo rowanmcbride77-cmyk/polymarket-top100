@@ -38,6 +38,20 @@ jobs:
         with:
           node-version: 22
 
+      - name: Check scanner JavaScript syntax
+        run: node --check update.mjs
+
+      - name: Check dashboard JavaScript syntax
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from "node:fs/promises";
+          const html = await fs.readFile("index.html", "utf8");
+          const scripts = [...html.matchAll(/<script(?:\\s[^>]*)?>([\\s\\S]*?)<\\/script>/gi)];
+          if (!scripts.length) throw new Error("index.html has no script block");
+          for (const match of scripts) new Function(match[1]);
+          console.log(`Checked ${scripts.length} dashboard script block(s).`);
+          NODE
+
       - name: Run scanner update
         run: node update.mjs
 
