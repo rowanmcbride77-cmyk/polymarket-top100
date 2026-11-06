@@ -1211,10 +1211,14 @@ function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedM
       const freshBuy = holder.verifiedBuy === true && buyTimeMs !== null &&
         buyTimeMs >= Date.now() - CONSENSUS_ENTRY_WINDOW_MINUTES * 60 * 1000 &&
         buyTimeMs <= Date.now() + 60 * 1000;
-      // Copy Signals are actionable verified overlaps, not a tiny leaderboard:
-      // require the actual recent BUY and keep the still-open same-side position.
-      // Historical performance is displayed as evidence, not a brittle gate.
-      const isQualified = freshBuy;
+      // A Copy Signal requires both a verified recent BUY and a genuinely strong,
+      // complete rolling-30-day profitable-close record with a meaningful sample.
+      const isQualified = freshBuy &&
+        record.recordComplete === true &&
+        resolvedMarkets !== null &&
+        resolvedMarkets >= MIN_CONSENSUS_CLOSED_MARKETS &&
+        winRate !== null &&
+        winRate >= MIN_CONSENSUS_WIN_RATE;
 
       qualificationDiagnostics.holdersEvaluated++;
       if (!freshBuy) qualificationDiagnostics.failedFreshBuy++;
