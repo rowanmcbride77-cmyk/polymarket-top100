@@ -794,7 +794,9 @@ function renderConsensus() {
       const endSeconds = marketEndTimestamp(market);
       return {...market, _index:index, _endSeconds:endSeconds};
     })
-    .filter(market => market._endSeconds !== null &&
+    .filter(market => market.marketMetadataVerified === true &&
+      market.marketClosed === false &&
+      market._endSeconds !== null &&
       market._endSeconds > nowSeconds &&
       market._endSeconds <= cutoffSeconds &&
       traderCount(market) >= minCount)
