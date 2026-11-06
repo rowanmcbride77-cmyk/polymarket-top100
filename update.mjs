@@ -33,6 +33,7 @@ const MIN_CONSENSUS_POSITION_VALUE = 1;
 const MIN_CONSENSUS_ENTRY_VALUE = 10; // Minimum USD originally invested by each trader in a consensus position
 const CONSENSUS_ENTRY_WINDOW_MINUTES = 60;
 const MIN_TRADER_RESOLVED_MARKETS = 10;
+const MIN_CONSENSUS_CLOSED_MARKETS = 5;
 const TRADERS_PER_MARKET = 500;
 const TRADE_LIMIT = 10;
 const MAX_JSON_BYTES = 20 * 1024 * 1024;
@@ -183,11 +184,13 @@ function normalizeLeader(row, index) {
 async function getResolvedRecord(wallet, period, nowMs, maxPositions = RANKING_RECORD_LIMIT) {
   if (!wallet) return null;
 
-  // WEEK and MONTH records must be scoped to the selected time window.
-  // Previously this scanned all historical closed positions, making all-time
-  // totals look like recent-period trade counts.
-  const periodDays = String(period?.api || period || "").toUpperCase() === "MONTH" ? 30 : 7;
-  const cutoffMs = nowMs - periodDays * 24 * 60 * 60 * 1000;
+  // Consensus eligibility uses all-time closed-market history. Weekly and
+  // monthly leaderboard statistics remain period-scoped and are calculated
+  // separately. Capped/incomplete all-time samples are withheld.
+  const periodKey = String(period?.api || period?.key || period || "").toUpperCase();
+  const allTime = periodKey === "ALL" || periodKey === "ALL_TIME" || periodKey === "ALLTIME";
+  const periodDays = periodKey === "MONTH" ? 30 : 7;
+  const cutoffMs = allTime ? 0 : nowMs - periodDays * 24 * 60 * 60 * 1000;
   const seenPositions = new Set();
   const marketPnl = new Map();
   let wins = 0;
@@ -206,10 +209,12 @@ async function getResolvedRecord(wallet, period, nowMs, maxPositions = RANKING_R
       limit: String(pageLimit),
       status: "CLOSED",
       sort_by: "TIMESTAMP",
-      sort_direction: "DESC",
-      start: String(Math.floor(cutoffMs / 1000)),
-      end: String(Math.floor(nowMs / 1000))
+      sort_direction: "DESC"
     });
+    if (!allTime) {
+      params.set("start", String(Math.floor(cutoffMs / 1000)));
+      params.set("end", String(Math.floor(nowMs / 1000)));
+    }
     if (cursor) params.set("cursor", cursor);
 
     const response = await getJson(`${API}/v2/positions?${params}`);
@@ -226,7 +231,7 @@ async function getResolvedRecord(wallet, period, nowMs, maxPositions = RANKING_R
       const eventMs = timestampMs(row.last_event_at ?? row.lastEventAt ?? row.timestamp ?? row.updated_at ?? row.updatedAt);
       // API results are sorted newest-first, so once we pass the period boundary
       // there are no more in-window closed positions on subsequent pages.
-      if (eventMs !== null && eventMs < cutoffMs) {
+      if (!allTime && eventMs !== null && eventMs < cutoffMs) {
         reachedPeriodCutoff = true;
         break;
       }
@@ -255,7 +260,7 @@ async function getResolvedRecord(wallet, period, nowMs, maxPositions = RANKING_R
       break;
     }
     if (maxPositions !== null && scannedPositions >= maxPositions) {
-      recordComplete = false;
+      recordComplete = pagination.has_more !== true;
       break;
     }
     cursor = pagination.next_cursor || null;
@@ -288,8 +293,8 @@ async function getResolvedRecord(wallet, period, nowMs, maxPositions = RANKING_R
     recordComplete,
     recordLimit: maxPositions,
     recordBasis: recordComplete
-      ? `Complete closed-position scan from the last ${periodDays} days; one profitable/unprofitable result per market using net realized P&L. This is a close-profitability proxy, not verified settlement accuracy; early exits count.`
-      : `INCOMPLETE sample of closed positions from the last ${periodDays} days; market-level profitable/unprofitable counts are withheld. This is a close-profitability proxy, not verified settlement accuracy.`
+      ? `Complete closed-position scan from the all available history; one profitable/unprofitable result per market using net realized P&L. This is a close-profitability proxy, not verified settlement accuracy; early exits count.`
+      : `INCOMPLETE sample of closed positions across all available history; market-level profitable/unprofitable counts are withheld. This is a close-profitability proxy, not verified settlement accuracy.`
   };
 }
 async function attachRecords(traders, period, nowMs, maxPositions = RANKING_RECORD_LIMIT, cache = null) {
@@ -931,9 +936,9 @@ async function getBroadConsensusMarkets(knownTraders, nowMs, activePositions) {
       if (group.walletsSeen.has(wallet)) continue;
       group.walletsSeen.add(wallet);
       const lastEventAt = timestampMs(position.lastEventAt ?? position.last_event_at ?? position.firstEntryAt ?? position.first_entry_at);
-      // Only count positions with a verifiable entry/update in the last hour.
-      // Old holdings must not masquerade as fresh consensus activity.
-      if (lastEventAt === null || lastEventAt < nowMs - CONSENSUS_ENTRY_WINDOW_MINUTES * 60 * 1000) continue;
+      // An OPEN, non-redeemable position is evidence the trader is active
+      // in this market. Do not require a fresh trade timestamp: old positions
+      // still count as current consensus while the position remains open.
       group.sameSide++;
       group.totalValue += currentValue;
       group.totalEntry += invested;
@@ -1423,7 +1428,7 @@ async function attachSettlementStats(traders, period, nowMs) {
   });
 }
 
-function makeOutput(period, ranked, sportsRanked, activePositions, tradeRows, nowMs, consensusCandidates, records, leaderRecords, consensusGroups, settlementRecords) {
+function makeOutput(period, ranked, sportsRanked, activePositions, tradeRows, nowMs, consensusCandidates, records, leaderRecords, consensusGroups, settlementRecords, consensusRecords) {
   // Preserve the exact period-scoped record used to rank this list.
   // Full-history enrichment must never overwrite weekly/monthly wins, losses,
   // win rate, or resolved-market count, otherwise the displayed numbers no
@@ -1485,7 +1490,7 @@ function makeOutput(period, ranked, sportsRanked, activePositions, tradeRows, no
     })),
     traderActiveTrades: Object.fromEntries(tradeRows.filter(Boolean)),
     traderActivePositions: leaderPositions,
-    consensus: buildConsensus(consensusGroups, consensusCandidates || ranked, Object.fromEntries([...new Set([...Object.keys(records || {}), ...Object.keys(settlementRecords || {})])].map(wallet => [wallet, { ...(records?.[wallet] || {}), ...(settlementRecords?.[wallet] || {}), wins: records?.[wallet]?.wins ?? settlementRecords?.[wallet]?.wins, losses: records?.[wallet]?.losses ?? settlementRecords?.[wallet]?.losses }])), MIN_TRADER_RESOLVED_MARKETS)
+    consensus: buildConsensus(consensusGroups, consensusCandidates || ranked, consensusRecords || {}, MIN_CONSENSUS_CLOSED_MARKETS)
   };
 }
 
@@ -1576,6 +1581,20 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
   const recordCandidates = [...recordCandidateMap.values()];
   console.log(`Discovered ${discoveredCandidates.length} ${period.key} candidates; scanning active positions across ${candidates.length} wallets, leaderboard records for ${rankingRecordCandidates.length}, and consensus-holder records for ${consensusWallets.size} (unique record scan: ${recordCandidates.length}).`);
   const records = await attachRecords(recordCandidates, period, nowMs, CLOSED_POSITION_SCAN_LIMIT, fullRecordCache);
+  // Consensus eligibility is all-time; leaderboard records remain weekly/monthly.
+  const consensusRecordCandidates = [...consensusWallets].map(wallet =>
+    candidateByWallet.get(wallet) || {wallet}
+  );
+  const consensusRecords = await attachRecords(
+    consensusRecordCandidates,
+    {key: "all", api: "ALL"},
+    nowMs,
+    CLOSED_POSITION_SCAN_LIMIT,
+    fullRecordCache
+  );
+  console.log(period.key + ": checked all-time closed-market records for " +
+    consensusRecordCandidates.length + " consensus holders; minimum " +
+    MIN_CONSENSUS_CLOSED_MARKETS + " markets at " + MIN_CONSENSUS_WIN_RATE + "%+.");
   console.log(`${period.key}: verifying settlement outcomes for the top ${rankingRecordCandidates.length} wallets...`);
   const ranked = rankCandidates(candidates, records);
   const sportsRanked = rankSportsCandidates(candidates, records);
@@ -1609,7 +1628,8 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     records,
     leaderRecords,
     consensusGroups,
-    settlementRecords
+    settlementRecords,
+    consensusRecords
   );
 
   // Count every discovered weekly wallet, not only Top 100 traders or shared-market holders.
