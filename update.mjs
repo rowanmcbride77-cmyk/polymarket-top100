@@ -668,10 +668,9 @@ async function getMarketConsensus(market, knownNames) {
     const value = num(position.current_value ?? position.currentValue);
     if (!wallet || !side || value === null || value < MIN_CONSENSUS_POSITION_VALUE) continue;
 
-    // last_event_at reflects the most recent activity; first_entry_at can be
-    // months old even when a trader recently added to an open position.
+    // An open, non-redeemable position is active even if the original entry
+    // was made earlier. Do not require a recent add-on trade to count it.
     const lastEventAt = timestampMs(position.last_event_at ?? position.lastEventAt ?? position.updated_at ?? position.updatedAt ?? position.first_entry_at ?? position.firstEntryAt);
-    if (lastEventAt === null || lastEventAt < Date.now() - CONSENSUS_ENTRY_WINDOW_MINUTES * 60 * 1000) continue;
 
     const key = side.toLowerCase();
     if (!grouped.has(key)) {
@@ -732,7 +731,7 @@ async function getMarketConsensus(market, knownNames) {
 
   const qualifyingGroups = [...grouped.values()]
     .filter(group => group.sameSide >= 2);
-  if (qualifyingGroups.length === 0) console.log("No same-side group had 2+ holders with position activity in the last " + CONSENSUS_ENTRY_WINDOW_MINUTES + " minutes for market " + conditionId);
+  if (qualifyingGroups.length === 0) console.log("No same-side group had 2+ active holders for market " + conditionId);
   return qualifyingGroups
     .map(({ walletsSeen, ...group }) => ({ ...group, totalEntry: group.entryValueKnownCount === group.sameSide ? group.totalEntry : null, traders: group.traders.map(trader => ({ ...trader, isStillHolding: true, positionStatus: "OPEN" })) }));
 }
@@ -986,8 +985,7 @@ async function getBroadConsensusMarkets(knownTraders, nowMs, activePositions) {
     walletsWithMorePositions,
     sameSideGroups: holderGroups.length,
     pageCapPerWallet: MAX_CONSENSUS_POSITION_PAGES_PER_WALLET,
-    entryActivityWindowMinutes: CONSENSUS_ENTRY_WINDOW_MINUTES,
-    note: "Open-position discovery scans up to 4 pages (400 positions) for each of up to 5,000 wallets. Only positions with a verifiable last-event/entry timestamp in the last 60 minutes qualify. Closed-position profitability records are separately scanned with a 250-position safety cap; incomplete samples are withheld."
+    note: "Open-position discovery scans up to 4 pages (400 positions) for each of up to 5,000 wallets. Any currently open, non-redeemable position with at least $10 originally invested can count, regardless of entry date. Consensus eligibility uses complete all-time closed-market records, with a 250-position safety cap; incomplete samples are withheld."
   };
   console.log("Consensus scan diagnostics: " + JSON.stringify(lastConsensusDiagnostics));
   const activePositionsByWallet = Object.fromEntries(consensusPositions.map(([wallet, positions]) => [wallet, positions]));
@@ -1176,8 +1174,8 @@ function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedM
         recordComplete: record.recordComplete === true,
         qualified: isQualified,
         recordBasis: isQualified
-          ? "Complete selected-period record; meets the 90%+ profitable-close rate and 10+ closed-market requirement"
-          : "Excluded: incomplete record, fewer than 10 closed markets, or profitable-close rate below 90%"
+          ? "Complete all-time record; meets the 90%+ profitable-close rate and 5+ closed-market requirement"
+          : "Excluded: incomplete all-time record, fewer than 5 closed markets, or profitable-close rate below 90%"
       };
     }).filter(trader => trader.qualified);
 
