@@ -214,7 +214,6 @@ dialog::backdrop{background:#000b}
             </select>
           </label>
         </div>
-        <div class="source-note" id="consensusQualificationNote">Only verified active markets are shown. Every counted trader needs a complete rolling 30-day record, at least 20 profitable/unprofitable closed markets, a 90%+ profitable-close rate, a $10+ original position, and a verified BUY within the last 60 minutes while still holding. The agreement score weighs trader count, record quality, sample size and BUY recency; it is not a probability of winning. Multiple wallets are not proof of independent research.</div>
         <div class="table-wrap">
           <table>
             <thead><tr><th>#</th><th>Market</th><th>Side</th><th>Traders</th><th>Signal score</th><th>Combined Value</th><th>Resolves</th></tr></thead>
@@ -1099,7 +1098,7 @@ function renderCombos() {
   }).sort((a,b) => (comboMultiplier(b) ?? -Infinity) - (comboMultiplier(a) ?? -Infinity) ||
     (comboEntryCost(a) ?? Infinity) - (comboEntryCost(b) ?? Infinity));
   const visible = allCombos ? rows : rows.slice(0,12);
-  if (!visible.length) container.innerHTML = comboLoadFinished ? '<div class="empty">No active combos matched the filters among checked traders. Only open positions with a verified entry of $5–$100 are shown; resolved combos are excluded. Coverage depends on the available trader sample.</div>' : '<div class="loading">Checking combo positions…</div>';
+  if (!visible.length) container.innerHTML = comboLoadFinished ? '<div class="empty">No active combos.</div>' : '<div class="loading">Checking combo positions…</div>';
   else container.innerHTML = visible.map((combo,index) => {
     const trader = combo._trader || {}, id = String(combo.combo_position_id || combo.combo_condition_id || combo._wallet + "-" + index);
     const expanded = expandedCombos.has(id), status = String(combo.status || "UNKNOWN").replaceAll("_"," ");
@@ -1139,7 +1138,7 @@ async function renderFavoriteFeed() {
    }
   }catch{}
   const cutoff=Date.now()/1000-1800;for(const [id,item] of favoriteFeedItems){if(item.time<cutoff)favoriteFeedItems.delete(id);}for(const item of found){const id=[item.wallet,item.trade.transactionHash||item.trade.txHash||item.trade.asset||item.trade.tokenId||item.trade.conditionId||item.trade.market,item.trade.timestamp??item.trade.createdAt??item.trade.time,item.trade.price,item.trade.size].join("|");favoriteFeedItems.set(id,item);}const rows=[...favoriteFeedItems.values()].sort((a,b)=>b.time-a.time).slice(0,30);
-  box.innerHTML=rows.length?rows.map(({wallet,trade,time,trader})=>'<div class="favorite-trade"><div><strong>'+profileButton({...trader,wallet},nameOf(trader))+favoriteButton(wallet)+'</strong><span class="subtitle"> · '+esc(relative(time))+'</span></div><div>'+esc(trade.title||trade.question||trade.market||trade.eventSlug||"Market details unavailable")+'</div><div><span class="side-tag">'+esc(trade.outcome||"Outcome unavailable")+'</span> BUY · '+(num(trade.usdcSize??trade.amount)!==null?cash(trade.usdcSize??trade.amount):"amount N/A") +' <small class="subtitle">'+(num(trade.price)!==null?(num(trade.price)*100).toFixed(1)+"¢":"price N/A")+'</small></div></div>').join(""):'<div class="empty">No new BUY prints from favorites in the last 30 minutes. This feed refreshes while the page stays open.</div>';
+  box.innerHTML=rows.length?rows.map(({wallet,trade,time,trader})=>'<div class="favorite-trade"><div><strong>'+profileButton({...trader,wallet},nameOf(trader))+favoriteButton(wallet)+'</strong><span class="subtitle"> · '+esc(relative(time))+'</span></div><div>'+esc(trade.title||trade.question||trade.market||trade.eventSlug||"Market details unavailable")+'</div><div><span class="side-tag">'+esc(trade.outcome||"Outcome unavailable")+'</span> BUY · '+(num(trade.usdcSize??trade.amount)!==null?cash(trade.usdcSize??trade.amount):"amount N/A") +' <small class="subtitle">'+(num(trade.price)!==null?(num(trade.price)*100).toFixed(1)+"¢":"price N/A")+'</small></div></div>').join(""):'<div class="empty">No new BUY prints.</div>';
  }finally{favoriteFeedBusy=false;}
 }
 function toggleLeaders() {
@@ -1387,7 +1386,7 @@ async function loadTraderCombos(wallet) {
         ' resolved combos. Payout means actual recorded redemption cash, not a projected payout.</small>' +
         (activityResult.status === "rejected" ? '<br><small class="subtitle">Combo activity history could not be fully loaded; payout coverage may be incomplete.</small>' : '');
     }
-    activeBox.innerHTML = active.length ? active.map(c => renderProfileCombo(c, false)).join("") : '<div class="empty">No active combos returned by the public API.</div>';
+    activeBox.innerHTML = active.length ? active.map(c => renderProfileCombo(c, false)).join("") : '<div class="empty">No active combos.</div>';
     closedBox.innerHTML = closed.length ? closed
       .sort((a,b) => (comboResolvedMs(b) || 0) - (comboResolvedMs(a) || 0))
       .map(c => renderProfileCombo(c, true)).join("") : '<div class="empty">No resolved combo positions returned.</div>';
