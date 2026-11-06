@@ -99,7 +99,7 @@ jobs:
               const groups = Array.isArray(parsed.consensus) ? parsed.consensus : [];
               // An empty result is valid when no market has two qualified traders.
               // Publishing an empty, accurate panel is safer than retaining stale/unqualified rows.
-              const minimumResolved = 20;
+              const minimumResolved = 0; // Match scanner: no extra minimum trade-count rule.
               const invalidGroups = groups.filter(group => {
                 const traders = Array.isArray(group.traders) ? group.traders : [];
                 const wallets = new Set(traders.map(row => String(row.wallet || "").toLowerCase()).filter(Boolean));
@@ -125,7 +125,7 @@ jobs:
               if (invalidGroups.length) {
                 throw new Error(`${file} contains ${invalidGroups.length} consensus groups without at least two distinct, unique wallets`);
               }
-              console.log(`${file}: ${groups.length} copy signals; every member has a distinct wallet, a complete 30-day 90%+ record with 20+ closes, and verified open-market metadata`);
+              console.log(`${file}: ${groups.length} copy signals; every member has a distinct wallet, a complete 30-day 90%+ record, and verified open-market metadata`);
             }
 
             console.log(`${file}: ${(stat.size / 1024 / 1024).toFixed(2)} MB; valid JSON`);
