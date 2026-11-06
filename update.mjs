@@ -1657,7 +1657,7 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
   const recordCandidates = [...recordCandidateMap.values()];
   console.log(`Discovered ${discoveredCandidates.length} ${period.key} candidates; scanning active positions across ${candidates.length} wallets, leaderboard records for ${rankingRecordCandidates.length}, and consensus-holder records for ${consensusWallets.size} (unique record scan: ${recordCandidates.length}).`);
   const records = await attachRecords(recordCandidates, period, nowMs, CLOSED_POSITION_SCAN_LIMIT, fullRecordCache);
-  // Consensus eligibility is all-time; leaderboard records remain weekly/monthly.
+  // Consensus holder records are scanned across the complete rolling 30-day window; leaderboard records remain separately capped.
   const consensusRecordCandidates = [...consensusWallets].map(wallet =>
     candidateByWallet.get(wallet) || {wallet}
   );
@@ -1668,9 +1668,8 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     null,
     fullRecordCache
   );
-  console.log(period.key + ": checked rolling 30-day closed-market records for " +
-    consensusRecordCandidates.length + " consensus holders; minimum " +
-    MIN_CONSENSUS_CLOSED_MARKETS + " markets at " + MIN_CONSENSUS_WIN_RATE + "%+.");
+  console.log(period.key + ": loaded full available rolling 30-day closed-position history for " +
+    consensusRecordCandidates.length + " consensus holders; history is displayed, not used as a publication gate.");
   console.log(`${period.key}: verifying settlement outcomes for the top ${rankingRecordCandidates.length} wallets...`);
   const ranked = rankCandidates(candidates, records);
   const sportsRanked = rankSportsCandidates(candidates, records);
@@ -1681,7 +1680,7 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
   // it with a second, lifetime-shaped settlement cohort scan.
   const settlementRecords = {};
   const consensusMinimumResolved = MIN_CONSENSUS_CLOSED_MARKETS;
-  console.log(`${period.key}: consensus traders require at least ${consensusMinimumResolved} closed positions and ${MIN_CONSENSUS_WIN_RATE}%+ profitable-close rate`);
+  console.log(`${period.key}: Copy Signals require 2+ distinct same-side holders with verified BUYs within 60 minutes; historical records are contextual evidence.`);
   // Reuse the period-scoped record sample used for ranking; avoid a second history scan.
   const leaderRecords = records;
   const tradeRows = await mapLimit(
