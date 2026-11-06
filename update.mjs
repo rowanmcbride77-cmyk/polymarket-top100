@@ -33,15 +33,16 @@ const MIN_CONSENSUS_POSITION_VALUE = 1;
 const MIN_CONSENSUS_ENTRY_VALUE = 10; // Minimum USD originally invested by each trader in a consensus position
 const CONSENSUS_ENTRY_WINDOW_MINUTES = 60;
 const MIN_TRADER_RESOLVED_MARKETS = 10;
-const MIN_CONSENSUS_CLOSED_MARKETS = 5;
+const MIN_CONSENSUS_CLOSED_MARKETS = 20;
+const CONSENSUS_RECORD_PERIOD = {key: "month", api: "MONTH"};
+const CONSENSUS_ENTRY_WINDOW_MINUTES = 60;
+const MAX_FRESH_TRADE_MARKETS = 500;
 const TRADERS_PER_MARKET = 500;
 const TRADE_LIMIT = 10;
 const MAX_JSON_BYTES = 20 * 1024 * 1024;
 const CONCURRENCY = 10;
 const DELAY_MS = 50;
-// Scan every cursor page of open positions for each discovered wallet.
-// There is deliberately no per-wallet page cap: lower-ranked holdings can
-// contain additional shared markets. A repeated cursor is guarded against below.
+// Bound discovery to four pages (400 positions) per wallet so scheduled scans finish predictably.
 let lastConsensusDiagnostics = null;
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -814,9 +815,7 @@ function isLiveConsensusPosition(position) {
 }
 
 async function getBroadConsensusMarkets(knownTraders, nowMs, activePositions) {
-  // Group positions directly from the Data API. Page beyond the first 100
-  // holdings so lower-value active markets are not silently omitted.
-  // Follow every available position cursor page; no first-200-position cutoff.
+  // Discover open holdings from a broad leaderboard-derived wallet pool, with a hard page cap.
   const consensusPositions = await mapLimit(knownTraders, CONCURRENCY, async trader => {
     const wallet = String(trader.wallet || "").toLowerCase();
     if (!wallet) return [wallet, []];
@@ -935,9 +934,8 @@ async function getBroadConsensusMarkets(knownTraders, nowMs, activePositions) {
       if (group.walletsSeen.has(wallet)) continue;
       group.walletsSeen.add(wallet);
       const lastEventAt = timestampMs(position.lastEventAt ?? position.last_event_at ?? position.firstEntryAt ?? position.first_entry_at);
-      // An OPEN, non-redeemable position is evidence the trader is active
-      // in this market. Do not require a fresh trade timestamp: old positions
-      // still count as current consensus while the position remains open.
+      // Position activity is a discovery hint only. Exact BUY prints are verified
+      // against the market trade feed before a signal can be published.
       group.sameSide++;
       group.totalValue += currentValue;
       group.totalEntry += invested;
@@ -985,7 +983,7 @@ async function getBroadConsensusMarkets(knownTraders, nowMs, activePositions) {
     walletsWithMorePositions,
     sameSideGroups: holderGroups.length,
     pageCapPerWallet: MAX_CONSENSUS_POSITION_PAGES_PER_WALLET,
-    note: "Open-position discovery scans up to 4 pages (400 positions) for each of up to 5,000 wallets. Any currently open, non-redeemable position with at least $10 originally invested can count, regardless of entry date. Consensus eligibility uses complete all-time closed-market records, with a 250-position safety cap; incomplete samples are withheld."
+    note: "Open-position discovery scans up to 4 pages (400 positions) for each of up to 5,000 wallets. Candidate holdings require at least $10 original entry cost; published signals additionally require a verified BUY within 60 minutes, a still-open position, and complete rolling-30-day records with at least 20 closed markets at 90%+ profitable-close rate."
   };
   console.log("Consensus scan diagnostics: " + JSON.stringify(lastConsensusDiagnostics));
   const activePositionsByWallet = Object.fromEntries(consensusPositions.map(([wallet, positions]) => [wallet, positions]));
@@ -1022,8 +1020,12 @@ async function enrichConsensusMarkets(holderGroups, nowMs) {
   // markets visible rather than silently deleting the entire consensus panel.
   // Enrich every discovered same-side group; do not cap the market list
   // or let a popular category crowd other categories out.
-  const scan = holderGroups;
-  console.log("Consensus enrichment: processing all " + scan.length + " discovered shared groups.");
+  const recentCutoff = nowMs - CONSENSUS_ENTRY_WINDOW_MINUTES * 60 * 1000;
+  const recentGroups = holderGroups.filter(group => (group.traders || []).filter(trader =>
+    trader.buyTime !== null && trader.buyTime !== undefined && trader.buyTime >= recentCutoff
+  ).length >= 2);
+  const scan = recentGroups;
+  console.log("Consensus enrichment: " + scan.length + " groups have 2+ recently active holders; verifying exact BUY prints.");
   // Look markets up by outcome token ID first. Position rows expose the
   // token as `asset`; this avoids empty condition-ID lookups when the
   // position endpoint uses a different condition identifier representation.
@@ -1110,6 +1112,51 @@ async function enrichConsensusMarkets(holderGroups, nowMs) {
     });
   }
 
+  // Verify actual BUY transactions (not merely position update timestamps) for each holder.
+  // Keep the verification request set bounded; prioritize broader and fresher overlaps.
+  const tradeCandidates = enriched
+    .sort((a,b) => b.sameSide - a.sameSide || (b.newestBuy || 0) - (a.newestBuy || 0))
+    .slice(0, MAX_FRESH_TRADE_MARKETS);
+  const tradeVerified = await mapLimit(tradeCandidates, CONCURRENCY, async group => {
+    const params = new URLSearchParams({market: String(group.conditionId), limit: "500"});
+    const rows = asArray(await getJson(`${API}/trades?${params}`));
+    const freshBuys = rows.filter(row => {
+      if (String(row.side || "").toUpperCase() !== "BUY") return false;
+      const wallet = String(row.proxyWallet ?? row.proxy_wallet ?? row.wallet ?? row.user ?? "").toLowerCase();
+      const outcome = String(row.outcome ?? row.outcome_name ?? "").trim().toLowerCase();
+      const token = String(row.asset ?? row.token_id ?? row.tokenId ?? "");
+      const ts = timestampMs(row.timestamp ?? row.created_at ?? row.createdAt ?? row.time);
+      const sameSide = outcome === String(group.side).trim().toLowerCase() || (token && group.clobTokenIds.map(String).includes(token));
+      return wallet && ts !== null && ts >= recentCutoff && sameSide;
+    });
+    const latestByWallet = new Map();
+    for (const row of freshBuys) {
+      const wallet = String(row.proxyWallet ?? row.proxy_wallet ?? row.wallet ?? row.user ?? "").toLowerCase();
+      const ts = timestampMs(row.timestamp ?? row.created_at ?? row.createdAt ?? row.time);
+      const prior = latestByWallet.get(wallet);
+      if (!prior || ts > prior.timestamp) {
+        latestByWallet.set(wallet, {
+          timestamp: ts,
+          price: num(row.price),
+          shares: num(row.size ?? row.shares),
+          amount: num(row.usdc_size ?? row.usdcSize ?? row.amount)
+        });
+      }
+    }
+    const traders = group.traders.map(trader => {
+      const buy = latestByWallet.get(String(trader.wallet || "").toLowerCase());
+      return buy ? {...trader, buyTime: buy.timestamp, verifiedBuy: true,
+        verifiedBuyPrice: buy.price, verifiedBuyShares: buy.shares,
+        verifiedBuyAmount: buy.amount} : null;
+    }).filter(Boolean);
+    if (traders.length < 2) return null;
+    return {...group, traders, sameSide: traders.length,
+      totalValue: traders.reduce((sum,t) => sum + (num(t.currentValue) || 0),0),
+      totalEntry: traders.reduce((sum,t) => sum + (num(t.entryValue ?? t.amount) || 0),0),
+      newestBuy: Math.max(...traders.map(t => t.buyTime))};
+  });
+  const verifiedGroups = tradeVerified.filter(Boolean);
+  console.log("Consensus fresh BUY verification: " + JSON.stringify({candidateMarkets: tradeCandidates.length, verifiedMarkets: verifiedGroups.length, maxMarketsChecked: MAX_FRESH_TRADE_MARKETS}));
   console.log("Consensus Gamma enrichment: " + JSON.stringify({
     scannedGroups: scan.length,
     conditionIds: conditionIds.length,
@@ -1122,10 +1169,10 @@ async function enrichConsensusMarkets(holderGroups, nowMs) {
     unknownDateKept,
     eligibleGroups: enriched.length
   }));
-  return enriched;
+  return verifiedGroups;
 }
 
-function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedMarkets = MIN_TRADER_RESOLVED_MARKETS) {
+function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedMarkets = MIN_CONSENSUS_CLOSED_MARKETS) {
   const candidateMap = new Map(candidates.map(trader => [String(trader.wallet || "").toLowerCase(), trader]));
   const qualifiedGroups = [];
   let rawGroupsWithTwoHolders = 0;
@@ -1174,7 +1221,7 @@ function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedM
         recordComplete: record.recordComplete === true,
         qualified: isQualified,
         recordBasis: isQualified
-          ? "Complete all-time record; meets the 90%+ profitable-close rate and 5+ closed-market requirement"
+          ? "Complete rolling 30-day record; meets the 90%+ profitable-close rate and 20+ closed-market requirement"
           : "Excluded: incomplete all-time record, fewer than 5 closed markets, or profitable-close rate below 90%"
       };
     }).filter(trader => trader.qualified);
@@ -1585,12 +1632,12 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
   );
   const consensusRecords = await attachRecords(
     consensusRecordCandidates,
-    {key: "all", api: "ALL"},
+    CONSENSUS_RECORD_PERIOD,
     nowMs,
     CLOSED_POSITION_SCAN_LIMIT,
     fullRecordCache
   );
-  console.log(period.key + ": checked all-time closed-market records for " +
+  console.log(period.key + ": checked rolling 30-day closed-market records for "
     consensusRecordCandidates.length + " consensus holders; minimum " +
     MIN_CONSENSUS_CLOSED_MARKETS + " markets at " + MIN_CONSENSUS_WIN_RATE + "%+.");
   console.log(`${period.key}: verifying settlement outcomes for the top ${rankingRecordCandidates.length} wallets...`);
@@ -1602,7 +1649,7 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
   // Keep W-L based on the selected-period closed-position scan; don't replace
   // it with a second, lifetime-shaped settlement cohort scan.
   const settlementRecords = {};
-  const consensusMinimumResolved = MIN_TRADER_RESOLVED_MARKETS;
+  const consensusMinimumResolved = MIN_CONSENSUS_CLOSED_MARKETS;
   console.log(`${period.key}: consensus traders require at least ${consensusMinimumResolved} closed positions and ${MIN_CONSENSUS_WIN_RATE}%+ profitable-close rate`);
   // Reuse the period-scoped record sample used for ranking; avoid a second history scan.
   const leaderRecords = records;
@@ -1662,7 +1709,7 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
       completeRecords: completeRecordRows.length,
       incompleteOrUnavailableRecords: recordCandidates.length - completeRecordRows.length,
       minimumWinRate: MIN_CONSENSUS_WIN_RATE,
-      minimumResolvedMarkets: MIN_TRADER_RESOLVED_MARKETS,
+      minimumResolvedMarkets: MIN_CONSENSUS_CLOSED_MARKETS,
       windowDays: 7,
       basis: "Unique wallets from the discovered public leaderboard candidate pool; complete closed-position records within the last 7 days; one net profitable/unprofitable result per market. Early exits count as closes. This is a sampled candidate-pool count, not a census of every Polymarket wallet."
     };
@@ -1696,14 +1743,12 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
   await writeJsonUnderLimit(`consensus-${period.key}.json`, {
     generatedAt: new Date(nowMs).toISOString(),
     pool: period.key,
-    qualificationWindowDays: period.key === "month" ? 30 : 7,
+    qualificationWindowDays: 30,
     minimumWinRate: MIN_CONSENSUS_WIN_RATE,
     minimumResolvedMarkets: MIN_TRADER_RESOLVED_MARKETS,
-    qualificationBasis: period.key === "week"
-      ? "A market is published only when at least 2 distinct holders on the same outcome each have a complete last-7-days record, at least 10 closed markets, and a 90%+ profitable-close rate. Only qualifying traders are counted."
-      : "A market is published only when at least 2 distinct holders on the same outcome each have a complete last-30-days record, at least 10 closed markets, and a 90%+ profitable-close rate. Only qualifying traders are counted.",
+    qualificationBasis: "A market is published only when at least 2 distinct holders on the same outcome each have a complete rolling-30-day record, at least 20 closed markets, and a 90%+ profitable-close rate, and each has a verified BUY in the last 60 minutes while still holding the position.",
     minimumSameSideTraders: 2,
-    entryWindowMinutes: null,
+    entryWindowMinutes: CONSENSUS_ENTRY_WINDOW_MINUTES,
     candidateCount: ranked.length,
     discoveredCandidateCount: discoveredCandidates.length,
     settlementRecordCandidateCount: rankingRecordCandidates.length,
@@ -1712,10 +1757,8 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     scanDiagnostics: lastConsensusDiagnostics,
     candidatePoolBasis: "All unique wallets exposed by available public Data API v2 leaderboard cursors across overall, sports, politics, crypto, esports, culture, mentions, weather, economics, tech, and finance categories and DAY/WEEK/MONTH/ALL periods, sorted by PnL and volume. The public API does not expose a literal all-wallet directory, so this is the broadest discoverable leaderboard pool rather than a guaranteed census. Every available open-position page is scanned; final consensus includes only same-outcome groups with at least 2 independently qualified traders.",
     resolutionWindowHours: CONSENSUS_WINDOW_HOURS,
-    entryActivityWindowHours: null,
-    recordBasis: period.key === "week"
-      ? "Only active markets with at least 2 distinct same-outcome traders who each pass the complete last-7-days 90%+ profitable-close rate and 10+ closed-market requirements are published. Markets with qualifying consensus on both opposing outcomes are excluded."
-      : "Only active markets with at least 2 distinct same-outcome traders who each pass the complete last-30-days 90%+ profitable-close rate and 10+ closed-market requirements are published. Markets with qualifying consensus on both opposing outcomes are excluded.",
+    entryActivityWindowHours: 1,
+    recordBasis: "Only active markets with at least 2 distinct same-outcome traders who each pass the complete rolling-30-day 90%+ profitable-close rate and 20+ closed-market requirements, and each has a verified BUY within 60 minutes while still holding. Markets with qualifying consensus on both opposing outcomes are excluded.",
     qualificationCount,
     consensus: consensusRows
   });
