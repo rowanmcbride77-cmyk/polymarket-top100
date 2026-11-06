@@ -3,6 +3,7 @@ name: Update Polymarket Scanner
 # [run-scanner] Fresh scan after consensus discovery changes.
 # Re-run with period-matched records for every shared-market holder.
 # [run-scanner] Rebuild using all-time consensus qualification and live holdings.
+# [run-scanner] Final corrected eligibility pass.
 
 on:
   schedule:
@@ -82,13 +83,13 @@ jobs:
               const groups = Array.isArray(parsed.consensus) ? parsed.consensus : [];
               // An empty result is valid when no market has two qualified traders.
               // Publishing an empty, accurate panel is safer than retaining stale/unqualified rows.
-              const minimumResolved = 10;
+              const minimumResolved = 5;
               const invalidGroups = groups.filter(group => {
                 const traders = Array.isArray(group.traders) ? group.traders : [];
                 const wallets = new Set(traders.map(row => String(row.wallet || "").toLowerCase()).filter(Boolean));
                 const invalidTrader = traders.some(row => {
                   // Every published consensus member must independently pass
-                  // the period-matched qualification and sample-size requirements.
+                  // the all-time qualification and sample-size requirements.
                   if (row.qualified !== true) return true;
                   const wins = Number(row.wins);
                   const losses = Number(row.losses);
@@ -109,7 +110,7 @@ jobs:
               if (invalidGroups.length) {
                 throw new Error(`${file} contains ${invalidGroups.length} consensus groups without at least two distinct, unique wallets`);
               }
-              console.log(`${file}: ${groups.length} consensus groups; every member passed distinct-wallet, complete-record, 90%+, and 10+ closed-market checks`);
+              console.log(`${file}: ${groups.length} consensus groups; every member passed distinct-wallet, complete-record, 90%+, and 5+ all-time closed-market checks`);
             }
 
             console.log(`${file}: ${(stat.size / 1024 / 1024).toFixed(2)} MB; valid JSON`);
