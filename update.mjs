@@ -18,6 +18,13 @@ const MAX_LEADERBOARD_PAGES_PER_STREAM = 20;
 const POSITION_FETCH_LIMIT = 100;
 const POSITIONS_PER_TRADER = 10;
 const RANKING_RECORD_LIMIT = 1000;
+// Bound closed-position history requests. Records that hit this cap are marked
+// incomplete and withheld rather than presented as complete win/loss stats.
+const CLOSED_POSITION_SCAN_LIMIT = 250;
+// Position discovery is limited to 1,000 wallets, with at most 400 holdings
+// per wallet. This keeps the hourly job bounded while retaining deep holdings.
+const CONSENSUS_WALLET_LIMIT = 1000;
+const MAX_CONSENSUS_POSITION_PAGES_PER_WALLET = 4;
 const LEADER_RECORD_LIMIT = RANKING_RECORD_LIMIT;
 // Keep upcoming markets in the data so the UI can filter 24h / 3d / 7d accurately.
 const CONSENSUS_WINDOW_HOURS = 24; // Only show markets with a confirmed end/resolution time in the next 24 hours
@@ -815,7 +822,7 @@ async function getBroadConsensusMarkets(knownTraders, nowMs, activePositions) {
       let pages = 0;
       let hasMore = false;
       const seenCursors = new Set();
-      while (true) {
+      while (pages < MAX_CONSENSUS_POSITION_PAGES_PER_WALLET) {
         const params = new URLSearchParams({
           user: wallet,
           limit: "100",
@@ -1529,11 +1536,11 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
   // only the first 1,000 leaderboard wallets received period records, so valid
   // consensus holders outside that arbitrary slice were silently discarded.
   const candidates = discoveredCandidates;
-  const rankingRecordCandidates = candidates;
+  const rankingRecordCandidates = candidates.slice(0, RANKING_RECORD_LIMIT);
   // The weekly consensus pool verifies every wallet discovered by either
   // leaderboard period against the same last-7-days record.
   const recordUniverse = period.key === "week" && Array.isArray(consensusCandidates)
-    ? consensusCandidates : candidates;
+    ? consensusCandidates : rankingRecordCandidates;
   const candidateByWallet = new Map(recordUniverse.map(trader => [String(trader.wallet || "").toLowerCase(), trader]));
   const consensusWallets = new Set(
     consensusGroups.flatMap(group => (Array.isArray(group.traders) ? group.traders : [])
@@ -1546,7 +1553,7 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
   }
   const recordCandidates = [...recordCandidateMap.values()];
   console.log(`Discovered ${discoveredCandidates.length} ${period.key} candidates; scanning active positions across ${candidates.length} wallets, leaderboard records for ${rankingRecordCandidates.length}, and consensus-holder records for ${consensusWallets.size} (unique record scan: ${recordCandidates.length}).`);
-  const records = await attachRecords(recordCandidates, period, nowMs, null, fullRecordCache);
+  const records = await attachRecords(recordCandidates, period, nowMs, CLOSED_POSITION_SCAN_LIMIT, fullRecordCache);
   console.log(`${period.key}: verifying settlement outcomes for the top ${rankingRecordCandidates.length} wallets...`);
   const ranked = rankCandidates(candidates, records);
   const sportsRanked = rankSportsCandidates(candidates, records);
@@ -1613,7 +1620,7 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
       candidateWalletsScanned: recordCandidates.length,
       recordsReturned: Object.keys(allCandidateRecords).length,
       completeRecords: completeRecordRows.length,
-      incompleteOrUnavailableRecords: candidates.length - completeRecordRows.length,
+      incompleteOrUnavailableRecords: recordCandidates.length - completeRecordRows.length,
       minimumWinRate: MIN_CONSENSUS_WIN_RATE,
       minimumResolvedMarkets: MIN_TRADER_RESOLVED_MARKETS,
       windowDays: 7,
@@ -1703,7 +1710,7 @@ async function main() {
 
   console.log(`Loading positions for ${unique.size} unique traders...`);
   const fullRecordCache = new Map();
-  const consensusCandidatePool = [...unique.values()].slice(0, MAX_CANDIDATES_PER_PERIOD);
+  const consensusCandidatePool = [...unique.values()].slice(0, CONSENSUS_WALLET_LIMIT);
   console.log(`Consensus scan bounded to ${consensusCandidatePool.length.toLocaleString()} unique wallets per update to keep the scheduled job within runtime limits.`);
   const consensusScan = await getBroadConsensusMarkets(consensusCandidatePool, nowMs, {});
   const activePositions = consensusScan.activePositionsByWallet;
