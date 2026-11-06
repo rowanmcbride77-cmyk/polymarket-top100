@@ -21,9 +21,9 @@ const RANKING_RECORD_LIMIT = 1000;
 // Bound closed-position history requests. Records that hit this cap are marked
 // incomplete and withheld rather than presented as complete win/loss stats.
 const CLOSED_POSITION_SCAN_LIMIT = 250;
-// Position discovery is limited to 1,000 wallets, with at most 400 holdings
-// per wallet. This keeps the hourly job bounded while retaining deep holdings.
-const CONSENSUS_WALLET_LIMIT = 1000;
+// Discover shared holdings across the full 5,000-wallet candidate pool.
+// Four position pages per wallet keeps the scan bounded while widening coverage.
+const CONSENSUS_WALLET_LIMIT = 5000;
 const MAX_CONSENSUS_POSITION_PAGES_PER_WALLET = 4;
 const LEADER_RECORD_LIMIT = RANKING_RECORD_LIMIT;
 // Keep upcoming markets in the data so the UI can filter 24h / 3d / 7d accurately.
@@ -31,7 +31,7 @@ const CONSENSUS_WINDOW_HOURS = 24; // Only show markets with a confirmed end/res
 const CONSENSUS_HOLDERS_PER_MARKET = 1500;
 const MIN_CONSENSUS_POSITION_VALUE = 1;
 const MIN_CONSENSUS_ENTRY_VALUE = 10; // Minimum USD originally invested by each trader in a consensus position
-const CONSENSUS_ENTRY_WINDOW_MINUTES = 1440;
+const CONSENSUS_ENTRY_WINDOW_MINUTES = 60;
 const MIN_TRADER_RESOLVED_MARKETS = 10;
 const TRADERS_PER_MARKET = 500;
 const TRADE_LIMIT = 10;
@@ -931,6 +931,9 @@ async function getBroadConsensusMarkets(knownTraders, nowMs, activePositions) {
       if (group.walletsSeen.has(wallet)) continue;
       group.walletsSeen.add(wallet);
       const lastEventAt = timestampMs(position.lastEventAt ?? position.last_event_at ?? position.firstEntryAt ?? position.first_entry_at);
+      // Only count positions with a verifiable entry/update in the last hour.
+      // Old holdings must not masquerade as fresh consensus activity.
+      if (lastEventAt === null || lastEventAt < nowMs - CONSENSUS_ENTRY_WINDOW_MINUTES * 60 * 1000) continue;
       group.sameSide++;
       group.totalValue += currentValue;
       group.totalEntry += invested;
@@ -978,7 +981,8 @@ async function getBroadConsensusMarkets(knownTraders, nowMs, activePositions) {
     walletsWithMorePositions,
     sameSideGroups: holderGroups.length,
     pageCapPerWallet: MAX_CONSENSUS_POSITION_PAGES_PER_WALLET,
-    note: "Open-position discovery is bounded to 4 pages (up to 400 positions) per wallet; walletsWithMorePositions flags wallets whose holdings exceeded that cap. Closed-position profitability records are separately scanned with a 250-position safety cap; incomplete samples are withheld."
+    entryActivityWindowMinutes: CONSENSUS_ENTRY_WINDOW_MINUTES,
+    note: "Open-position discovery scans up to 4 pages (400 positions) for each of up to 5,000 wallets. Only positions with a verifiable last-event/entry timestamp in the last 60 minutes qualify. Closed-position profitability records are separately scanned with a 250-position safety cap; incomplete samples are withheld."
   };
   console.log("Consensus scan diagnostics: " + JSON.stringify(lastConsensusDiagnostics));
   const activePositionsByWallet = Object.fromEntries(consensusPositions.map(([wallet, positions]) => [wallet, positions]));
