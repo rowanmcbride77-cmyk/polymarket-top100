@@ -1634,10 +1634,23 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
       .map(holder => String(holder.wallet || "").toLowerCase())
       .filter(Boolean))
   );
+  // Historical records enrich signals but no longer gate publication. Bound
+  // this optional enrichment so broad overlap discovery does not time out.
+  const walletCapital = new Map();
+  for (const group of consensusGroups) {
+    for (const holder of (Array.isArray(group.traders) ? group.traders : [])) {
+      const wallet = String(holder.wallet || "").toLowerCase();
+      if (!wallet) continue;
+      walletCapital.set(wallet, (walletCapital.get(wallet) || 0) + (num(holder.entryValue) ?? 0));
+    }
+  }
+  const consensusRecordWallets = [...consensusWallets]
+    .sort((a,b) => (walletCapital.get(b) || 0) - (walletCapital.get(a) || 0))
+    .slice(0, 1000);
   const recordCandidateMap = new Map(
     rankingRecordCandidates.map(trader => [String(trader.wallet || "").toLowerCase(), trader])
   );
-  for (const wallet of consensusWallets) {
+  for (const wallet of consensusRecordWallets) {
     if (!recordCandidateMap.has(wallet)) {
       recordCandidateMap.set(wallet, candidateByWallet.get(wallet) || {wallet});
     }
@@ -1646,7 +1659,7 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
   console.log(`Discovered ${discoveredCandidates.length} ${period.key} candidates; scanning active positions across ${candidates.length} wallets, leaderboard records for ${rankingRecordCandidates.length}, and consensus-holder records for ${consensusWallets.size} (unique record scan: ${recordCandidates.length}).`);
   const records = await attachRecords(recordCandidates, period, nowMs, CLOSED_POSITION_SCAN_LIMIT, fullRecordCache);
   // Consensus holder records are scanned across the complete rolling 7-day window; leaderboard records remain separately capped.
-  const consensusRecordCandidates = [...consensusWallets].map(wallet =>
+  const consensusRecordCandidates = consensusRecordWallets.map(wallet =>
     candidateByWallet.get(wallet) || {wallet}
   );
   const consensusRecords = await attachRecords(
