@@ -33,8 +33,8 @@ const MIN_CONSENSUS_POSITION_VALUE = 1;
 const MIN_CONSENSUS_ENTRY_VALUE = 0; // No minimum original entry size.
 const CONSENSUS_ENTRY_WINDOW_MINUTES = 60;
 const MIN_TRADER_RESOLVED_MARKETS = 10;
-const MIN_CONSENSUS_CLOSED_MARKETS = 0; // Only a complete 30-day record and 90%+ rate; no extra trade-count floor.
-const CONSENSUS_RECORD_PERIOD = {key: "month", api: "MONTH"};
+const MIN_CONSENSUS_CLOSED_MARKETS = 5; // Require at least 5 closed markets in the rolling 7-day record.
+const CONSENSUS_RECORD_PERIOD = {key: "week", api: "WEEK"};
 const TRADERS_PER_MARKET = 500;
 const TRADE_LIMIT = 10;
 const MAX_JSON_BYTES = 20 * 1024 * 1024;
@@ -995,7 +995,7 @@ async function getBroadConsensusMarkets(knownTraders, nowMs, activePositions) {
     walletsWithMorePositions,
     sameSideGroups: holderGroups.length,
     pageCapPerWallet: MAX_CONSENSUS_POSITION_PAGES_PER_WALLET,
-    note: "Open-position discovery scans up to 4 pages (400 positions) for each of up to 5,000 wallets. Any positive active holding counts; no minimum entry size or recent BUY requirement. Published groups require 2+ same-side holders and a complete 30-day record at 90%+."
+    note: "Open-position discovery scans up to 4 pages (400 positions) for each of up to 5,000 wallets. Any positive active holding counts; no minimum entry size or recent BUY requirement. Published groups require 2+ same-side holders and a complete 7-day record at 90%+."
   };
   console.log("Consensus scan diagnostics: " + JSON.stringify(lastConsensusDiagnostics));
   const activePositionsByWallet = Object.fromEntries(consensusPositions.map(([wallet, positions]) => [wallet, positions]));
@@ -1179,7 +1179,7 @@ function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedM
       const winRate = wins !== null && losses !== null && resolvedMarkets > 0
         ? wins / resolvedMarkets * 100
         : num(record.winRate);
-      // Require a complete rolling-30-day profitable-close record at 90%+.
+      // Require a complete rolling-7-day profitable-close record at 90%+.
       // No extra minimum number of closed markets is imposed.
       const entryPrice = num(holder.avgPrice);
       const entryShares = num(holder.size ?? holder.shares);
@@ -1225,7 +1225,7 @@ function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedM
         recordComplete: record.recordComplete === true,
         qualified: isQualified,
         recordBasis: record.recordComplete === true
-          ? "Rolling 30-day realized profitable-close proxy; displayed as context, not a guarantee"
+          ? "Rolling 7-day realized profitable-close proxy; displayed as context, not a guarantee"
           : "Rolling 30-day record incomplete or unavailable; historical performance is unknown"
       };
     }).filter(trader => trader.qualified);
@@ -1663,7 +1663,7 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
   // it with a second, lifetime-shaped settlement cohort scan.
   const settlementRecords = {};
   const consensusMinimumResolved = MIN_CONSENSUS_CLOSED_MARKETS;
-  console.log(`${period.key}: Consensus Markets require 2+ distinct same-side open holders, each with a complete rolling-30-day record and a 90%+ profitable-close rate; no extra trade-count minimum.`);
+  console.log(`${period.key}: Consensus Markets require 2+ distinct same-side open holders, each with a complete rolling-7-day record and a 90%+ profitable-close rate and at least 5 closed markets.`);
   // Reuse the period-scoped record sample used for ranking; avoid a second history scan.
   const leaderRecords = records;
   const tradeRows = await mapLimit(
@@ -1756,10 +1756,10 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
   await writeJsonUnderLimit(`consensus-${period.key}.json`, {
     generatedAt: new Date(nowMs).toISOString(),
     pool: period.key,
-    qualificationWindowDays: 30,
+    qualificationWindowDays: 7,
     minimumWinRate: MIN_CONSENSUS_WIN_RATE,
     minimumResolvedMarkets: MIN_CONSENSUS_CLOSED_MARKETS,
-    qualificationBasis: "A market is published when at least 2 distinct wallets are confirmed holding the same side in the live OPEN positions endpoint, and each has a complete rolling-30-day record with a 90%+ profitable-close rate; no extra trade-count minimum. No recent BUY is required.",
+    qualificationBasis: "A market is published when at least 2 distinct wallets are confirmed holding the same side in the live OPEN positions endpoint, and each has a complete rolling-7-day record with a 90%+ profitable-close rate and at least 5 closed markets. No recent BUY is required.",
     minimumSameSideTraders: 2,
     candidateCount: ranked.length,
     discoveredCandidateCount: discoveredCandidates.length,
@@ -1769,7 +1769,7 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     scanDiagnostics: lastConsensusDiagnostics,
     candidatePoolBasis: "All unique wallets exposed by available public Data API v2 leaderboard cursors across overall, sports, politics, crypto, esports, culture, mentions, weather, economics, tech, and finance categories and DAY/WEEK/MONTH/ALL periods, sorted by PnL and volume. The public API does not expose a literal all-wallet directory, so this is the broadest discoverable leaderboard pool rather than a guaranteed census. Every available open-position page is scanned; final consensus includes only same-outcome groups with at least 2 independently qualified traders.",
     resolutionWindowHours: CONSENSUS_WINDOW_HOURS,
-    recordBasis: "Active markets with at least 2 distinct same-outcome holders, each independently passing a complete rolling-30-day 90%+ profitable-close rate; no extra trade-count minimum. Current holdings are confirmed by the live OPEN positions endpoint. This is a research signal, not a proven profitable strategy.",
+    recordBasis: "Active markets with at least 2 distinct same-outcome holders, each independently passing a complete rolling-7-day 90%+ profitable-close rate with at least 5 closed markets. Current holdings are confirmed by the live OPEN positions endpoint. This is a research signal, not a proven profitable strategy.",
     qualificationCount,
     consensus: consensusRows
   });
