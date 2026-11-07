@@ -814,15 +814,15 @@ function renderConsensus() {
     })
     .filter(market => market.marketMetadataVerified === true &&
       market.marketClosed === false &&
-      market.traders.every(t => t.qualified === true) &&
       market._endSeconds !== null &&
       market._endSeconds > nowSeconds &&
       market._endSeconds <= cutoffSeconds &&
       traderCount(market) >= minCount)
     .sort((a, b) =>
-      a._endSeconds - b._endSeconds ||
+      (num(b.consensusScore) ?? 0) - (num(a.consensusScore) ?? 0) ||
       traderCount(b) - traderCount(a) ||
-      (marketAmount(b) ?? -1) - (marketAmount(a) ?? -1));
+      (marketAmount(b) ?? -1) - (marketAmount(a) ?? -1) ||
+      a._endSeconds - b._endSeconds);
 
   const visible = allMarkets ? filtered : filtered.slice(0, 15);
 
@@ -893,7 +893,7 @@ function renderConsensus() {
     </td></tr>` : "";
 
     return row + detail;
-  }).join("") : `<tr><td colspan="7" class="empty">No market currently has 2+ same-side open holders who meet the 90%+ rolling-7-day record with at least 5 closed markets and market filters.</td></tr>`;
+  }).join("") : `<tr><td colspan="7" class="empty">No verified market currently has 2+ distinct same-side holders with verified entries and a close time within the next 24 hours.</td></tr>`;
 
   $("consensusMore").textContent = allMarkets ? "Show fewer ↑" : "View all consensus markets →";
   $("consensusMore").style.display = filtered.length > 15 ? "inline-block" : "none";
