@@ -29,9 +29,9 @@ const LEADER_RECORD_LIMIT = RANKING_RECORD_LIMIT;
 // Keep upcoming markets in the data so the UI can filter 24h / 3d / 7d accurately.
 const CONSENSUS_WINDOW_HOURS = 24; // Only active markets resolving in the next 24 hours years away
 const CONSENSUS_HOLDERS_PER_MARKET = 1500;
-const MIN_CONSENSUS_POSITION_VALUE = 1;
-const MIN_CONSENSUS_ENTRY_VALUE = 0; // No minimum original entry size.
-const CONSENSUS_ENTRY_WINDOW_MINUTES = 60;
+const MIN_CONSENSUS_POSITION_VALUE = 10;
+const MIN_CONSENSUS_ENTRY_VALUE = 10; // Exclude tiny/dust entries when verified cost basis is available.
+const CONSENSUS_ENTRY_WINDOW_MINUTES = 90;
 const MIN_TRADER_RESOLVED_MARKETS = 10;
 const MIN_CONSENSUS_CLOSED_MARKETS = 5; // Require at least 5 closed markets in the rolling 7-day record.
 const CONSENSUS_RECORD_PERIOD = {key: "week", api: "WEEK"};
@@ -995,7 +995,7 @@ async function getBroadConsensusMarkets(knownTraders, nowMs, activePositions) {
     walletsWithMorePositions,
     sameSideGroups: holderGroups.length,
     pageCapPerWallet: MAX_CONSENSUS_POSITION_PAGES_PER_WALLET,
-    note: "Open-position discovery scans up to 4 pages (400 positions) for each of up to 5,000 wallets. Any positive active holding counts; no minimum entry size or recent BUY requirement. Published groups require 2+ same-side holders, any verified category, a maximum 24-hour market end window, and a complete 7-day record at 90%+ with at least 5 closes."
+    note: "Open-position discovery scans up to 4 pages (400 positions) for each of up to 5,000 wallets. Published groups require 2+ distinct same-side holders, verified entry prices and positions of at least $10 per holder, any verified category, and a maximum 24-hour market end window. Historical 7-day performance is shown as a quality indicator, not a publication gate."
   };
   console.log("Consensus scan diagnostics: " + JSON.stringify(lastConsensusDiagnostics));
   const activePositionsByWallet = Object.fromEntries(consensusPositions.map(([wallet, positions]) => [wallet, positions]));
@@ -1178,8 +1178,8 @@ function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedM
       const winRate = wins !== null && losses !== null && resolvedMarkets > 0
         ? wins / resolvedMarkets * 100
         : num(record.winRate);
-      // Require a complete rolling-7-day profitable-close record at 90%+.
-      // No extra minimum number of closed markets is imposed.
+      // Historical performance is a quality indicator, not a publication gate.
+      // Include every independently verified same-side holder with a real entry cost.
       const entryPrice = num(holder.avgPrice);
       const entryShares = num(holder.size ?? holder.shares);
       const entryCost = num(holder.entryValue);
@@ -1187,19 +1187,21 @@ function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedM
         entryPrice !== null && entryPrice > 0 && entryPrice <= 1 &&
         entryShares !== null && entryShares > 0 &&
         entryCost !== null && entryCost > 0;
+      const hasMinimumEntry = hasVerifiedEntryPrice && entryCost >= MIN_CONSENSUS_ENTRY_VALUE &&
+        (num(holder.currentValue) ?? 0) >= MIN_CONSENSUS_POSITION_VALUE;
       const isQualified =
         record.recordComplete === true &&
         resolvedMarkets !== null &&
         resolvedMarkets >= minimumResolvedMarkets &&
         winRate !== null &&
-        winRate >= MIN_CONSENSUS_WIN_RATE &&
-        hasVerifiedEntryPrice;
+        winRate >= MIN_CONSENSUS_WIN_RATE;
+      const isPublishableHolder = hasMinimumEntry;
 
       qualificationDiagnostics.holdersEvaluated++;
       if (record.recordComplete !== true) qualificationDiagnostics.incompleteRecord++;
       if (resolvedMarkets === null || resolvedMarkets < minimumResolvedMarkets) qualificationDiagnostics.fewerThanMinimumCloses++;
       if (winRate === null || winRate < MIN_CONSENSUS_WIN_RATE) qualificationDiagnostics.belowMinimumWinRate++;
-      if (!hasVerifiedEntryPrice) qualificationDiagnostics.missingEntryPrice = (qualificationDiagnostics.missingEntryPrice || 0) + 1;
+      if (!hasMinimumEntry) qualificationDiagnostics.missingEntryPrice = (qualificationDiagnostics.missingEntryPrice || 0) + 1;
       if (isQualified) qualificationDiagnostics.qualifiedHolders++;
       qualificationDiagnostics.recordSamples.push({
         resolvedMarkets,
@@ -1223,14 +1225,15 @@ function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedM
         earlyExitPositions: num(record.earlyExitPositions),
         recordComplete: record.recordComplete === true,
         qualified: isQualified,
+        publishable: isPublishableHolder,
         recordBasis: record.recordComplete === true
           ? "Rolling 7-day realized profitable-close proxy; displayed as context, not a guarantee"
           : "Rolling 7-day record incomplete or unavailable; historical performance is unknown"
       };
-    }).filter(trader => trader.qualified);
+    }).filter(trader => trader.publishable);
 
-    // A consensus market is valid when at least two distinct holders
-    // independently have a complete 7-day record, at least 5 closed markets, and a 90%+ profitable-close rate.
+    // Publish the actual verified same-side overlap. Historical performance
+    // remains visible on each trader but does not erase otherwise valid consensus.
     if (traders.length < 2) continue;
     groupsWithTwoQualified++;
     qualifiedGroups.push({
@@ -1248,15 +1251,18 @@ function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedM
   }
 
   const result = qualifiedGroups.map(group => {
-    const avgRate = group.traders.reduce((sum,t) => sum + (num(t.winRate) || 0),0) / group.traders.length;
-    const avgSample = group.traders.reduce((sum,t) => sum + Math.min(100, num(t.resolvedMarkets) || 0),0) / group.traders.length;
-    // Heuristic strength score (not a win probability): 50% breadth,
-    // 30% average profitable-close rate, 20% record sample size.
-    const breadthScore = Math.min(group.sameSide,20) / 20 * 50;
-    const accuracyScore = avgRate / 100 * 30;
-    const sampleScore = Math.min(avgSample,100) / 100 * 20;
-    const consensusScore = Math.round(breadthScore + accuracyScore + sampleScore);
-    return {...group, consensusScore, signalTier: group.sameSide >= 10 ? "Strong consensus" : group.sameSide >= 5 ? "High consensus" : "2–4 traders"};
+    const knownRates = group.traders.map(t => num(t.winRate)).filter(rate => rate !== null);
+    const avgRate = knownRates.length ? knownRates.reduce((sum,rate) => sum + rate,0) / knownRates.length : 0;
+    const knownSamples = group.traders.map(t => num(t.resolvedMarkets)).filter(sample => sample !== null);
+    const avgSample = knownSamples.length ? knownSamples.reduce((sum,sample) => sum + Math.min(100,sample),0) / knownSamples.length : 0;
+    const combinedEntry = group.totalEntry ?? 0;
+    // Heuristic strength score (not a win probability): prioritize breadth,
+    // then verified dollars committed, then known historical close quality.
+    const breadthScore = Math.min(group.sameSide,20) / 20 * 55;
+    const capitalScore = Math.min(Math.log10(Math.max(1, combinedEntry) + 1) / Math.log10(10001), 1) * 25;
+    const qualityScore = knownRates.length ? (avgRate / 100 * 10 + Math.min(avgSample,100) / 100 * 10) : 0;
+    const consensusScore = Math.round(breadthScore + capitalScore + qualityScore);
+    return {...group, consensusScore, signalTier: group.sameSide >= 10 ? "Strong consensus" : group.sameSide >= 5 ? "High consensus" : group.sameSide >= 3 ? "Growing consensus" : "2 traders"};
   }).sort((a, b) => b.consensusScore - a.consensusScore || b.sameSide - a.sameSide || b.totalValue - a.totalValue || (b.newestBuy || 0) - (a.newestBuy || 0));
   console.log("Consensus holder qualification diagnostics:", JSON.stringify(qualificationDiagnostics));
   console.log("Consensus qualification:", JSON.stringify({
@@ -1662,7 +1668,7 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
   // it with a second, lifetime-shaped settlement cohort scan.
   const settlementRecords = {};
   const consensusMinimumResolved = MIN_CONSENSUS_CLOSED_MARKETS;
-  console.log(`${period.key}: Consensus Markets require 2+ distinct same-side open holders, each with a complete rolling-7-day record and a 90%+ profitable-close rate and at least 5 closed markets.`);
+  console.log(`${period.key}: Consensus Markets publish 2+ distinct same-side open holders with verified entry prices; 7-day close performance is displayed as context, not a gate.`);
   // Reuse the period-scoped record sample used for ranking; avoid a second history scan.
   const leaderRecords = records;
   const tradeRows = await mapLimit(
@@ -1758,7 +1764,7 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     qualificationWindowDays: 7,
     minimumWinRate: MIN_CONSENSUS_WIN_RATE,
     minimumResolvedMarkets: MIN_CONSENSUS_CLOSED_MARKETS,
-    qualificationBasis: "A market is published when at least 2 distinct wallets are confirmed holding the same side in the live OPEN positions endpoint, and each has a complete rolling-7-day record with a 90%+ profitable-close rate and at least 5 closed markets. No recent BUY is required.",
+    qualificationBasis: "A market is published when at least 2 distinct wallets are confirmed holding the same side in the live OPEN positions endpoint, each with a verified positive entry price, positive shares, at least $10 entry cost and at least $10 current value. Historical 7-day profitable-close rate and sample size are shown as context, not used to hide consensus.",
     minimumSameSideTraders: 2,
     candidateCount: ranked.length,
     discoveredCandidateCount: discoveredCandidates.length,
@@ -1766,9 +1772,9 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     consensusHolderRecordCandidateCount: consensusWallets.size,
     totalRecordCandidateCount: recordCandidates.length,
     scanDiagnostics: lastConsensusDiagnostics,
-    candidatePoolBasis: "All unique wallets exposed by available public Data API v2 leaderboard cursors across overall, sports, politics, crypto, esports, culture, mentions, weather, economics, tech, and finance categories and DAY/WEEK/MONTH/ALL periods, sorted by PnL and volume. The public API does not expose a literal all-wallet directory, so this is the broadest discoverable leaderboard pool rather than a guaranteed census. Every available open-position page is scanned; final consensus includes only same-outcome groups with at least 2 independently qualified traders.",
+    candidatePoolBasis: "All unique wallets exposed by available public Data API v2 leaderboard cursors across overall, sports, politics, crypto, esports, culture, mentions, weather, economics, tech, and finance categories and DAY/WEEK/MONTH/ALL periods, sorted by PnL and volume. The public API does not expose a literal all-wallet directory, so this is the broadest discoverable leaderboard pool rather than a guaranteed census. Every available open-position page is scanned; final consensus includes same-outcome groups with at least 2 distinct holders and verified entry prices.",
     resolutionWindowHours: CONSENSUS_WINDOW_HOURS,
-    recordBasis: "Active markets with at least 2 distinct same-outcome holders, each independently passing a complete rolling-7-day 90%+ profitable-close rate with at least 5 closed markets. Current holdings are confirmed by the live OPEN positions endpoint. This is a research signal, not a proven profitable strategy.",
+    recordBasis: "Active markets with at least 2 distinct same-outcome holders and verified entry prices. Individual 7-day profitable-close rates and samples are displayed when complete, but are not a publication requirement. This is a research signal, not a proven profitable strategy.",
     qualificationCount,
     consensus: consensusRows
   });
