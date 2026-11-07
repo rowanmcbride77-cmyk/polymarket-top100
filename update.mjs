@@ -13,7 +13,8 @@ const PERIODS = [
 const MIN_CONSENSUS_WIN_RATE = 90;
 const LEADER_COUNT = 100;
 const PAGE_SIZE = 50;
-const MAX_CANDIDATES_PER_PERIOD = 5000;
+const MAX_CANDIDATES_PER_PERIOD = 5500;
+const CANDIDATE_QUOTA_PER_CATEGORY = 500;
 const MAX_LEADERBOARD_PAGES_PER_STREAM = 20;
 const POSITION_FETCH_LIMIT = 100;
 const POSITIONS_PER_TRADER = 10;
@@ -23,7 +24,7 @@ const RANKING_RECORD_LIMIT = 1000;
 const CLOSED_POSITION_SCAN_LIMIT = 250;
 // Discover shared holdings across the full 5,000-wallet candidate pool.
 // Four position pages per wallet keeps the scan bounded while widening coverage.
-const CONSENSUS_WALLET_LIMIT = 5000;
+const CONSENSUS_WALLET_LIMIT = 5500;
 const MAX_CONSENSUS_POSITION_PAGES_PER_WALLET = 4;
 const LEADER_RECORD_LIMIT = RANKING_RECORD_LIMIT;
 // Keep upcoming markets in the data so the UI can filter 24h / 3d / 7d accurately.
@@ -33,7 +34,7 @@ const MIN_CONSENSUS_POSITION_VALUE = 10;
 const MIN_CONSENSUS_ENTRY_VALUE = 10; // Exclude tiny/dust entries when verified cost basis is available.
 const CONSENSUS_ENTRY_WINDOW_MINUTES = 90;
 const MIN_TRADER_RESOLVED_MARKETS = 10;
-const MIN_CONSENSUS_CLOSED_MARKETS = 5; // Require at least 5 closed markets in the rolling 7-day record.
+const MIN_CONSENSUS_CLOSED_MARKETS = 10; // Require at least 10 resolved markets in the complete rolling 7-day record.
 const CONSENSUS_RECORD_PERIOD = {key: "week", api: "WEEK"};
 const TRADERS_PER_MARKET = 500;
 const TRADE_LIMIT = 10;
@@ -352,13 +353,14 @@ async function getCandidates(period) {
   let pagesFetched = 0;
   for (const category of categories) {
     if (byWallet.size >= MAX_CANDIDATES_PER_PERIOD) break;
+    const categoryStartSize = byWallet.size;
     for (const timePeriod of timePeriods) {
-      if (byWallet.size >= MAX_CANDIDATES_PER_PERIOD) break;
+      if (byWallet.size >= MAX_CANDIDATES_PER_PERIOD || byWallet.size - categoryStartSize >= CANDIDATE_QUOTA_PER_CATEGORY) break;
       for (const orderBy of ["PNL","VOLUME"]) {
-        if (byWallet.size >= MAX_CANDIDATES_PER_PERIOD) break;
+        if (byWallet.size >= MAX_CANDIDATES_PER_PERIOD || byWallet.size - categoryStartSize >= CANDIDATE_QUOTA_PER_CATEGORY) break;
         let cursor = null, page = 0;
         const seenCursors = new Set();
-        while (page < MAX_LEADERBOARD_PAGES_PER_STREAM && byWallet.size < MAX_CANDIDATES_PER_PERIOD) {
+        while (page < MAX_LEADERBOARD_PAGES_PER_STREAM && byWallet.size < MAX_CANDIDATES_PER_PERIOD && byWallet.size - categoryStartSize < CANDIDATE_QUOTA_PER_CATEGORY) {
           const params = new URLSearchParams({category,time_period:timePeriod.toLowerCase(),sort_by:orderBy,limit:String(PAGE_SIZE)});
           if (cursor) params.set("cursor",cursor);
           const response = await getJson(`${API}/v2/leaderboard?${params}`);
@@ -1178,8 +1180,8 @@ function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedM
       const winRate = wins !== null && losses !== null && resolvedMarkets > 0
         ? wins / resolvedMarkets * 100
         : num(record.winRate);
-      // Historical performance is a quality indicator, not a publication gate.
-      // Include every independently verified same-side holder with a real entry cost.
+      // Historical performance is a hard qualification gate: only independently verified
+      // traders with a complete 7-day sample, at least 10 resolved markets, and >=90% wins qualify.
       const entryPrice = num(holder.avgPrice);
       const entryShares = num(holder.size ?? holder.shares);
       const entryCost = num(holder.entryValue);
@@ -1195,7 +1197,7 @@ function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedM
         resolvedMarkets >= minimumResolvedMarkets &&
         winRate !== null &&
         winRate >= MIN_CONSENSUS_WIN_RATE;
-      const isPublishableHolder = hasMinimumEntry;
+      const isPublishableHolder = hasMinimumEntry && isQualified;
 
       qualificationDiagnostics.holdersEvaluated++;
       if (record.recordComplete !== true) qualificationDiagnostics.incompleteRecord++;
@@ -1232,8 +1234,9 @@ function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedM
       };
     }).filter(trader => trader.publishable);
 
-    // Publish the actual verified same-side overlap. Historical performance
-    // remains visible on each trader but does not erase otherwise valid consensus.
+    // Publish only genuine high-quality overlap: every displayed trader independently
+    // passes the complete 7-day record gate. Weak or incomplete holders cannot dilute a signal.
+    if (traders.length < 2) continue;
     if (traders.length < 2) continue;
     groupsWithTwoQualified++;
     qualifiedGroups.push({
@@ -1675,7 +1678,7 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
   // it with a second, lifetime-shaped settlement cohort scan.
   const settlementRecords = {};
   const consensusMinimumResolved = MIN_CONSENSUS_CLOSED_MARKETS;
-  console.log(`${period.key}: Consensus Markets publish 2+ distinct same-side open holders with verified entry prices; 7-day close performance is displayed as context, not a gate.`);
+  console.log(`${period.key}: Consensus Markets require 2+ distinct same-side open holders; every displayed holder must have a complete 7-day record, 10+ closes, >=90% win rate, and verified entry.`);
   // Reuse the period-scoped record sample used for ranking; avoid a second history scan.
   const leaderRecords = records;
   const tradeRows = await mapLimit(
@@ -1771,7 +1774,7 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     qualificationWindowDays: 7,
     minimumWinRate: MIN_CONSENSUS_WIN_RATE,
     minimumResolvedMarkets: MIN_CONSENSUS_CLOSED_MARKETS,
-    qualificationBasis: "A market is published when at least 2 distinct wallets are confirmed holding the same side in the live OPEN positions endpoint, each with a verified positive entry price, positive shares, at least $10 entry cost and at least $10 current value. Historical 7-day profitable-close rate and sample size are shown as context, not used to hide consensus.",
+    qualificationBasis: "A market is published only when at least 2 distinct wallets are confirmed holding the same side in the live OPEN positions endpoint, and every displayed trader independently has a complete rolling 7-day profitable-close record with at least 10 resolved markets, at least 90% win rate, verified positive entry price and shares, at least $10 entry cost, and at least $10 current value. This close-profitability proxy is not guaranteed settlement accuracy or profit.",
     minimumSameSideTraders: 2,
     candidateCount: ranked.length,
     discoveredCandidateCount: discoveredCandidates.length,
@@ -1781,7 +1784,7 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     scanDiagnostics: lastConsensusDiagnostics,
     candidatePoolBasis: "All unique wallets exposed by available public Data API v2 leaderboard cursors across overall, sports, politics, crypto, esports, culture, mentions, weather, economics, tech, and finance categories and DAY/WEEK/MONTH/ALL periods, sorted by PnL and volume. The public API does not expose a literal all-wallet directory, so this is the broadest discoverable leaderboard pool rather than a guaranteed census. Every available open-position page is scanned; final consensus includes same-outcome groups with at least 2 distinct holders and verified entry prices.",
     resolutionWindowHours: CONSENSUS_WINDOW_HOURS,
-    recordBasis: "Active markets with at least 2 distinct same-outcome holders and verified entry prices. Individual 7-day profitable-close rates and samples are displayed when complete, but are not a publication requirement. This is a research signal, not a proven profitable strategy.",
+    recordBasis: "Only active markets with at least 2 distinct same-outcome qualified traders. Every listed trader independently passes a complete rolling 7-day profitable-close record of at least 10 resolved markets and at least 90% wins, plus verified live holding and entry data. This is a research signal, not a proven profitable strategy.",
     qualificationCount,
     consensus: consensusRows
   });
