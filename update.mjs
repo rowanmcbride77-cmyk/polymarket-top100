@@ -899,7 +899,11 @@ async function getBroadConsensusMarkets(knownTraders, nowMs, activePositions) {
       if (!conditionId || !side) continue;
       const currentValue = num(position.currentValue ?? position.current_value) ?? 0;
       const size = num(position.size ?? position.current_size ?? position.currentSize) ?? 0;
-      const invested = num(position.initialValue ?? position.initial_value) ?? 0;
+      const rawInvested = num(position.initialValue ?? position.initial_value);
+      const avgPrice = num(position.avgPrice ?? position.avg_price ?? position.averagePrice ?? position.average_price);
+      const invested = rawInvested !== null && rawInvested > 0
+        ? rawInvested
+        : (avgPrice !== null && avgPrice > 0 && avgPrice <= 1 && size > 0 ? avgPrice * size : null);
       // Count every genuine active holding, regardless of original entry size or whether entry cost is available.
       if (currentValue <= 0 && size <= 0) continue;
 
@@ -940,7 +944,7 @@ async function getBroadConsensusMarkets(knownTraders, nowMs, activePositions) {
       // against the market trade feed before a signal can be published.
       group.sameSide++;
       group.totalValue += currentValue;
-      group.totalEntry += invested;
+      if (invested !== null && invested > 0) group.totalEntry += invested;
       if (lastEventAt !== null) {
         group.newestBuy = group.newestBuy === null ? lastEventAt : Math.max(group.newestBuy, lastEventAt);
         group.oldestBuy = group.oldestBuy === null ? lastEventAt : Math.min(group.oldestBuy, lastEventAt);
@@ -952,8 +956,14 @@ async function getBroadConsensusMarkets(knownTraders, nowMs, activePositions) {
         pnl: trader.pnl ?? null,
         volume: trader.volume ?? null,
         side,
-        amount: invested,
-        entryValue: invested,
+        amount: invested > 0 ? invested : null,
+        entryValue: invested > 0 ? invested : null,
+        avgPrice: position.avgPrice !== null && position.avgPrice > 0 && position.avgPrice <= 1
+          ? position.avgPrice
+          : null,
+        shares: size > 0 ? size : null,
+        size: size > 0 ? size : null,
+        currentPrice: position.currentPrice ?? null,
         currentValue,
         buyTime: lastEventAt
       });
@@ -1022,7 +1032,7 @@ async function enrichConsensusMarkets(holderGroups, nowMs) {
   // markets visible rather than silently deleting the entire consensus panel.
   // Enrich every discovered same-side group; do not cap the market list
   // or let a popular category crowd other categories out.
-  // Copy Signals are based on positions that are currently open, not on
+  // Consensus Markets are based on positions that are currently open, not on
   // whether the trader happened to add to the position in the last hour.
   const scan = holderGroups;
   console.log("Consensus enrichment: checking " + scan.length + " shared open-position groups.");
@@ -1648,7 +1658,7 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
   // it with a second, lifetime-shaped settlement cohort scan.
   const settlementRecords = {};
   const consensusMinimumResolved = MIN_CONSENSUS_CLOSED_MARKETS;
-  console.log(`${period.key}: Copy Signals require 2+ distinct same-side open holders, each with a complete rolling-30-day record and a 90%+ profitable-close rate; no extra trade-count minimum.`);
+  console.log(`${period.key}: Consensus Markets require 2+ distinct same-side open holders, each with a complete rolling-30-day record and a 90%+ profitable-close rate; no extra trade-count minimum.`);
   // Reuse the period-scoped record sample used for ranking; avoid a second history scan.
   const leaderRecords = records;
   const tradeRows = await mapLimit(
