@@ -113,7 +113,14 @@ jobs:
                     !Number.isFinite(Number(row.resolvedMarkets)) ||
                     Number(row.resolvedMarkets) < minimumResolved ||
                     !Number.isFinite(Number(row.winRate)) ||
-                    Number(row.winRate) < 90;
+                    Number(row.winRate) < 90 ||
+                    !Number.isFinite(Number(row.avgPrice)) ||
+                    Number(row.avgPrice) <= 0 ||
+                    Number(row.avgPrice) > 1 ||
+                    !Number.isFinite(Number(row.shares ?? row.size)) ||
+                    Number(row.shares ?? row.size) <= 0 ||
+                    !Number.isFinite(Number(row.entryValue)) ||
+                    Number(row.entryValue) <= 0;
                 });
                 const endRaw = group.endDate ?? group.end_date ?? null;
                 let endMs = endRaw ? Date.parse(String(endRaw)) : NaN;
