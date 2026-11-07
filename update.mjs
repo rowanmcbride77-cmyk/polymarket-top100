@@ -27,7 +27,7 @@ const CONSENSUS_WALLET_LIMIT = 5000;
 const MAX_CONSENSUS_POSITION_PAGES_PER_WALLET = 4;
 const LEADER_RECORD_LIMIT = RANKING_RECORD_LIMIT;
 // Keep upcoming markets in the data so the UI can filter 24h / 3d / 7d accurately.
-const CONSENSUS_WINDOW_HOURS = 168; // Include active markets ending within 7 days; exclude long-dated markets years away
+const CONSENSUS_WINDOW_HOURS = 24; // Only active markets resolving in the next 24 hours years away
 const CONSENSUS_HOLDERS_PER_MARKET = 1500;
 const MIN_CONSENSUS_POSITION_VALUE = 1;
 const MIN_CONSENSUS_ENTRY_VALUE = 0; // No minimum original entry size.
@@ -1095,9 +1095,9 @@ async function enrichConsensusMarkets(holderGroups, nowMs) {
       endMs = Date.parse(endDate + "T23:59:59.999Z");
     }
 
-    // Include active markets ending within the next 7 days, matching the dashboard filter.
-    // Exclude overdue, undated, and long-dated markets rather than relabeling
-    // them as active opportunities or substituting an event start date.
+    // Strictly include markets resolving within the next 24 hours.
+    // Exclude overdue, undated, and anything resolving later than 24 hours.
+    // Do not substitute an event start date for the market resolution deadline.
     if (endMs === null) {
       unknownDateKept++;
       continue;
@@ -1111,11 +1111,16 @@ async function enrichConsensusMarkets(holderGroups, nowMs) {
       continue;
     }
 
+    const category = classifyMarketCategory(market || {}, group);
+    // This scanner is intentionally sports-only: exclude politics/government,
+    // crypto, culture, finance, and every other non-sports category.
+    if (category !== "sports" && category !== "esports") continue;
+
     enriched.push({
       ...group,
       title: market?.question || market?.title || group.title,
       slug: market?.slug || group.slug || null,
-      category: classifyMarketCategory(market || {}, group),
+      category,
       endDate,
       marketClosed: false,
       marketMetadataVerified: true
