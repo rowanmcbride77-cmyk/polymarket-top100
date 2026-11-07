@@ -1647,15 +1647,9 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
   const consensusRecordWallets = [...consensusWallets]
     .sort((a,b) => (walletCapital.get(b) || 0) - (walletCapital.get(a) || 0))
     .slice(0, 1000);
-  const recordCandidateMap = new Map(
-    rankingRecordCandidates.map(trader => [String(trader.wallet || "").toLowerCase(), trader])
-  );
-  for (const wallet of consensusRecordWallets) {
-    if (!recordCandidateMap.has(wallet)) {
-      recordCandidateMap.set(wallet, candidateByWallet.get(wallet) || {wallet});
-    }
-  }
-  const recordCandidates = [...recordCandidateMap.values()];
+  // Keep the selected-period ranking record scan at its fixed 1,000-wallet
+  // budget. Consensus-specific historical context is fetched separately below.
+  const recordCandidates = rankingRecordCandidates;
   console.log(`Discovered ${discoveredCandidates.length} ${period.key} candidates; scanning active positions across ${candidates.length} wallets, leaderboard records for ${rankingRecordCandidates.length}, and consensus-holder records for ${consensusWallets.size} (unique record scan: ${recordCandidates.length}).`);
   const records = await attachRecords(recordCandidates, period, nowMs, CLOSED_POSITION_SCAN_LIMIT, fullRecordCache);
   // Consensus holder records are scanned across the complete rolling 7-day window; leaderboard records remain separately capped.
