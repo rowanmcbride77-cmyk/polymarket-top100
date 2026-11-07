@@ -100,14 +100,14 @@ jobs:
               const groups = Array.isArray(parsed.consensus) ? parsed.consensus : [];
               // An empty result is valid when no market has two qualified traders.
               // Publishing an empty, accurate panel is safer than retaining stale/unqualified rows.
-              const minimumResolved = 0; // Match scanner: no extra minimum trade-count rule.
+              const minimumResolved = 5; // Match scanner: at least 5 closed markets in the rolling 7-day record.
               const invalidGroups = groups.filter(group => {
                 const traders = Array.isArray(group.traders) ? group.traders : [];
                 const wallets = new Set(traders.map(row => String(row.wallet || "").toLowerCase()).filter(Boolean));
                 const validationNow = Date.now();
                 const invalidTrader = traders.some(row => {
                   // Every published consensus member must independently pass
-                  // the complete rolling-30-day record and sample-size requirements.
+                  // the complete rolling-7-day record and sample-size requirements.
                   return row.qualified !== true ||
                     row.recordComplete !== true ||
                     !Number.isFinite(Number(row.resolvedMarkets)) ||
@@ -126,14 +126,14 @@ jobs:
                 let endMs = endRaw ? Date.parse(String(endRaw)) : NaN;
                 if (typeof endRaw === "string" && /^\d{4}-\d{2}-\d{2}$/.test(endRaw)) endMs = Date.parse(endRaw + "T23:59:59.999Z");
                 const invalidMarket = group.marketMetadataVerified !== true || group.marketClosed !== false ||
-                  !Number.isFinite(endMs) || endMs <= validationNow || endMs > validationNow + 7 * 24 * 60 * 60 * 1000;
+                  !Number.isFinite(endMs) || endMs <= validationNow || endMs > validationNow + 24 * 60 * 60 * 1000;
                 return invalidMarket || wallets.size < 2 || wallets.size !== traders.length ||
                   group.sameSide !== traders.length || invalidTrader;
               });
               if (invalidGroups.length) {
                 throw new Error(`${file} contains ${invalidGroups.length} consensus groups without at least two distinct, unique wallets`);
               }
-              console.log(`${file}: ${groups.length} copy signals; every member has a distinct wallet, a complete 30-day 90%+ record, and verified open-market metadata`);
+              console.log(`${file}: ${groups.length} copy signals; every member has a distinct wallet, a complete 7-day 90%+ record with at least 5 closes, and verified open-market metadata`);
             }
 
             console.log(`${file}: ${(stat.size / 1024 / 1024).toFixed(2)} MB; valid JSON`);
