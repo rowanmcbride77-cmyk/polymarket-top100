@@ -296,6 +296,18 @@ function cash(value) {
     maximumFractionDigits:Math.abs(n) < 100 ? 2 : 0
   }).format(n);
 }
+function consensusCash(value) {
+  const n = num(value);
+  if (n === null) return "N/A";
+  if (n > 0 && n < 0.01) return "$" + n.toFixed(4);
+  if (n > 0 && n < 1) return "$" + n.toFixed(3);
+  return cash(n);
+}
+function tokenPrice(value) {
+  const n = num(value);
+  if (n === null || n <= 0 || n > 1) return "N/A";
+  return (n * 100).toFixed(2) + "¢";
+}
 
 function nameOf(trader) {
   const raw = String(trader?.name || trader?.username || trader?.userName || "").trim();
@@ -827,14 +839,21 @@ function renderConsensus() {
     const count = traderCount(market);
     const time = marketTime(market);
     const amount = marketAmount(market);
+    const buyPreview = members.slice(0, 3).map(member => {
+      const label = member.name || member.username || member.userName || "Trader";
+      return esc(label + ": " + tokenPrice(member.avgPrice ?? member.averagePrice ?? member.avg_price));
+    }).join(" · ");
+    const buyPreviewHtml = buyPreview
+      ? `<small class="subtitle">Avg. buy: ${buyPreview}${members.length > 3 ? " · +" + (members.length - 3) + " more" : ""}</small>`
+      : "";
 
     const row = `<tr class="click-row" onclick="toggleMarket('${esc(key)}')">
       <td>${index + 1}</td>
-      <td><div class="market-name"><span class="market-symbol">◈</span><span class="market-title">${esc(marketTitle(market))}</span></div></td>
+      <td><div class="market-name"><span class="market-symbol">◈</span><span class="market-title">${esc(marketTitle(market))}</span></div>${buyPreviewHtml}</td>
       <td><span class="${sideClass}">${esc(side)}</span></td>
       <td><strong>${count}</strong><small class="subtitle">${esc(market.signalTier || "Overlap")}</small></td>
       <td><strong>${num(market.consensusScore) ?? "—"}/100</strong></td>
-      <td class="money">${cash(amount)}</td>
+      <td class="money">${consensusCash(amount)}${num(amount) !== null && amount > 0 && amount < 1 ? '<small class="subtitle">Under $1 total entry</small>' : ''}</td>
       <td title="${esc(market._endSeconds ? new Date(market._endSeconds * 1000).toLocaleString() : "Unavailable")}">${esc(timeUntil(market._endSeconds))}</td>
     </tr>`;
 
@@ -855,19 +874,23 @@ function renderConsensus() {
         // The consensus scan is built from live position records. Keep those
         // reported entry fields as a fallback when the separate trade feed
         // omits or delays the corresponding print for a wallet/condition.
-        const memberEntry = num(member.entryValue ?? member.amount), memberValue = num(member.currentValue);
-        const reportedAvgPrice = num(member.avgPrice ?? member.averagePrice ?? member.avg_price);
+        const memberEntryRaw = num(member.entryValue ?? member.amount);
+        const memberEntry = memberEntryRaw !== null && memberEntryRaw > 0 ? memberEntryRaw : null;
+        const memberValue = num(member.currentValue);
+        const reportedAvgPriceRaw = num(member.avgPrice ?? member.averagePrice ?? member.avg_price);
+        const reportedAvgPrice = reportedAvgPriceRaw !== null && reportedAvgPriceRaw > 0 && reportedAvgPriceRaw <= 1 ? reportedAvgPriceRaw : null;
         const hasObservedBuy = !!buy;
-        const buyPrice = buy?._price ?? reportedAvgPrice;
+        const buyPriceRaw = buy?._price ?? reportedAvgPrice;
+        const buyPrice = buyPriceRaw !== null && buyPriceRaw !== undefined && buyPriceRaw > 0 && buyPriceRaw <= 1 ? buyPriceRaw : null;
         const shares = buy?._shares ?? num(member.shares ?? member.size);
-        const bought = buy?._cost ?? (reportedAvgPrice !== null && shares !== null ? reportedAvgPrice * shares : memberEntry);
+        const bought = buy?._cost ?? (reportedAvgPrice !== null && shares !== null && shares > 0 ? reportedAvgPrice * shares : memberEntry);
         const buyTime = buy?.timestamp ?? member.buyTime ?? member.firstEntryAt ?? member.first_entry_at ?? member.lastEventAt;
         const hasReportedEntry = !buy && reportedAvgPrice !== null;
         const sellCost = sell?._cost;
         return '<div class="member member-compact">' +
           '<div class="member-identity"><strong>' + profileButton(member, memberName) + favoriteButton(wallet) + '</strong><small class="member-record">' + "30-day profitable closes: " + (num(member.wins) !== null && num(member.losses) !== null ? num(member.wins).toLocaleString() + "–" + num(member.losses).toLocaleString() + " · " + (num(member.winRate) !== null ? num(member.winRate).toFixed(1) + "% profitable-close rate" : "profitable-close rate N/A") + " · " + (num(member.resolvedMarkets) ?? (num(member.wins)+num(member.losses))).toLocaleString() + " closed positions grouped by market" : "Qualified period record unavailable") + '</small><small>' + (hasObservedBuy ? "Observed BUY · "+esc(dateText(buy?.timestamp)) : "Open position confirmed · original BUY timestamp not required") + '</small><small>' + (sell ? "SELL observed · "+esc(dateText(sell.timestamp)) : (!events ? "Checking later SELL trades…" : (member.isStillHolding === true || String(member.positionStatus || "").toUpperCase() === "OPEN" ? "Still listed as an open position; no SELL required" : "No matching SELL found in returned trade history"))) + '</small></div>' +
-          '<div><strong>' + (buyPrice === null || buyPrice === undefined ? "—" : (buyPrice*100).toFixed(1)+"¢") + '</strong><small>' + (hasObservedBuy ? "Observed buy price" : (reportedAvgPrice !== null ? "Reported position average entry" : "Entry price unavailable")) + '</small><small>' + (bought === null || bought === undefined ? (memberEntry !== null ? "Reported position entry value "+cash(memberEntry)+" · exact trade cost unavailable" : "Entry cost unavailable; no matching BUY trade found") : (hasObservedBuy ? "Observed BUY / position entry "+cash(bought) : "Reported position entry "+cash(bought))+(shares !== null ? " · "+shares.toFixed(1)+" shares" : "")) + '</small>' + (bought !== null && memberValue !== null ? '<small>' + (buy ? "Approx. unrealized change: " : "Approx. change vs estimated entry: ") + (memberValue-bought>0?"+":"") + cash(memberValue-bought) + " (" + (bought>0?((memberValue-bought)/bought*100).toFixed(1):"N/A") + "%)" + '</small>' : "") + '</div>' +
-          '<div><strong>' + (sell && sell._price !== null ? (sell._price*100).toFixed(1)+"¢" : "—") + '</strong><small>Observed sell price</small><small>' + (sell ? "SELL transaction "+(sellCost === null ? "amount unavailable" : cash(sellCost)) : (!events ? "Loading transaction history" : "No matching SELL found")) + '</small><small>' + (memberValue !== null ? "Position value reported "+cash(memberValue) : "Current held value unavailable") + '</small></div>' +
+          '<div><strong>' + (buyPrice === null ? "N/A" : tokenPrice(buyPrice)) + '</strong><small>' + (hasObservedBuy ? "Observed BUY price" : (reportedAvgPrice !== null ? "Average buy price from open position" : "Average buy price unavailable")) + '</small><small>' + (bought === null || bought === undefined ? (memberEntry !== null ? "Reported position entry value "+consensusCash(memberEntry)+" · exact trade cost unavailable" : "Entry cost unavailable; no matching BUY trade found") : (hasObservedBuy ? "Observed BUY / position entry "+consensusCash(bought) : "Reported position entry "+consensusCash(bought))+(shares !== null ? " · "+shares.toFixed(1)+" shares" : "")) + '</small>' + (bought !== null && memberValue !== null ? '<small>' + (buy ? "Approx. unrealized change: " : "Approx. change vs estimated entry: ") + (memberValue-bought>0?"+":"") + consensusCash(memberValue-bought) + " (" + (bought>0?((memberValue-bought)/bought*100).toFixed(1):"N/A") + "%)" + '</small>' : "") + '</div>' +
+          '<div><strong>' + (sell && sell._price !== null ? (sell._price*100).toFixed(1)+"¢" : "—") + '</strong><small>Observed sell price</small><small>' + (sell ? "SELL transaction "+(sellCost === null ? "amount unavailable" : cash(sellCost)) : (!events ? "Loading transaction history" : "No matching SELL found")) + '</small><small>' + (memberValue !== null ? "Position value reported "+consensusCash(memberValue) : "Current held value unavailable") + '</small></div>' +
         '</div>';
       }).join("")}</div>` : `<div class="empty">No trader-level position details were supplied for this market.</div>`}
     </td></tr>` : "";
