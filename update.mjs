@@ -183,7 +183,7 @@ function normalizeLeader(row, index) {
 async function getResolvedRecord(wallet, period, nowMs, maxPositions = RANKING_RECORD_LIMIT) {
   if (!wallet) return null;
 
-  // Consensus eligibility uses the selected rolling 30-day period. Capped or incomplete samples are withheld.
+  // Consensus eligibility uses the selected rolling 7-day period. Capped or incomplete samples are withheld.
   const periodKey = String(period?.api || period?.key || period || "").toUpperCase();
   const allTime = periodKey === "ALL" || periodKey === "ALL_TIME" || periodKey === "ALLTIME";
   const periodDays = periodKey === "MONTH" ? 30 : 7;
@@ -1028,7 +1028,7 @@ function classifyMarketCategory(market, group = {}) {
 }
 async function enrichConsensusMarkets(holderGroups, nowMs) {
   // Position records can carry stale/missing end dates. Resolve condition IDs
-  // through Gamma before applying the 30-day UI window; keep undated active
+  // through Gamma before applying the strict 24-hour resolution window; keep undated active
   // markets visible rather than silently deleting the entire consensus panel.
   // Enrich every discovered same-side group; do not cap the market list
   // or let a popular category crowd other categories out.
@@ -1226,12 +1226,12 @@ function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedM
         qualified: isQualified,
         recordBasis: record.recordComplete === true
           ? "Rolling 7-day realized profitable-close proxy; displayed as context, not a guarantee"
-          : "Rolling 30-day record incomplete or unavailable; historical performance is unknown"
+          : "Rolling 7-day record incomplete or unavailable; historical performance is unknown"
       };
     }).filter(trader => trader.qualified);
 
     // A consensus market is valid when at least two distinct holders
-    // independently have a complete 30-day record and a 90%+ win rate.
+    // independently have a complete 7-day record, at least 5 closed markets, and a 90%+ profitable-close rate.
     if (traders.length < 2) continue;
     groupsWithTwoQualified++;
     qualifiedGroups.push({
@@ -1266,7 +1266,7 @@ function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedM
     publishedGroups: result.length,
     minimumWinRate: MIN_CONSENSUS_WIN_RATE,
     minimumResolvedMarkets,
-    qualificationWindowDays: 30
+    qualificationWindowDays: 7
   }));
   return result;
 }
@@ -1640,7 +1640,7 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
   const recordCandidates = [...recordCandidateMap.values()];
   console.log(`Discovered ${discoveredCandidates.length} ${period.key} candidates; scanning active positions across ${candidates.length} wallets, leaderboard records for ${rankingRecordCandidates.length}, and consensus-holder records for ${consensusWallets.size} (unique record scan: ${recordCandidates.length}).`);
   const records = await attachRecords(recordCandidates, period, nowMs, CLOSED_POSITION_SCAN_LIMIT, fullRecordCache);
-  // Consensus holder records are scanned across the complete rolling 30-day window; leaderboard records remain separately capped.
+  // Consensus holder records are scanned across the complete rolling 7-day window; leaderboard records remain separately capped.
   const consensusRecordCandidates = [...consensusWallets].map(wallet =>
     candidateByWallet.get(wallet) || {wallet}
   );
@@ -1651,7 +1651,7 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     null,
     fullRecordCache
   );
-  console.log(period.key + ": loaded full available rolling 30-day closed-position history for " +
+  console.log(period.key + ": loaded full available rolling 7-day closed-position history for " +
     consensusRecordCandidates.length + " consensus holders; history is displayed, not used as a publication gate.");
   console.log(`${period.key}: verifying settlement outcomes for the top ${rankingRecordCandidates.length} wallets...`);
   const ranked = rankCandidates(candidates, records);
