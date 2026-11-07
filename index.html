@@ -477,7 +477,7 @@ function consensus() {
 async function loadConsensusData() {
   const pool = $("consensusPool").value;
   $("consensusBody").innerHTML = `<tr><td colspan="7" class="loading">Loading ${esc(pool)} consensus markets…</td></tr>`;
-  $("consensusPeriod").textContent = "Sports & esports only · closes within 24 hours · 2+ same-side holders · 90%+ 7-day record";
+  $("consensusPeriod").textContent = "All categories · closes within 24 hours · 2+ same-side holders · 90%+ 7-day record";
   const filename = CONSENSUS_FILES[pool];
   try {
     const urls = [
@@ -498,7 +498,7 @@ async function loadConsensusData() {
     candidates.sort((a, b) => (Date.parse(b.generatedAt || "") || 0) - (Date.parse(a.generatedAt || "") || 0));
     consensusData = candidates[0];
     renderConsensus();
-    $("consensusPeriod").textContent = (consensusData.consensus.length || 0) + " sports/esports markets loaded · closes within 24 hours · 2+ same-side traders · 90%+ 7-day record";
+    $("consensusPeriod").textContent = (consensusData.consensus.length || 0) + " markets loaded · all categories · closes within 24 hours · 2+ same-side traders · 90%+ 7-day record";
   } catch (error) {
     consensusData = {consensus:[]};
     $("consensusBody").innerHTML = `<tr><td colspan="7" class="empty">${esc(error.message)}</td></tr>`;
@@ -820,8 +820,6 @@ function renderConsensus() {
       market._endSeconds <= cutoffSeconds &&
       traderCount(market) >= minCount)
     .sort((a, b) =>
-      (String(b.category || "").toLowerCase() === "sports" ? 1 : 0) -
-      (String(a.category || "").toLowerCase() === "sports" ? 1 : 0) ||
       a._endSeconds - b._endSeconds ||
       traderCount(b) - traderCount(a) ||
       (marketAmount(b) ?? -1) - (marketAmount(a) ?? -1));
