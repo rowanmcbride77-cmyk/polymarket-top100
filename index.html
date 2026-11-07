@@ -211,8 +211,8 @@ dialog::backdrop{background:#000b}
           <label>Market window
             <select id="recency" onchange="renderConsensus()">
               <option value="24h">Next 24 hours</option>
-              <option value="3d">Next 3 days</option>
-              <option value="7d" selected>Next 7 days</option>
+              
+              
             </select>
           </label>
         </div>
@@ -477,7 +477,7 @@ function consensus() {
 async function loadConsensusData() {
   const pool = $("consensusPool").value;
   $("consensusBody").innerHTML = `<tr><td colspan="7" class="loading">Loading ${esc(pool)} consensus markets…</td></tr>`;
-  $("consensusPeriod").textContent = "2+ same-side holders · 90%+ 30-day record · open market";
+  $("consensusPeriod").textContent = "Sports & esports only · closes within 24 hours · 2+ same-side holders · 90%+ 30-day record";
   const filename = CONSENSUS_FILES[pool];
   try {
     const urls = [
@@ -498,7 +498,7 @@ async function loadConsensusData() {
     candidates.sort((a, b) => (Date.parse(b.generatedAt || "") || 0) - (Date.parse(a.generatedAt || "") || 0));
     consensusData = candidates[0];
     renderConsensus();
-    $("consensusPeriod").textContent = (consensusData.consensus.length || 0) + " markets loaded · 2+ same-side traders · 90%+ 30-day record";
+    $("consensusPeriod").textContent = (consensusData.consensus.length || 0) + " sports/esports markets loaded · closes within 24 hours · 2+ same-side traders · 90%+ 30-day record";
   } catch (error) {
     consensusData = {consensus:[]};
     $("consensusBody").innerHTML = `<tr><td colspan="7" class="empty">${esc(error.message)}</td></tr>`;
@@ -806,8 +806,7 @@ async function loadConsensusTradeHistory(wallet, conditionId, outcome) {
 function renderConsensus() {
   const minCount = Number($("minTraders").value || 2);
   const nowSeconds = Date.now() / 1000;
-  const windowValue = $("recency").value || "7d";
-  const windowHours = windowValue === "24h" ? 24 : windowValue === "3d" ? 72 : 168;
+  const windowHours = 24; // Consensus Markets are always limited to the next 24 hours.
   const cutoffSeconds = nowSeconds + windowHours * 60 * 60;
   const filtered = consensus().map((market, index) => {
       const endSeconds = marketEndTimestamp(market);
