@@ -12,6 +12,7 @@ const PERIODS = [
 // verification remains separately bounded so the scheduled workflow can finish.
 const MIN_CONSENSUS_WIN_RATE = 90;
 // [run-scanner] Publish only multi-trader consensus where every holder passes the strict quality gate.
+// [run-scanner] Expand candidate discovery and live-position overlap scan to 10,000 wallets.
 const LEADER_COUNT = 100;
 const PAGE_SIZE = 50;
 const MAX_CANDIDATES_PER_PERIOD = 10000;
