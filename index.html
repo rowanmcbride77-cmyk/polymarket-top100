@@ -808,8 +808,12 @@ function renderConsensus() {
       market._endSeconds > nowSeconds &&
       market._endSeconds <= cutoffSeconds &&
       traderCount(market) >= minCount)
-    .sort((a, b) => a._endSeconds - b._endSeconds ||
-      traderCount(b) - traderCount(a) || (marketAmount(b) ?? -1) - (marketAmount(a) ?? -1));
+    .sort((a, b) =>
+      (String(b.category || "").toLowerCase() === "sports" ? 1 : 0) -
+      (String(a.category || "").toLowerCase() === "sports" ? 1 : 0) ||
+      a._endSeconds - b._endSeconds ||
+      traderCount(b) - traderCount(a) ||
+      (marketAmount(b) ?? -1) - (marketAmount(a) ?? -1));
 
   const visible = allMarkets ? filtered : filtered.slice(0, 15);
 
