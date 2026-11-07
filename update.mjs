@@ -14,8 +14,8 @@ const MIN_CONSENSUS_WIN_RATE = 90;
 // [run-scanner] Publish only multi-trader consensus where every holder passes the strict quality gate.
 const LEADER_COUNT = 100;
 const PAGE_SIZE = 50;
-const MAX_CANDIDATES_PER_PERIOD = 5500;
-const CANDIDATE_QUOTA_PER_CATEGORY = 500;
+const MAX_CANDIDATES_PER_PERIOD = 10000;
+const CANDIDATE_QUOTA_PER_CATEGORY = 1000;
 const MAX_LEADERBOARD_PAGES_PER_STREAM = 20;
 const POSITION_FETCH_LIMIT = 100;
 const POSITIONS_PER_TRADER = 10;
@@ -23,9 +23,9 @@ const RANKING_RECORD_LIMIT = 1000;
 // Bound closed-position history requests. Records that hit this cap are marked
 // incomplete and withheld rather than presented as complete win/loss stats.
 const CLOSED_POSITION_SCAN_LIMIT = 250;
-// Discover shared holdings across the full 5,000-wallet candidate pool.
+// Discover shared holdings across the full 10,000-wallet candidate pool.
 // Four position pages per wallet keeps the scan bounded while widening coverage.
-const CONSENSUS_WALLET_LIMIT = 5500;
+const CONSENSUS_WALLET_LIMIT = 10000;
 const MAX_CONSENSUS_POSITION_PAGES_PER_WALLET = 4;
 const LEADER_RECORD_LIMIT = RANKING_RECORD_LIMIT;
 // Keep upcoming markets in the data so the UI can filter 24h / 3d / 7d accurately.
@@ -396,7 +396,7 @@ async function getCandidates(period) {
     console.log(`Candidate discovery: ${category} complete; ${byWallet.size.toLocaleString()} unique wallets accumulated.`);
   }
   const candidates=[...byWallet.values()];
-  console.log(`${period.key}: discovered ${candidates.length.toLocaleString()} unique traders across ${pagesFetched.toLocaleString()} public leaderboard pages; no 10,000-wallet cap.`);
+  console.log(`${period.key}: discovered ${candidates.length.toLocaleString()} unique traders across ${pagesFetched.toLocaleString()} public leaderboard pages; discovery cap is ${MAX_CANDIDATES_PER_PERIOD.toLocaleString()} wallets.`);
   if(!candidates.length)throw new Error(`${period.key}: public leaderboard discovery returned no trader wallets.`);
   return candidates;
 }
