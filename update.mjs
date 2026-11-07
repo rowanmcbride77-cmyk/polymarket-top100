@@ -15,8 +15,8 @@ const MIN_CONSENSUS_WIN_RATE = 90;
 // [run-scanner] Expand candidate discovery and live-position overlap scan to 10,000 wallets.
 const LEADER_COUNT = 100;
 const PAGE_SIZE = 50;
-const MAX_CANDIDATES_PER_PERIOD = 10000;
-const CANDIDATE_QUOTA_PER_CATEGORY = 1000;
+const MAX_CANDIDATES_PER_PERIOD = 5500;
+const CANDIDATE_QUOTA_PER_CATEGORY = 500;
 const MAX_LEADERBOARD_PAGES_PER_STREAM = 20;
 const POSITION_FETCH_LIMIT = 100;
 const POSITIONS_PER_TRADER = 10;
@@ -24,9 +24,9 @@ const RANKING_RECORD_LIMIT = 1000;
 // Bound closed-position history requests. Records that hit this cap are marked
 // incomplete and withheld rather than presented as complete win/loss stats.
 const CLOSED_POSITION_SCAN_LIMIT = 250;
-// Discover shared holdings across the full 10,000-wallet candidate pool.
+// Discover shared holdings across the full 5,500-wallet candidate pool.
 // Four position pages per wallet keeps the scan bounded while widening coverage.
-const CONSENSUS_WALLET_LIMIT = 10000;
+const CONSENSUS_WALLET_LIMIT = 5500;
 const MAX_CONSENSUS_POSITION_PAGES_PER_WALLET = 4;
 const LEADER_RECORD_LIMIT = RANKING_RECORD_LIMIT;
 // Keep upcoming markets in the data so the UI can filter 24h / 3d / 7d accurately.
@@ -999,7 +999,7 @@ async function getBroadConsensusMarkets(knownTraders, nowMs, activePositions) {
     walletsWithMorePositions,
     sameSideGroups: holderGroups.length,
     pageCapPerWallet: MAX_CONSENSUS_POSITION_PAGES_PER_WALLET,
-    note: "Open-position discovery scans up to 4 pages (400 positions) for each of up to 5,000 wallets. Published groups require 2+ distinct same-side holders, verified entry prices and positions of at least $10 per holder, any verified category, and a maximum 24-hour market end window. Historical 7-day performance is shown as a quality indicator, not a publication gate."
+    note: "Open-position discovery scans up to 4 pages (400 positions) for each of up to 5,500 wallets. Published groups require 2+ distinct same-side holders, verified entry prices and positions of at least $10 per holder, any verified category, and a maximum 24-hour market end window. Historical 7-day performance is shown as a quality indicator, not a publication gate."
   };
   console.log("Consensus scan diagnostics: " + JSON.stringify(lastConsensusDiagnostics));
   const activePositionsByWallet = Object.fromEntries(consensusPositions.map(([wallet, positions]) => [wallet, positions]));
