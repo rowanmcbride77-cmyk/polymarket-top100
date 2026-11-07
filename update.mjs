@@ -692,11 +692,16 @@ async function getMarketConsensus(market, knownNames) {
     group.walletsSeen.add(wallet);
     group.sameSide++;
     const currentValue = num(position.currentValue ?? position.current_value ?? value) ?? value;
-    const avgPrice = num(position.avgPrice ?? position.avg_price ?? position.averagePrice ?? position.average_price);
-    const shares = num(position.size ?? position.shares ?? position.balance);
-    // Derive cost basis from average entry price × shares first. Some API
-    // initialValue fields have incompatible semantics and can inflate totals.
-    const entryValue = (avgPrice !== null && shares !== null && avgPrice >= 0 && shares >= 0)
+    const shares = num(position.size ?? position.current_size ?? position.currentSize ?? position.shares ?? position.balance);
+    const directAvgPrice = num(position.avgPrice ?? position.avg_price ?? position.averagePrice ?? position.average_price);
+    const explicitEntryCost = num(position.entry_cost_usdc ?? position.total_cost_usdc);
+    const avgPrice = directAvgPrice ?? (
+      explicitEntryCost !== null && shares !== null && shares > 0
+        ? explicitEntryCost / shares
+        : null
+    );
+    // Only use an explicit USDC cost basis when the API omits average price.
+    const entryValue = (avgPrice !== null && shares !== null && avgPrice > 0 && shares > 0)
       ? avgPrice * shares
       : null;
     group.totalValue += currentValue;
