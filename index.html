@@ -188,7 +188,7 @@ dialog::backdrop{background:#000b}
       <section class="panel">
         <div class="panel-heading">
           <div class="heading-left"><span class="heading-icon">👥</span><h2>Consensus Markets</h2></div>
-          <span class="pill" id="consensusPeriod" title="Open same-side holdings; 30-day profitable-close history is a proxy, not verified settlement wins.">30-day records · open holdings</span>
+          <span class="pill" id="consensusPeriod" title="Open same-side holdings; 7-day profitable-close history is a proxy, not verified settlement wins.">7-day records · open holdings</span>
         </div>
         
         <div class="filters">
@@ -477,7 +477,7 @@ function consensus() {
 async function loadConsensusData() {
   const pool = $("consensusPool").value;
   $("consensusBody").innerHTML = `<tr><td colspan="7" class="loading">Loading ${esc(pool)} consensus markets…</td></tr>`;
-  $("consensusPeriod").textContent = "Sports & esports only · closes within 24 hours · 2+ same-side holders · 90%+ 30-day record";
+  $("consensusPeriod").textContent = "Sports & esports only · closes within 24 hours · 2+ same-side holders · 90%+ 7-day record";
   const filename = CONSENSUS_FILES[pool];
   try {
     const urls = [
@@ -498,7 +498,7 @@ async function loadConsensusData() {
     candidates.sort((a, b) => (Date.parse(b.generatedAt || "") || 0) - (Date.parse(a.generatedAt || "") || 0));
     consensusData = candidates[0];
     renderConsensus();
-    $("consensusPeriod").textContent = (consensusData.consensus.length || 0) + " sports/esports markets loaded · closes within 24 hours · 2+ same-side traders · 90%+ 30-day record";
+    $("consensusPeriod").textContent = (consensusData.consensus.length || 0) + " sports/esports markets loaded · closes within 24 hours · 2+ same-side traders · 90%+ 7-day record";
   } catch (error) {
     consensusData = {consensus:[]};
     $("consensusBody").innerHTML = `<tr><td colspan="7" class="empty">${esc(error.message)}</td></tr>`;
