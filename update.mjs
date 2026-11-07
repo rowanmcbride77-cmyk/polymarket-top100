@@ -995,7 +995,7 @@ async function getBroadConsensusMarkets(knownTraders, nowMs, activePositions) {
     walletsWithMorePositions,
     sameSideGroups: holderGroups.length,
     pageCapPerWallet: MAX_CONSENSUS_POSITION_PAGES_PER_WALLET,
-    note: "Open-position discovery scans up to 4 pages (400 positions) for each of up to 5,000 wallets. Any positive active holding counts; no minimum entry size or recent BUY requirement. Published groups require 2+ same-side holders and a complete 7-day record at 90%+."
+    note: "Open-position discovery scans up to 4 pages (400 positions) for each of up to 5,000 wallets. Any positive active holding counts; no minimum entry size or recent BUY requirement. Published groups require 2+ same-side holders, any verified category, a maximum 24-hour market end window, and a complete 7-day record at 90%+ with at least 5 closes."
   };
   console.log("Consensus scan diagnostics: " + JSON.stringify(lastConsensusDiagnostics));
   const activePositionsByWallet = Object.fromEntries(consensusPositions.map(([wallet, positions]) => [wallet, positions]));
@@ -1112,9 +1112,8 @@ async function enrichConsensusMarkets(holderGroups, nowMs) {
     }
 
     const category = classifyMarketCategory(market || {}, group);
-    // This scanner is intentionally sports-only: exclude politics/government,
-    // crypto, culture, finance, and every other non-sports category.
-    if (category !== "sports" && category !== "esports") continue;
+    // Keep every verified category. Category filtering belongs in presentation,
+    // never in discovery; the 24-hour window and trader-quality gates remain strict.
 
     enriched.push({
       ...group,
