@@ -12,11 +12,11 @@ const PERIODS = [
 // verification remains separately bounded so the scheduled workflow can finish.
 const MIN_CONSENSUS_WIN_RATE = 90;
 // [run-scanner] Publish only multi-trader consensus where every holder passes the strict quality gate.
-// [run-scanner] Expand candidate discovery and live-position overlap scan to 10,000 wallets.
+// [run-scanner] Expand candidate discovery and live-position overlap scan to 8,000 wallets.
 const LEADER_COUNT = 100;
 const PAGE_SIZE = 50;
-const MAX_CANDIDATES_PER_PERIOD = 5500;
-const CANDIDATE_QUOTA_PER_CATEGORY = 500;
+const MAX_CANDIDATES_PER_PERIOD = 8000;
+const CANDIDATE_QUOTA_PER_CATEGORY = 750;
 const MAX_LEADERBOARD_PAGES_PER_STREAM = 20;
 const POSITION_FETCH_LIMIT = 100;
 const POSITIONS_PER_TRADER = 10;
@@ -24,9 +24,9 @@ const RANKING_RECORD_LIMIT = 1000;
 // Bound closed-position history requests. Records that hit this cap are marked
 // incomplete and withheld rather than presented as complete win/loss stats.
 const CLOSED_POSITION_SCAN_LIMIT = 250;
-// Discover shared holdings across the full 5,500-wallet candidate pool.
+// Discover shared holdings across the full 8,000-wallet candidate pool.
 // Four position pages per wallet keeps the scan bounded while widening coverage.
-const CONSENSUS_WALLET_LIMIT = 5500;
+const CONSENSUS_WALLET_LIMIT = 8000;
 const MAX_CONSENSUS_POSITION_PAGES_PER_WALLET = 4;
 const LEADER_RECORD_LIMIT = RANKING_RECORD_LIMIT;
 // Keep upcoming markets in the data so the UI can filter 24h / 3d / 7d accurately.
@@ -350,7 +350,7 @@ async function mapLimit(items, limit, callback) {
 
 async function getCandidates(period) {
   const byWallet = new Map();
-  const categories = ["overall","sports","politics","crypto","esports","culture","mentions","weather","economics","tech","finance"];
+  const categories = ["overall","sports","crypto","esports","politics","culture","mentions","weather","economics","tech","finance"];
   const timePeriods = [...new Set([period.api,"DAY","WEEK","MONTH","ALL"])];
   let pagesFetched = 0;
   for (const category of categories) {
@@ -974,20 +974,11 @@ async function getBroadConsensusMarkets(knownTraders, nowMs, activePositions) {
     }
   }
 
-  // A market is only a directional consensus when 2+ traders agree on
-  // exactly one outcome. If both YES and NO have 2+ holders, the market is
-  // contradictory and must be excluded entirely (not shown as two rows).
-  const qualifyingSidesByCondition = new Map();
-  for (const group of groups.values()) {
-    if (group.sameSide < 2) continue;
-    qualifyingSidesByCondition.set(
-      group.conditionId,
-      (qualifyingSidesByCondition.get(group.conditionId) || 0) + 1
-    );
-  }
+  // Evaluate each outcome independently. A Yes consensus is not cancelled
+  // by traders holding No; if both sides independently have 2+ holders, show
+  // both directional groups transparently rather than silently dropping both.
   const holderGroups = [...groups.values()]
     .filter(group => group.sameSide >= 2)
-    .filter(group => qualifyingSidesByCondition.get(group.conditionId) === 1)
     .map(({ walletsSeen, ...group }) => group)
     .sort((a, b) => b.sameSide - a.sameSide || b.totalValue - a.totalValue || (b.newestBuy || 0) - (a.newestBuy || 0));
 
@@ -999,7 +990,7 @@ async function getBroadConsensusMarkets(knownTraders, nowMs, activePositions) {
     walletsWithMorePositions,
     sameSideGroups: holderGroups.length,
     pageCapPerWallet: MAX_CONSENSUS_POSITION_PAGES_PER_WALLET,
-    note: "Open-position discovery scans up to 4 pages (400 positions) for each of up to 5,500 wallets. Published groups require 2+ distinct same-side holders, verified entry prices and positions of at least $10 per holder, any verified category, and a maximum 24-hour market end window. Historical 7-day performance is shown as a quality indicator, not a publication gate."
+    note: "Open-position discovery scans up to 4 pages (400 positions) for each of up to 8,000 wallets. Each outcome is evaluated independently: an opposing-side holder does not cancel a 2+ same-side group. Published groups require 2+ distinct same-side holders, verified entry prices and positions of at least $10 per holder, any verified category, and a maximum 24-hour market end window."
   };
   console.log("Consensus scan diagnostics: " + JSON.stringify(lastConsensusDiagnostics));
   const activePositionsByWallet = Object.fromEntries(consensusPositions.map(([wallet, positions]) => [wallet, positions]));
