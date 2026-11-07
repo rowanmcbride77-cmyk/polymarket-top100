@@ -517,6 +517,7 @@ function compactPosition(position) {
     tags: Array.isArray(position.tags) ? position.tags : [],
     outcome: position.outcome ?? position.outcome_name ?? null,
     size: num(position.current_size ?? position.currentSize ?? position.size),
+    avgPrice: num(position.avg_price ?? position.avgPrice ?? position.averagePrice ?? position.average_price),
     currentPrice: num(position.current_price ?? position.currentPrice ?? position.curPrice ?? position.cur_price),
     currentValue: num(position.current_value ?? position.currentValue) ??
       (() => {
@@ -804,7 +805,9 @@ function hasExpiredEndDate(market, nowMs) {
 
 function isLiveConsensusPosition(position) {
   const size = num(position.size ?? position.current_size ?? position.currentSize);
+  const currentValue = num(position.current_value ?? position.currentValue);
   if (size === null || size <= 0) return false;
+  if (currentValue === null || currentValue < MIN_CONSENSUS_POSITION_VALUE) return false;
   if (position.closed === true || position.redeemable === true || position.mergeable === true) return false;
   const status = String(position.status ?? "").toUpperCase();
   return !status || status === "OPEN" || status === "ACTIVE";
@@ -1158,17 +1161,26 @@ function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedM
         : num(record.winRate);
       // Require a complete rolling-30-day profitable-close record at 90%+.
       // No extra minimum number of closed markets is imposed.
+      const entryPrice = num(holder.avgPrice);
+      const entryShares = num(holder.size ?? holder.shares);
+      const entryCost = num(holder.entryValue);
+      const hasVerifiedEntryPrice =
+        entryPrice !== null && entryPrice > 0 && entryPrice <= 1 &&
+        entryShares !== null && entryShares > 0 &&
+        entryCost !== null && entryCost > 0;
       const isQualified =
         record.recordComplete === true &&
         resolvedMarkets !== null &&
         resolvedMarkets >= minimumResolvedMarkets &&
         winRate !== null &&
-        winRate >= MIN_CONSENSUS_WIN_RATE;
+        winRate >= MIN_CONSENSUS_WIN_RATE &&
+        hasVerifiedEntryPrice;
 
       qualificationDiagnostics.holdersEvaluated++;
       if (record.recordComplete !== true) qualificationDiagnostics.incompleteRecord++;
       if (resolvedMarkets === null || resolvedMarkets < minimumResolvedMarkets) qualificationDiagnostics.fewerThanMinimumCloses++;
       if (winRate === null || winRate < MIN_CONSENSUS_WIN_RATE) qualificationDiagnostics.belowMinimumWinRate++;
+      if (!hasVerifiedEntryPrice) qualificationDiagnostics.missingEntryPrice = (qualificationDiagnostics.missingEntryPrice || 0) + 1;
       if (isQualified) qualificationDiagnostics.qualifiedHolders++;
       qualificationDiagnostics.recordSamples.push({
         resolvedMarkets,
@@ -1209,7 +1221,10 @@ function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedM
       qualifiedTraders: traders.length,
       // Combined Value is the current mark-to-market value, not historical entry cost.
       totalValue: traders.reduce((sum, trader) => sum + (num(trader.currentValue) ?? 0), 0),
-      totalEntry: traders.reduce((sum, trader) => sum + (num(trader.entryValue ?? trader.amount) ?? 0), 0)
+      totalEntry: traders.every(trader => {
+        const entry = num(trader.entryValue);
+        return entry !== null && entry > 0;
+      }) ? traders.reduce((sum, trader) => sum + num(trader.entryValue), 0) : null
     });
   }
 
