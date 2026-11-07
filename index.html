@@ -187,7 +187,7 @@ dialog::backdrop{background:#000b}
     <div class="column">
       <section class="panel">
         <div class="panel-heading">
-          <div class="heading-left"><span class="heading-icon">👥</span><h2>Copy Signals</h2></div>
+          <div class="heading-left"><span class="heading-icon">👥</span><h2>Consensus Markets</h2></div>
           <span class="pill" id="consensusPeriod" title="Open same-side holdings; 30-day profitable-close history is a proxy, not verified settlement wins.">30-day records · open holdings</span>
         </div>
         
@@ -218,8 +218,8 @@ dialog::backdrop{background:#000b}
         </div>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>#</th><th>Market</th><th>Side</th><th>Traders</th><th title="Heuristic ranking: 50% number of traders, 30% average profitable-close rate, 20% record sample size. Not a probability of winning.">Consensus strength</th><th>Combined Value</th><th>Resolves</th></tr></thead>
-            <tbody id="consensusBody"><tr><td colspan="7" class="loading">Loading copy signals…</td></tr></tbody>
+            <thead><tr><th>#</th><th>Market</th><th>Side</th><th>Traders</th><th title="Heuristic ranking: 50% number of traders, 30% average profitable-close rate, 20% record sample size. Not a probability of winning.">Consensus strength</th><th>Combined Entry</th><th>Resolves</th></tr></thead>
+            <tbody id="consensusBody"><tr><td colspan="7" class="loading">Loading consensus markets…</td></tr></tbody>
           </table>
         </div>
         <button class="link-button" id="consensusMore" onclick="toggleConsensus()">View all consensus markets →</button>
@@ -464,7 +464,7 @@ function consensus() {
 
 async function loadConsensusData() {
   const pool = $("consensusPool").value;
-  $("consensusBody").innerHTML = `<tr><td colspan="7" class="loading">Loading ${esc(pool)} copy signals…</td></tr>`;
+  $("consensusBody").innerHTML = `<tr><td colspan="7" class="loading">Loading ${esc(pool)} consensus markets…</td></tr>`;
   $("consensusPeriod").textContent = "2+ same-side holders · 90%+ 30-day record · open market";
   const filename = CONSENSUS_FILES[pool];
   try {
@@ -508,7 +508,8 @@ function marketSide(market) {
 }
 
 function marketAmount(market) {
-  return num(market?.totalValue ?? market?.totalEntry ?? market?.totalAmount ?? market?.amount ?? market?.volume) ?? 0;
+  const entry = num(market?.totalEntry);
+  return entry !== null && entry > 0 ? entry : null;
 }
 
 function marketTime(market) {
@@ -808,7 +809,7 @@ function renderConsensus() {
       market._endSeconds <= cutoffSeconds &&
       traderCount(market) >= minCount)
     .sort((a, b) => a._endSeconds - b._endSeconds ||
-      traderCount(b) - traderCount(a) || marketAmount(b) - marketAmount(a));
+      traderCount(b) - traderCount(a) || (marketAmount(b) ?? -1) - (marketAmount(a) ?? -1));
 
   const visible = allMarkets ? filtered : filtered.slice(0, 15);
 
@@ -1499,7 +1500,7 @@ async function loadData(forceReload = false) {
   loading = true;
   $("errorBox").innerHTML = "";
   $("leadersBody").innerHTML = `<tr><td colspan="6" class="loading">Loading traders…</td></tr>`;
-  $("consensusBody").innerHTML = `<tr><td colspan="7" class="loading">Loading copy signals…</td></tr>`;
+  $("consensusBody").innerHTML = `<tr><td colspan="7" class="loading">Loading consensus markets…</td></tr>`;
   $("comboList").innerHTML = `<div class="loading">Loading actual combo positions…</div>`;
 
   try {
