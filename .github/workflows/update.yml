@@ -20,9 +20,9 @@ permissions:
   contents: write
 
 concurrency:
-  group: polymarket-scanner-update-v5
-  cancel-in-progress: false
-  queue: max
+  # A new code push replaces an obsolete scan instead of waiting behind it.
+  group: polymarket-scanner-update-v6
+  cancel-in-progress: true
 
 jobs:
   update:
@@ -152,6 +152,32 @@ jobs:
           cp consensus-week.json /tmp/scanner-consensus-week.json
           cp consensus-month.json /tmp/scanner-consensus-month.json
           git fetch origin main
+
+          # Never let an older, slower scan overwrite a newer published result.
+          FRESHNESS="$(node --input-type=module <<'NODE'
+          import fs from "node:fs/promises";
+          import { execFileSync } from "node:child_process";
+
+          const generated = JSON.parse(await fs.readFile("/tmp/scanner-consensus-week.json", "utf8"));
+          const publishedText = execFileSync("git", ["show", "origin/main:consensus-week.json"], {encoding: "utf8"});
+          const published = JSON.parse(publishedText);
+          const generatedAt = Date.parse(generated.generatedAt || "");
+          const publishedAt = Date.parse(published.generatedAt || "");
+          if (!Number.isFinite(generatedAt) || !Number.isFinite(publishedAt)) {
+            throw new Error("Could not compare consensus publication timestamps.");
+          }
+          console.log(publishedAt >= generatedAt ? "stale" : "fresh");
+          NODE
+          )"
+          if [ "$FRESHNESS" = "stale" ]; then
+            echo "Skipping stale scanner data; a newer or equal consensus result is already published."
+            exit 0
+          fi
+          if [ "$FRESHNESS" != "fresh" ]; then
+            echo "Could not verify scanner data freshness." >&2
+            exit 1
+          fi
+
           git reset --hard origin/main
           cp /tmp/scanner-week.json week.json
           cp /tmp/scanner-month.json month.json
