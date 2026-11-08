@@ -26,9 +26,9 @@ const RANKING_RECORD_LIMIT = 1000;
 // Bound closed-position history requests. Records that hit this cap are marked
 // incomplete and withheld rather than presented as complete win/loss stats.
 const CLOSED_POSITION_SCAN_LIMIT = 250;
-// Discover shared holdings across a 10,000-wallet candidate pool.
+// Keep the hourly live-position scan to 2,500 balanced wallets; the broader 10,000-wallet leaderboard discovery remains intact.
 // One page (100 positions) per regular wallet and two (200) per sports wallet to bound runtime.
-const CONSENSUS_WALLET_LIMIT = 10000;
+const CONSENSUS_WALLET_LIMIT = 2500;
 const MAX_CONSENSUS_POSITION_PAGES_PER_WALLET = 1;
 const MAX_SPORTS_CONSENSUS_POSITION_PAGES_PER_WALLET = 2;
 const LEADER_RECORD_LIMIT = RANKING_RECORD_LIMIT;
@@ -1894,8 +1894,40 @@ async function main() {
 
   console.log(`Loading positions for ${unique.size} unique traders...`);
   const fullRecordCache = new Map();
-  const consensusCandidatePool = [...unique.values()].slice(0, CONSENSUS_WALLET_LIMIT);
-  console.log(`Consensus scan bounded to ${consensusCandidatePool.length.toLocaleString()} unique wallets per update to keep the scheduled job within runtime limits.`);
+  // Select a balanced cross-category sample instead of taking the first N wallets,
+  // which would overrepresent sports because discovery intentionally starts there.
+  const categoryOrder = ["sports","crypto","esports","overall","politics","culture","mentions","weather","economics","tech","finance"];
+  const categoryBuckets = new Map(categoryOrder.map(category => [
+    category,
+    [...unique.values()].filter(trader => Array.isArray(trader.sourceCategories) && trader.sourceCategories.includes(category))
+  ]));
+  const consensusCandidatePool = [];
+  const selectedConsensusWallets = new Set();
+  for (let offset = 0; consensusCandidatePool.length < CONSENSUS_WALLET_LIMIT; offset++) {
+    let addedThisRound = false;
+    for (const category of categoryOrder) {
+      const trader = categoryBuckets.get(category)?.[offset];
+      if (!trader) continue;
+      const wallet = String(trader.wallet || "").toLowerCase();
+      if (!wallet || selectedConsensusWallets.has(wallet)) continue;
+      selectedConsensusWallets.add(wallet);
+      consensusCandidatePool.push(trader);
+      addedThisRound = true;
+      if (consensusCandidatePool.length >= CONSENSUS_WALLET_LIMIT) break;
+    }
+    if (!addedThisRound) break;
+  }
+  // Fill any remaining slots from the full candidate pool if category metadata is absent.
+  if (consensusCandidatePool.length < CONSENSUS_WALLET_LIMIT) {
+    for (const trader of unique.values()) {
+      const wallet = String(trader.wallet || "").toLowerCase();
+      if (!wallet || selectedConsensusWallets.has(wallet)) continue;
+      selectedConsensusWallets.add(wallet);
+      consensusCandidatePool.push(trader);
+      if (consensusCandidatePool.length >= CONSENSUS_WALLET_LIMIT) break;
+    }
+  }
+  console.log(`Consensus scan bounded to ${consensusCandidatePool.length.toLocaleString()} balanced wallets across sports, crypto, esports, politics and other categories; leaderboard discovery still covers up to ${unique.size.toLocaleString()} unique wallets.`);
   const consensusScan = await getBroadConsensusMarkets(consensusCandidatePool, nowMs, {});
   const activePositions = consensusScan.activePositionsByWallet;
   const consensusGroups = await enrichConsensusMarkets(consensusScan.holderGroups, nowMs);
