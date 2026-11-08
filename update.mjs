@@ -11,10 +11,11 @@ const PERIODS = [
 // Discover and use a broad pool for overlap detection. Expensive per-wallet history
 // verification remains separately bounded so the scheduled workflow can finish.
 const MIN_CONSENSUS_WIN_RATE = 90;
+// [run-scanner] Publish up to 1,000 ranked candidates so the UI can filter before selecting its Top 100.
 // [run-scanner] Publish only multi-trader consensus where every holder passes the strict quality gate.
 // [run-scanner] Expand candidate discovery and live-position overlap scan to 8,000 wallets.
 // [run-scanner] Prioritize sports wallets and scan up to 800 positions per sports trader.
-const LEADER_COUNT = 100;
+const LEADER_COUNT = 1000;
 const PAGE_SIZE = 50;
 const MAX_CANDIDATES_PER_PERIOD = 10000;
 const CATEGORY_CANDIDATE_QUOTAS = { sports: 2500, crypto: 1500, esports: 1250, overall: 750, politics: 750, culture: 500, mentions: 500, weather: 500, economics: 500, tech: 500, finance: 1000 };
