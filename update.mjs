@@ -17,9 +17,9 @@ const MIN_CONSENSUS_WIN_RATE = 90;
 // [run-scanner] Prioritize sports, crypto and esports while retaining broad category coverage.
 const LEADER_COUNT = 1000;
 const PAGE_SIZE = 50;
-const MAX_CANDIDATES_PER_PERIOD = 10000;
+const MAX_CANDIDATES_PER_PERIOD = 3000;
 const CATEGORY_CANDIDATE_QUOTAS = { sports: 4000, crypto: 2000, esports: 1500, overall: 1000, politics: 1000, culture: 750, mentions: 750, weather: 750, economics: 750, tech: 750, finance: 1750 };
-const MAX_LEADERBOARD_PAGES_PER_STREAM = 20;
+const MAX_LEADERBOARD_PAGES_PER_STREAM = 6;
 const POSITION_FETCH_LIMIT = 100;
 const POSITIONS_PER_TRADER = 10;
 const RANKING_RECORD_LIMIT = 1000;
@@ -354,7 +354,7 @@ async function mapLimit(items, limit, callback) {
 async function getCandidates(period) {
   const byWallet = new Map();
   const categories = ["sports","crypto","esports","overall","politics","culture","mentions","weather","economics","tech","finance"];
-  const timePeriods = [...new Set([period.api,"DAY","WEEK","MONTH","ALL"])];
+  const timePeriods = [...new Set([period.api,"WEEK","ALL"])];
   let pagesFetched = 0;
   for (const category of categories) {
     if (byWallet.size >= MAX_CANDIDATES_PER_PERIOD) break;
