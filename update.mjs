@@ -753,8 +753,8 @@ async function getMarketConsensus(market, knownNames) {
 }
 
 function marketEndDate(market) {
-  // Do not mistake event/game start dates for a market resolution deadline.
-  // Only explicit market end/resolution fields are valid for the 24-hour filter.
+  // Return the explicit Gamma market/event end field. For sports, Gamma's
+  // endDate can be the scheduled kickoff rather than the end of play.
   const direct = market.endDate ?? market.end_date ?? market.endDateIso ?? market.endDateISO ??
     market.end_date_iso ?? market.resolveTime ?? market.resolve_time ?? market.endTime ?? market.end_time ?? null;
   if (direct) return direct;
@@ -765,6 +765,37 @@ function marketEndDate(market) {
     if (eventDate) return eventDate;
   }
   return null;
+}
+
+function consensusTiming(market) {
+  const rawEnd = marketEndDate(market);
+  if (!isSportsMarket(market)) return {endDate: rawEnd, endTimeBasis: "market_end"};
+  const events = Array.isArray(market.events) ? market.events : [];
+  const starts = [
+    market.gameStartTime, market.game_start_time, market.eventStartTime,
+    market.event_start_time, market.startDate, market.start_date,
+    ...events.flatMap(event => [
+      event?.gameStartTime, event?.game_start_time, event?.eventStartTime,
+      event?.event_start_time, event?.startDate, event?.start_date, event?.startTime
+    ])
+  ];
+  let kickoffMs = null;
+  for (const value of starts) {
+    const parsed = timestampMs(value);
+    if (parsed !== null) { kickoffMs = parsed; break; }
+  }
+  // In the observed NFL/NBA-style Gamma records, endDate is the scheduled
+  // kickoff. When a separate start field is unavailable, use that timestamp
+  // as kickoff and allow four hours for play to finish. This keeps live games
+  // visible after kickoff without treating them as already resolved.
+  if (kickoffMs === null) kickoffMs = timestampMs(rawEnd);
+  if (kickoffMs === null) return {endDate: rawEnd, endTimeBasis: "market_end"};
+  const estimatedFinish = new Date(kickoffMs + 4 * 60 * 60 * 1000).toISOString();
+  return {
+    endDate: estimatedFinish,
+    gameStartTime: new Date(kickoffMs).toISOString(),
+    endTimeBasis: "estimated_game_finish"
+  };
 }
 
 function isSportsMarket(market) {
@@ -1101,15 +1132,16 @@ async function enrichConsensusMarkets(holderGroups, nowMs) {
       continue;
     }
 
-    let endDate = marketEndDate(market);
+    const timing = consensusTiming(market);
+    const endDate = timing.endDate;
     let endMs = timestampMs(endDate);
     if (typeof endDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(endDate)) {
       endMs = Date.parse(endDate + "T23:59:59.999Z");
     }
 
-    // Strictly include markets resolving within the next 24 hours.
-    // Exclude overdue, undated, and anything resolving later than 24 hours.
-    // Do not substitute an event start date for the market resolution deadline.
+    // For sports, endDate is the estimated finish (kickoff + 4 hours) when
+    // Gamma exposes kickoff in its endDate field. Other categories use the
+    // explicit market end/resolution timestamp. Keep the same strict 24h cap.
     if (endMs === null) {
       unknownDateKept++;
       continue;
@@ -1133,6 +1165,8 @@ async function enrichConsensusMarkets(holderGroups, nowMs) {
       slug: market?.slug || group.slug || null,
       category,
       endDate,
+      ...(timing.gameStartTime ? {gameStartTime: timing.gameStartTime} : {}),
+      endTimeBasis: timing.endTimeBasis,
       marketClosed: false,
       marketMetadataVerified: true
     });
