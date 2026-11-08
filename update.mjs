@@ -17,7 +17,7 @@ const MIN_CONSENSUS_WIN_RATE = 90;
 // [run-scanner] Prioritize sports, crypto and esports while retaining broad category coverage.
 const LEADER_COUNT = 1000;
 const PAGE_SIZE = 50;
-const MAX_CANDIDATES_PER_PERIOD = 15000;
+const MAX_CANDIDATES_PER_PERIOD = 10000;
 const CATEGORY_CANDIDATE_QUOTAS = { sports: 4000, crypto: 2000, esports: 1500, overall: 1000, politics: 1000, culture: 750, mentions: 750, weather: 750, economics: 750, tech: 750, finance: 1750 };
 const MAX_LEADERBOARD_PAGES_PER_STREAM = 20;
 const POSITION_FETCH_LIMIT = 100;
@@ -28,9 +28,9 @@ const RANKING_RECORD_LIMIT = 1000;
 const CLOSED_POSITION_SCAN_LIMIT = 250;
 // Discover shared holdings across a 10,000-wallet candidate pool.
 // One page (100 positions) per regular wallet and two (200) per sports wallet to bound runtime.
-const CONSENSUS_WALLET_LIMIT = 15000;
-const MAX_CONSENSUS_POSITION_PAGES_PER_WALLET = 6;
-const MAX_SPORTS_CONSENSUS_POSITION_PAGES_PER_WALLET = 10;
+const CONSENSUS_WALLET_LIMIT = 10000;
+const MAX_CONSENSUS_POSITION_PAGES_PER_WALLET = 1;
+const MAX_SPORTS_CONSENSUS_POSITION_PAGES_PER_WALLET = 2;
 const LEADER_RECORD_LIMIT = RANKING_RECORD_LIMIT;
 // Keep upcoming markets in the data so the UI can filter 24h / 3d / 7d accurately.
 const CONSENSUS_WINDOW_HOURS = 24; // Only active markets resolving in the next 24 hours years away
@@ -1237,7 +1237,11 @@ function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedM
         entryCost !== null && entryCost > 0;
       const hasMinimumEntry = hasVerifiedEntryPrice && entryCost >= MIN_CONSENSUS_ENTRY_VALUE &&
         (num(holder.currentValue) ?? 0) >= MIN_CONSENSUS_POSITION_VALUE;
+      const periodPnl = num(candidate.pnl ?? holder.pnl);
+      // A high profitable-close ratio cannot override a losing 7-day account result.
+      // Require positive Polymarket WEEK leaderboard P&L before calling a trader a copy signal.
       const isQualified =
+        periodPnl !== null && periodPnl > 0 &&
         record.recordComplete === true &&
         resolvedMarkets !== null &&
         resolvedMarkets >= minimumResolvedMarkets &&
@@ -1247,6 +1251,7 @@ function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedM
 
       qualificationDiagnostics.holdersEvaluated++;
       if (record.recordComplete !== true) qualificationDiagnostics.incompleteRecord++;
+      if (periodPnl === null || periodPnl <= 0) qualificationDiagnostics.nonPositiveWeeklyPnl = (qualificationDiagnostics.nonPositiveWeeklyPnl || 0) + 1;
       if (resolvedMarkets === null || resolvedMarkets < minimumResolvedMarkets) qualificationDiagnostics.fewerThanMinimumCloses++;
       if (winRate === null || winRate < MIN_CONSENSUS_WIN_RATE) qualificationDiagnostics.belowMinimumWinRate++;
       if (!hasMinimumEntry) qualificationDiagnostics.missingEntryPrice = (qualificationDiagnostics.missingEntryPrice || 0) + 1;
@@ -1264,7 +1269,7 @@ function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedM
         name: holder.name || candidate.name || "Trader",
         rank: candidate.sportsRank ?? candidate.rank ?? holder.rank ?? null,
         overallRank: candidate.rank ?? null,
-        pnl: candidate.pnl ?? holder.pnl ?? null,
+        pnl: periodPnl,
         volume: candidate.volume ?? holder.volume ?? null,
         wins,
         losses,
