@@ -361,10 +361,10 @@ async function getCandidates(period) {
     for (const timePeriod of timePeriods) {
       if (byWallet.size >= MAX_CANDIDATES_PER_PERIOD || byWallet.size - categoryStartSize >= categoryQuota) break;
       for (const orderBy of ["PNL","VOLUME"]) {
-        if (byWallet.size >= MAX_CANDIDATES_PER_PERIOD || byWallet.size - categoryStartSize >= CANDIDATE_QUOTA_PER_CATEGORY) break;
+        if (byWallet.size >= MAX_CANDIDATES_PER_PERIOD || byWallet.size - categoryStartSize >= categoryQuota) break;
         let cursor = null, page = 0;
         const seenCursors = new Set();
-        while (page < MAX_LEADERBOARD_PAGES_PER_STREAM && byWallet.size < MAX_CANDIDATES_PER_PERIOD && byWallet.size - categoryStartSize < CANDIDATE_QUOTA_PER_CATEGORY) {
+        while (page < MAX_LEADERBOARD_PAGES_PER_STREAM && byWallet.size < MAX_CANDIDATES_PER_PERIOD && byWallet.size - categoryStartSize < categoryQuota) {
           const params = new URLSearchParams({category,time_period:timePeriod.toLowerCase(),sort_by:orderBy,limit:String(PAGE_SIZE)});
           if (cursor) params.set("cursor",cursor);
           const response = await getJson(`${API}/v2/leaderboard?${params}`);
@@ -834,14 +834,14 @@ async function getBroadConsensusMarkets(knownTraders, nowMs, activePositions) {
   const consensusPositions = await mapLimit(knownTraders, CONCURRENCY, async trader => {
     const wallet = String(trader.wallet || "").toLowerCase();
     if (!wallet) return [wallet, []];
+    const isSportsCandidate = Array.isArray(trader.sourceCategories) && trader.sourceCategories.includes("sports");
+    const walletPageCap = isSportsCandidate ? MAX_SPORTS_CONSENSUS_POSITION_PAGES_PER_WALLET : MAX_CONSENSUS_POSITION_PAGES_PER_WALLET;
     try {
       const all = [];
       const seen = new Set();
       let cursor = null;
       let pages = 0;
       let hasMore = false;
-      const isSportsCandidate = Array.isArray(trader.sourceCategories) && trader.sourceCategories.includes("sports");
-      const walletPageCap = isSportsCandidate ? MAX_SPORTS_CONSENSUS_POSITION_PAGES_PER_WALLET : MAX_CONSENSUS_POSITION_PAGES_PER_WALLET;
       const seenCursors = new Set();
       while (pages < walletPageCap) {
         const params = new URLSearchParams({
