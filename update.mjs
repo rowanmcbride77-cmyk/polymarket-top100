@@ -1264,7 +1264,32 @@ function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedM
     });
   }
 
-  const result = qualifiedGroups.map(group => {
+  // Exclude an entire market when qualified traders are active on
+  // multiple outcomes. A larger YES/Over group is not clean consensus
+  // when 2+ independently qualified traders also hold NO/Under.
+  const qualifiedSidesByCondition = new Map();
+  for (const group of qualifiedGroups) {
+    const conditionId = String(group.conditionId || "").toLowerCase();
+    const side = String(group.side || "").trim().toLowerCase();
+    if (!conditionId || !side) continue;
+    if (!qualifiedSidesByCondition.has(conditionId)) qualifiedSidesByCondition.set(conditionId, new Set());
+    qualifiedSidesByCondition.get(conditionId).add(side);
+  }
+  const conflictingConditions = new Set(
+    [...qualifiedSidesByCondition.entries()]
+      .filter(([, sides]) => sides.size > 1)
+      .map(([conditionId]) => conditionId)
+  );
+  const cleanQualifiedGroups = qualifiedGroups.filter(group =>
+    !conflictingConditions.has(String(group.conditionId || "").toLowerCase())
+  );
+  console.log("Opposing-side consensus filter:", JSON.stringify({
+    conflictingMarkets: conflictingConditions.size,
+    groupsRemoved: qualifiedGroups.length - cleanQualifiedGroups.length,
+    cleanMarketsRemaining: cleanQualifiedGroups.length
+  }));
+
+  const result = cleanQualifiedGroups.map(group => {
     const knownRates = group.traders.map(t => num(t.winRate)).filter(rate => rate !== null);
     const avgRate = knownRates.length ? knownRates.reduce((sum,rate) => sum + rate,0) / knownRates.length : 0;
     const knownSamples = group.traders.map(t => num(t.resolvedMarkets)).filter(sample => sample !== null);
