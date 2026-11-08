@@ -16,7 +16,7 @@ const MIN_CONSENSUS_WIN_RATE = 90;
 const LEADER_COUNT = 100;
 const PAGE_SIZE = 50;
 const MAX_CANDIDATES_PER_PERIOD = 8000;
-const CANDIDATE_QUOTA_PER_CATEGORY = 750;
+const CATEGORY_CANDIDATE_QUOTAS = { sports: 1500, crypto: 1000, esports: 1000, overall: 750, politics: 750, culture: 500, mentions: 500, weather: 500, economics: 500, tech: 500, finance: 500 };
 const MAX_LEADERBOARD_PAGES_PER_STREAM = 20;
 const POSITION_FETCH_LIMIT = 100;
 const POSITIONS_PER_TRADER = 10;
@@ -28,6 +28,7 @@ const CLOSED_POSITION_SCAN_LIMIT = 250;
 // Four position pages per wallet keeps the scan bounded while widening coverage.
 const CONSENSUS_WALLET_LIMIT = 8000;
 const MAX_CONSENSUS_POSITION_PAGES_PER_WALLET = 4;
+const MAX_SPORTS_CONSENSUS_POSITION_PAGES_PER_WALLET = 8;
 const LEADER_RECORD_LIMIT = RANKING_RECORD_LIMIT;
 // Keep upcoming markets in the data so the UI can filter 24h / 3d / 7d accurately.
 const CONSENSUS_WINDOW_HOURS = 24; // Only active markets resolving in the next 24 hours years away
@@ -350,14 +351,15 @@ async function mapLimit(items, limit, callback) {
 
 async function getCandidates(period) {
   const byWallet = new Map();
-  const categories = ["overall","sports","crypto","esports","politics","culture","mentions","weather","economics","tech","finance"];
+  const categories = ["sports","crypto","esports","overall","politics","culture","mentions","weather","economics","tech","finance"];
   const timePeriods = [...new Set([period.api,"DAY","WEEK","MONTH","ALL"])];
   let pagesFetched = 0;
   for (const category of categories) {
     if (byWallet.size >= MAX_CANDIDATES_PER_PERIOD) break;
     const categoryStartSize = byWallet.size;
+    const categoryQuota = CATEGORY_CANDIDATE_QUOTAS[category] ?? 500;
     for (const timePeriod of timePeriods) {
-      if (byWallet.size >= MAX_CANDIDATES_PER_PERIOD || byWallet.size - categoryStartSize >= CANDIDATE_QUOTA_PER_CATEGORY) break;
+      if (byWallet.size >= MAX_CANDIDATES_PER_PERIOD || byWallet.size - categoryStartSize >= categoryQuota) break;
       for (const orderBy of ["PNL","VOLUME"]) {
         if (byWallet.size >= MAX_CANDIDATES_PER_PERIOD || byWallet.size - categoryStartSize >= CANDIDATE_QUOTA_PER_CATEGORY) break;
         let cursor = null, page = 0;
@@ -379,7 +381,12 @@ async function getCandidates(period) {
               if((existing.pnl===null||existing.pnl===undefined)&&trader.pnl!==null)existing.pnl=trader.pnl;
               if((existing.volume===null||existing.volume===undefined)&&trader.volume!==null)existing.volume=trader.volume;
               if((!existing.name||existing.name==="Unknown")&&trader.name)existing.name=trader.name;
-            } else byWallet.set(wallet,trader);
+            } else {
+              trader.sourceCategories = [category];
+              byWallet.set(wallet,trader);
+            }
+            if (existing && !Array.isArray(existing.sourceCategories)) existing.sourceCategories = [];
+            if (existing && !existing.sourceCategories.includes(category)) existing.sourceCategories.push(category);
           }
           const nextCursor=response?.pagination?.next_cursor??null;
           page++;
@@ -833,8 +840,10 @@ async function getBroadConsensusMarkets(knownTraders, nowMs, activePositions) {
       let cursor = null;
       let pages = 0;
       let hasMore = false;
+      const isSportsCandidate = Array.isArray(trader.sourceCategories) && trader.sourceCategories.includes("sports");
+      const walletPageCap = isSportsCandidate ? MAX_SPORTS_CONSENSUS_POSITION_PAGES_PER_WALLET : MAX_CONSENSUS_POSITION_PAGES_PER_WALLET;
       const seenCursors = new Set();
-      while (pages < MAX_CONSENSUS_POSITION_PAGES_PER_WALLET) {
+      while (pages < walletPageCap) {
         const params = new URLSearchParams({
           user: wallet,
           limit: "100",
@@ -864,12 +873,12 @@ async function getBroadConsensusMarkets(knownTraders, nowMs, activePositions) {
         }
         seenCursors.add(cursorKey);
       }
-      return [wallet, all, hasMore, pages];
+      return [wallet, all, hasMore, pages, false, isSportsCandidate];
     } catch (error) {
       console.error("Consensus positions fetch failed for " + wallet + ": " + error.message);
       // Mark the wallet as failed. The scan must not publish a partial consensus
       // dataset as if every wallet had been checked successfully.
-      return [wallet, Array.isArray(activePositions?.[wallet]) ? activePositions[wallet] : [], false, 0, true];
+      return [wallet, Array.isArray(activePositions?.[wallet]) ? activePositions[wallet] : [], false, 0, true, isSportsCandidate];
     }
   });
 
@@ -887,8 +896,11 @@ async function getBroadConsensusMarkets(knownTraders, nowMs, activePositions) {
   let positionsWithConditionAndSide = 0;
   let walletsWithMorePositions = 0;
   let positionPagesFetched = 0;
+  let sportsWalletsScanned = 0;
+  let sportsPositionPagesFetched = 0;
 
-  for (const [wallet, positions, hasMore, pages] of consensusPositions) {
+  for (const [wallet, positions, hasMore, pages, failed, isSportsCandidate] of consensusPositions) {
+    if (isSportsCandidate) { sportsWalletsScanned++; sportsPositionPagesFetched += pages || 0; }
     positionPagesFetched += pages || 0;
     if (hasMore) walletsWithMorePositions++;
     const trader = traderByWallet.get(wallet);
@@ -990,7 +1002,10 @@ async function getBroadConsensusMarkets(knownTraders, nowMs, activePositions) {
     walletsWithMorePositions,
     sameSideGroups: holderGroups.length,
     pageCapPerWallet: MAX_CONSENSUS_POSITION_PAGES_PER_WALLET,
-    note: "Open-position discovery scans up to 4 pages (400 positions) for each of up to 8,000 wallets. Each outcome is evaluated independently: an opposing-side holder does not cancel a 2+ same-side group. Published groups require 2+ distinct same-side holders, verified entry prices and positions of at least $10 per holder, any verified category, and a maximum 24-hour market end window."
+    sportsWalletsScanned,
+    sportsPositionPagesFetched,
+    sportsPageCapPerWallet: MAX_SPORTS_CONSENSUS_POSITION_PAGES_PER_WALLET,
+    note: "Consensus discovery scans up to 8 pages (800 positions) for sports-category leaderboard traders and 4 pages (400 positions) for other traders, within the 8,000-wallet cap. Each outcome is evaluated independently. Published groups require 2+ distinct same-side holders, verified entry prices and positions of at least $10 per holder, any verified category, and a maximum 24-hour market end window."
   };
   console.log("Consensus scan diagnostics: " + JSON.stringify(lastConsensusDiagnostics));
   const activePositionsByWallet = Object.fromEntries(consensusPositions.map(([wallet, positions]) => [wallet, positions]));
@@ -1121,8 +1136,10 @@ async function enrichConsensusMarkets(holderGroups, nowMs) {
     });
   }
 
+  const categoryCounts = enriched.reduce((counts, group) => { counts[group.category] = (counts[group.category] || 0) + 1; return counts; }, {});
   console.log("Consensus Gamma enrichment: " + JSON.stringify({
     scannedGroups: scan.length,
+    categoryCounts,
     conditionIds: conditionIds.length,
     tokenIds: tokenIds.length,
     metadataPages: pages.length,
