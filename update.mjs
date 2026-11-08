@@ -17,7 +17,7 @@ const MIN_CONSENSUS_WIN_RATE = 90;
 // [run-scanner] Prioritize sports, crypto and esports while retaining broad category coverage.
 const LEADER_COUNT = 1000;
 const PAGE_SIZE = 50;
-const MAX_CANDIDATES_PER_PERIOD = 10000;
+const MAX_CANDIDATES_PER_PERIOD = 15000;
 const CATEGORY_CANDIDATE_QUOTAS = { sports: 4000, crypto: 2000, esports: 1500, overall: 1000, politics: 1000, culture: 750, mentions: 750, weather: 750, economics: 750, tech: 750, finance: 1750 };
 const MAX_LEADERBOARD_PAGES_PER_STREAM = 20;
 const POSITION_FETCH_LIMIT = 100;
@@ -26,8 +26,8 @@ const RANKING_RECORD_LIMIT = 1000;
 // Bound closed-position history requests. Records that hit this cap are marked
 // incomplete and withheld rather than presented as complete win/loss stats.
 const CLOSED_POSITION_SCAN_LIMIT = 250;
-// Keep the full 10,000-wallet live-position scan; optimize request throughput rather than shrinking coverage.
-const CONSENSUS_WALLET_LIMIT = 10000;
+// Keep the full 15,000-wallet live-position scan; optimize request throughput rather than shrinking coverage.
+const CONSENSUS_WALLET_LIMIT = 15000;
 const MAX_CONSENSUS_POSITION_PAGES_PER_WALLET = 1;
 const MAX_SPORTS_CONSENSUS_POSITION_PAGES_PER_WALLET = 2;
 const LEADER_RECORD_LIMIT = RANKING_RECORD_LIMIT;
