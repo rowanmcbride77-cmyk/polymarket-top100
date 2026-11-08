@@ -26,8 +26,8 @@ const RANKING_RECORD_LIMIT = 1000;
 // Bound closed-position history requests. Records that hit this cap are marked
 // incomplete and withheld rather than presented as complete win/loss stats.
 const CLOSED_POSITION_SCAN_LIMIT = 250;
-// Discover shared holdings across the full 15,000-wallet candidate pool.
-// Six pages (600 positions) per regular wallet and ten (1,000) per sports wallet.
+// Discover shared holdings across a 10,000-wallet candidate pool.
+// One page (100 positions) per regular wallet and two (200) per sports wallet to bound runtime.
 const CONSENSUS_WALLET_LIMIT = 15000;
 const MAX_CONSENSUS_POSITION_PAGES_PER_WALLET = 6;
 const MAX_SPORTS_CONSENSUS_POSITION_PAGES_PER_WALLET = 10;
@@ -296,8 +296,8 @@ async function getResolvedRecord(wallet, period, nowMs, maxPositions = RANKING_R
     recordComplete,
     recordLimit: maxPositions,
     recordBasis: recordComplete
-      ? `Complete closed-position scan from the all available history; one profitable/unprofitable result per market using net realized P&L. This is a close-profitability proxy, not verified settlement accuracy; early exits count.`
-      : `INCOMPLETE sample of closed positions across all available history; market-level profitable/unprofitable counts are withheld. This is a close-profitability proxy, not verified settlement accuracy.`
+      ? `Complete rolling-period closed-position scan; one profitable/unprofitable result per market using net realized P&L. This is a close-profitability proxy, not verified settlement accuracy; early exits count.`
+      : `INCOMPLETE rolling-period sample of closed positions; market-level profitable/unprofitable counts are withheld. This is a close-profitability proxy, not verified settlement accuracy.`
   };
 }
 async function attachRecords(traders, period, nowMs, maxPositions = RANKING_RECORD_LIMIT, cache = null) {
@@ -1734,11 +1734,10 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     consensusRecordCandidates,
     CONSENSUS_RECORD_PERIOD,
     nowMs,
-    null,
+    CLOSED_POSITION_SCAN_LIMIT,
     fullRecordCache
   );
-  console.log(period.key + ": loaded full available rolling 7-day closed-position history for " +
-    consensusRecordCandidates.length + " consensus holders; history is displayed, not used as a publication gate.");
+  console.log(period.key + ": scanned up to " + CLOSED_POSITION_SCAN_LIMIT + " closed positions per consensus holder in the rolling 7-day window; capped/incomplete records are withheld.");
   console.log(`${period.key}: verifying settlement outcomes for the top ${rankingRecordCandidates.length} wallets...`);
   const ranked = rankCandidates(candidates, records);
   const sportsRanked = rankSportsCandidates(candidates, records);
