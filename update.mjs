@@ -1264,7 +1264,7 @@ function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedM
     });
   }
 
-  // Exclude an entire market when qualified traders are active on
+  // [run-scanner] Exclude an entire market when qualified traders are active on
   // multiple outcomes. A larger YES/Over group is not clean consensus
   // when 2+ independently qualified traders also hold NO/Under.
   const qualifiedSidesByCondition = new Map();
