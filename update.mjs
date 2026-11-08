@@ -13,12 +13,12 @@ const PERIODS = [
 const MIN_CONSENSUS_WIN_RATE = 90;
 // [run-scanner] Publish up to 1,000 ranked candidates so the UI can filter before selecting its Top 100.
 // [run-scanner] Publish only multi-trader consensus where every holder passes the strict quality gate.
-// [run-scanner] Expand candidate discovery and live-position overlap scan to 8,000 wallets.
-// [run-scanner] Prioritize sports wallets and scan up to 800 positions per sports trader.
+// [run-scanner] Expand candidate discovery and live-position overlap scan to 15,000 wallets.
+// [run-scanner] Prioritize sports, crypto and esports while retaining broad category coverage.
 const LEADER_COUNT = 1000;
 const PAGE_SIZE = 50;
-const MAX_CANDIDATES_PER_PERIOD = 10000;
-const CATEGORY_CANDIDATE_QUOTAS = { sports: 2500, crypto: 1500, esports: 1250, overall: 750, politics: 750, culture: 500, mentions: 500, weather: 500, economics: 500, tech: 500, finance: 1000 };
+const MAX_CANDIDATES_PER_PERIOD = 15000;
+const CATEGORY_CANDIDATE_QUOTAS = { sports: 4000, crypto: 2000, esports: 1500, overall: 1000, politics: 1000, culture: 750, mentions: 750, weather: 750, economics: 750, tech: 750, finance: 1750 };
 const MAX_LEADERBOARD_PAGES_PER_STREAM = 20;
 const POSITION_FETCH_LIMIT = 100;
 const POSITIONS_PER_TRADER = 10;
@@ -26,11 +26,11 @@ const RANKING_RECORD_LIMIT = 1000;
 // Bound closed-position history requests. Records that hit this cap are marked
 // incomplete and withheld rather than presented as complete win/loss stats.
 const CLOSED_POSITION_SCAN_LIMIT = 250;
-// Discover shared holdings across the full 8,000-wallet candidate pool.
-// Four position pages per wallet keeps the scan bounded while widening coverage.
-const CONSENSUS_WALLET_LIMIT = 10000;
-const MAX_CONSENSUS_POSITION_PAGES_PER_WALLET = 4;
-const MAX_SPORTS_CONSENSUS_POSITION_PAGES_PER_WALLET = 8;
+// Discover shared holdings across the full 15,000-wallet candidate pool.
+// Six pages (600 positions) per regular wallet and ten (1,000) per sports wallet.
+const CONSENSUS_WALLET_LIMIT = 15000;
+const MAX_CONSENSUS_POSITION_PAGES_PER_WALLET = 6;
+const MAX_SPORTS_CONSENSUS_POSITION_PAGES_PER_WALLET = 10;
 const LEADER_RECORD_LIMIT = RANKING_RECORD_LIMIT;
 // Keep upcoming markets in the data so the UI can filter 24h / 3d / 7d accurately.
 const CONSENSUS_WINDOW_HOURS = 24; // Only active markets resolving in the next 24 hours years away
@@ -1007,7 +1007,7 @@ async function getBroadConsensusMarkets(knownTraders, nowMs, activePositions) {
     sportsWalletsScanned,
     sportsPositionPagesFetched,
     sportsPageCapPerWallet: MAX_SPORTS_CONSENSUS_POSITION_PAGES_PER_WALLET,
-    note: "Consensus discovery scans up to 8 pages (800 positions) for sports-category leaderboard traders and 4 pages (400 positions) for other traders, within the 8,000-wallet cap. Each outcome is evaluated independently. Published groups require 2+ distinct same-side holders, verified entry prices and positions of at least $10 per holder, any verified category, and a maximum 24-hour market end window."
+    note: "Consensus discovery scans up to 10 pages (1,000 positions) for sports-category leaderboard traders and 6 pages (600 positions) for other traders, within the 15,000-wallet cap. Each outcome is evaluated independently. Published groups require 2+ distinct same-side holders, verified entry prices and positions of at least $10 per holder, any verified category, and a maximum 24-hour market end window."
   };
   console.log("Consensus scan diagnostics: " + JSON.stringify(lastConsensusDiagnostics));
   const activePositionsByWallet = Object.fromEntries(consensusPositions.map(([wallet, positions]) => [wallet, positions]));
