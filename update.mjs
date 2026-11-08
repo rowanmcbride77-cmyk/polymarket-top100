@@ -17,18 +17,17 @@ const MIN_CONSENSUS_WIN_RATE = 90;
 // [run-scanner] Prioritize sports, crypto and esports while retaining broad category coverage.
 const LEADER_COUNT = 1000;
 const PAGE_SIZE = 50;
-const MAX_CANDIDATES_PER_PERIOD = 3000;
+const MAX_CANDIDATES_PER_PERIOD = 10000;
 const CATEGORY_CANDIDATE_QUOTAS = { sports: 4000, crypto: 2000, esports: 1500, overall: 1000, politics: 1000, culture: 750, mentions: 750, weather: 750, economics: 750, tech: 750, finance: 1750 };
-const MAX_LEADERBOARD_PAGES_PER_STREAM = 6;
+const MAX_LEADERBOARD_PAGES_PER_STREAM = 20;
 const POSITION_FETCH_LIMIT = 100;
 const POSITIONS_PER_TRADER = 10;
 const RANKING_RECORD_LIMIT = 1000;
 // Bound closed-position history requests. Records that hit this cap are marked
 // incomplete and withheld rather than presented as complete win/loss stats.
 const CLOSED_POSITION_SCAN_LIMIT = 250;
-// Keep the hourly live-position scan to 2,500 balanced wallets; the broader 10,000-wallet leaderboard discovery remains intact.
-// One page (100 positions) per regular wallet and two (200) per sports wallet to bound runtime.
-const CONSENSUS_WALLET_LIMIT = 2500;
+// Keep the full 10,000-wallet live-position scan; optimize request throughput rather than shrinking coverage.
+const CONSENSUS_WALLET_LIMIT = 10000;
 const MAX_CONSENSUS_POSITION_PAGES_PER_WALLET = 1;
 const MAX_SPORTS_CONSENSUS_POSITION_PAGES_PER_WALLET = 2;
 const LEADER_RECORD_LIMIT = RANKING_RECORD_LIMIT;
@@ -44,16 +43,16 @@ const CONSENSUS_RECORD_PERIOD = {key: "week", api: "WEEK"};
 const TRADERS_PER_MARKET = 500;
 const TRADE_LIMIT = 10;
 const MAX_JSON_BYTES = 20 * 1024 * 1024;
-const CONCURRENCY = 10;
-const DELAY_MS = 50;
+const CONCURRENCY = 20;
+const DELAY_MS = 0;
 // Bound discovery to four pages (400 positions) per wallet so scheduled scans finish predictably.
 let lastConsensusDiagnostics = null;
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
-// One shared request gate for every Data API call. Ten concurrent workers
-// previously produced bursts that exceeded the positions endpoint's allowance.
-const API_MIN_INTERVAL_MS = 125;
+// Shared request pacing: 20 requests/second while allowing concurrent responses.
+// Retry-After globally pauses workers if the API pushes back.
+const API_MIN_INTERVAL_MS = 50;
 let nextApiRequestAt = 0;
 let apiPauseUntil = 0;
 
