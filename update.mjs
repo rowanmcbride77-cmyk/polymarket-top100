@@ -13,6 +13,7 @@ const PERIODS = [
 const MIN_CONSENSUS_WIN_RATE = 90;
 // [run-scanner] Publish only multi-trader consensus where every holder passes the strict quality gate.
 // [run-scanner] Expand candidate discovery and live-position overlap scan to 8,000 wallets.
+// [run-scanner] Prioritize sports wallets and scan up to 800 positions per sports trader.
 const LEADER_COUNT = 100;
 const PAGE_SIZE = 50;
 const MAX_CANDIDATES_PER_PERIOD = 8000;
