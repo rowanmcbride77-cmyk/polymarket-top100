@@ -561,7 +561,7 @@ function rankedLeaders() {
       if (ap === null && bp !== null) return 1;
       return (num(a.rank) ?? 99999) - (num(b.rank) ?? 99999);
     })
-    .slice(0, 100)
+    .slice(0, 1000)
     .map((trader, index) => ({...trader, displayRank:index + 1}));
 }
 
@@ -686,10 +686,16 @@ function renderLeaders() {
   const efficiencyMode = mode === "efficiency";
   const baseList = rankedLeaders();
   const minimumRecordSample = period === "month" ? 10 : 5;
-  const qualifiedLeaderboard = baseList.filter(trader => {
-    const record = recordOf(trader);
-    return record && record.rate >= 90 && record.total >= minimumRecordSample;
-  });
+  // Filter the full published ranking pool first, then take the best 100
+  // eligible traders and assign contiguous display ranks. This avoids gaps
+  // and avoids discarding qualified traders ranked below the first 100 overall.
+  const qualifiedLeaderboard = baseList
+    .filter(trader => {
+      const record = recordOf(trader);
+      return record && record.rate >= 90 && record.total >= minimumRecordSample;
+    })
+    .slice(0, 100)
+    .map((trader, index) => ({ ...trader, displayRank: index + 1 }));
   const list = comboMode ? comboProfitRows() : efficiencyMode ? comboEfficiencyRows() : qualifiedLeaderboard;
   const visible = allLeaders ? list : list.slice(0, 10);
   $("leaderModeNote").textContent = !comboMode && !efficiencyMode ? `Only traders with a complete ${period === "week" ? "7-day" : "30-day"} record, at least ${minimumRecordSample} profitable/unprofitable closes, and a profitable-close rate of 90% or higher are shown. Ranked by selected-period P&L.` : efficiencyMode ? "Active combos only · each entry is $5–$100 · trader must have at least 4 settled combos in the last 7 days and a combo win rate of at least 25%. Payout is estimated from shares and entry cost; no guaranteed returns." : comboMode ? "Top 100 traders with strictly positive, fully reconciled net combo P&L from combos resolved in the rolling last 7 days. Every counted combo has at least $5 entry and a known entry cost and realized payout. Losing traders and rows with incomplete payout data are excluded rather than shown as profitable. Market wins–losses, weekly market P&L, and volume are separate market-only stats." : "";
