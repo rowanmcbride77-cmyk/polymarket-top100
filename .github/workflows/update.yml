@@ -76,6 +76,7 @@ jobs:
             if (!parsed || typeof parsed !== "object" || !parsed.generatedAt) {
               throw new Error(`${file} is missing generatedAt metadata`);
             }
+            if (!Number.isFinite(Date.parse(parsed.generatedAt))) throw new Error(`${file} has invalid generatedAt metadata`);
 
             if (file === "week.json" || file === "month.json") {
               const leaders = Array.isArray(parsed.leaders) ? parsed.leaders : [];
@@ -103,7 +104,7 @@ jobs:
               const invalidGroups = groups.filter(group => {
                 const traders = Array.isArray(group.traders) ? group.traders : [];
                 const wallets = new Set(traders.map(row => String(row.wallet || "").toLowerCase()).filter(Boolean));
-                const validationNow = Date.now();
+                const validationNow = Date.parse(parsed.generatedAt);
                 const invalidTrader = traders.some(row => {
                   // Every published holder must independently pass the full 7-day quality gate.
                   const wins = Number(row.wins);
