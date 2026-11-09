@@ -18,16 +18,16 @@ const MIN_CONSENSUS_WIN_RATE = 90;
 const LEADER_COUNT = 1000;
 const PAGE_SIZE = 50;
 const MAX_CANDIDATES_PER_PERIOD = 20000;
-const CATEGORY_CANDIDATE_QUOTAS = { sports: 8000, crypto: 2500, esports: 1500, overall: 1500, politics: 1500, culture: 1000, mentions: 1000, weather: 1000, economics: 1000, tech: 1000, finance: 500 };
-const MAX_LEADERBOARD_PAGES_PER_STREAM = 20;
+const CATEGORY_CANDIDATE_QUOTAS = { sports: 10000, crypto: 3000, esports: 2000, overall: 2000, politics: 2000, culture: 1200, mentions: 1200, weather: 1200, economics: 1200, tech: 1200, finance: 700 };
+const MAX_LEADERBOARD_PAGES_PER_STREAM = 30;
 const POSITION_FETCH_LIMIT = 100;
 const POSITIONS_PER_TRADER = 10;
 const RANKING_RECORD_LIMIT = 1000;
 // Bound closed-position history requests. Records that hit this cap are marked
 // incomplete and withheld rather than presented as complete win/loss stats.
-const CLOSED_POSITION_SCAN_LIMIT = 250;
+const CLOSED_POSITION_SCAN_LIMIT = 1000;
 // Keep the full 15,000-wallet live-position scan; optimize request throughput rather than shrinking coverage.
-const CONSENSUS_WALLET_LIMIT = 20000;
+const CONSENSUS_WALLET_LIMIT = 10000; // Verify records for the highest-capital 10k unique consensus holders to keep the 20k discovery scan inside the workflow budget.
 const MAX_CONSENSUS_POSITION_PAGES_PER_WALLET = 2;
 const MAX_SPORTS_CONSENSUS_POSITION_PAGES_PER_WALLET = 5;
 const LEADER_RECORD_LIMIT = RANKING_RECORD_LIMIT;
@@ -46,7 +46,7 @@ const TRADE_LIMIT = 10;
 const MAX_JSON_BYTES = 20 * 1024 * 1024;
 const CONCURRENCY = 20;
 const DELAY_MS = 0;
-// Sports-category wallets receive deeper position pagination; a direct NBA market sweep below independently discovers active game lines and player props.
+// Sports-category wallets receive deeper position pagination; Gamma sports metadata drives a balanced market-first sweep across major leagues and props.
 let lastConsensusDiagnostics = null;
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -1074,74 +1074,64 @@ function classifyMarketCategory(market, group = {}) {
   if (/\b(entertainment|celebrity|movie|music|culture|grammy|oscar)\b/.test(raw)) return "culture";
   return "other";
 }
-async function getDirectNbaConsensusGroups(nowMs, knownNames = new Map()) {
-  // NBA markets are discoverable directly from Gamma's NBA tag (745), not
-  // only through wallets that happen to rank in the sports leaderboard.
-  // This is what allows player props to enter consensus even when their
-  // holders are outside the sampled leaderboard wallet pool.
-  const params = new URLSearchParams({
-    tag_id: "745",
-    active: "true",
-    closed: "false",
-    limit: "1000",
-    order: "endDate",
-    ascending: "true"
-  });
-  let markets = [];
-  try {
-    markets = asArray(await getJson(`${GAMMA_API}/markets?${params}`));
-  } catch (error) {
-    console.warn("Direct NBA market discovery unavailable:", error.message);
-    return [];
-  }
-
-  const eligible = [];
-  for (const raw of markets) {
-    const market = { ...raw, tags: [...(Array.isArray(raw.tags) ? raw.tags : []), "NBA"] };
-    const conditionId = String(market.conditionId ?? market.condition_id ?? "").toLowerCase();
-    if (!conditionId || market.closed === true || String(market.closed).toLowerCase() === "true" ||
-        market.active === false || String(market.active).toLowerCase() === "false") continue;
-    const timing = consensusTiming(market);
-    let endMs = timestampMs(timing.endDate);
-    if (typeof timing.endDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(timing.endDate)) {
-      endMs = Date.parse(timing.endDate + "T23:59:59.999Z");
-    }
-    if (endMs === null || endMs <= nowMs || endMs > nowMs + CONSENSUS_WINDOW_HOURS * 60 * 60 * 1000) continue;
-    eligible.push({
-      ...market,
-      conditionId,
-      title: market.question || market.title || "NBA market",
-      category: "sports",
-      sport: "NBA",
-      endDate: timing.endDate,
-      gameStartTime: timing.gameStartTime || market.gameStartTime || market.game_start_time || null
+async function getDirectSportsConsensusGroups(nowMs, knownNames = new Map()) {
+  // Query Gamma by documented sport tag slugs. This avoids the NBA-only tag ID
+  // and avoids relying on inconsistent /sports metadata label shapes.
+  const sports = [
+    ["NFL","nfl"],["NBA","nba"],["WNBA","wnba"],["MLB","mlb"],["NHL","nhl"],
+    ["NCAAF","ncaaf"],["NCAAB","ncaab"],["Soccer","soccer"],["EPL","epl"],
+    ["Tennis","tennis"],["MMA","ufc"],["Golf","golf"],["Cricket","cricket"],
+    ["Rugby","rugby"],["Esports","esports"]
+  ];
+  const marketByCondition = new Map(), familyCounts = {};
+  // Bound each league's sweep so one large NBA slate cannot crowd out other sports.
+  for (const [family, tagSlug] of sports) {
+    const params = new URLSearchParams({
+      tag_slug:tagSlug,active:"true",closed:"false",limit:"1000",order:"endDate",ascending:"true"
     });
+    let familyMarkets = 0;
+    try {
+      const rows = asArray(await getJson(`${GAMMA_API}/markets?${params}`));
+      for (const raw of rows) {
+        const market = {...raw,tags:[...(Array.isArray(raw.tags)?raw.tags:[]),family]};
+        const conditionId = String(market.conditionId ?? market.condition_id ?? "").toLowerCase();
+        if (!conditionId || market.closed === true || String(market.closed).toLowerCase() === "true" ||
+            market.active === false || String(market.active).toLowerCase() === "false" || !isSportsMarket(market)) continue;
+        const timing = consensusTiming(market);
+        let endMs = timestampMs(timing.endDate);
+        if (typeof timing.endDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(timing.endDate)) endMs = Date.parse(timing.endDate + "T23:59:59.999Z");
+        if (endMs === null || endMs <= nowMs || endMs > nowMs + CONSENSUS_WINDOW_HOURS * 60 * 60 * 1000) continue;
+        if (!marketByCondition.has(conditionId)) {
+          marketByCondition.set(conditionId,{...market,conditionId,category:"sports",sport:family,
+            title:market.question || market.title || `${family} market`,endDate:timing.endDate,
+            gameStartTime:timing.gameStartTime || market.gameStartTime || market.game_start_time || null});
+          familyMarkets++;
+        }
+        if (familyMarkets >= 35) break;
+      }
+    } catch (error) {
+      console.warn(`Direct ${family} discovery failed for tag slug ${tagSlug}:`,error.message);
+    }
+    familyCounts[family] = familyMarkets;
   }
 
-  // Limit concurrency to protect the public API while keeping this targeted
-  // market-first sweep small relative to the 20,000-wallet scan.
-  const groupsByMarket = await mapLimit(eligible, 12, market =>
-    getMarketConsensus(market, knownNames).then(groups => groups.map(group => ({
-      ...group,
-      title: market.title,
-      slug: market.slug || null,
-      eventSlug: market.eventSlug || market.event_slug || null,
-      eventTitle: market.eventTitle || market.event_title || null,
-      category: "sports",
-      sport: "NBA",
-      sportsMarketType: market.sportsMarketType || market.sports_market_type || "nba",
-      gameStartTime: market.gameStartTime || null,
-      endDate: market.endDate,
-      marketClosed: false,
-      marketMetadataVerified: true
+  const eligible = [...marketByCondition.values()];
+  const groupsByMarket = await mapLimit(eligible,12,market =>
+    getMarketConsensus(market,knownNames).then(groups => groups.map(group => ({
+      ...group,title:market.title,slug:market.slug || null,
+      eventSlug:market.eventSlug || market.event_slug || null,
+      eventTitle:market.eventTitle || market.event_title || null,
+      category:"sports",sport:market.sport,
+      sportsMarketType:market.sportsMarketType || market.sports_market_type || null,
+      gameStartTime:market.gameStartTime || null,endDate:market.endDate,
+      marketClosed:false,marketMetadataVerified:true
     })))
   );
   const found = groupsByMarket.flat();
-  console.log("Direct NBA market discovery: " + JSON.stringify({
-    taggedMarketsReturned: markets.length,
-    eligibleUpcomingMarkets: eligible.length,
-    sameSideConsensusGroups: found.length,
-    playerPropGroups: found.filter(group => /\b(points?|rebounds?|assists?|three.?pointers?|3.?pointers?|threes?|steals?|blocks?|pra|double.?double|triple.?double)\b/i.test(String(group.title || ""))).length
+  console.log("Direct multi-sport market discovery:",JSON.stringify({
+    sportFamilies:Object.keys(familyCounts),eligibleMarketsBySport:familyCounts,
+    eligibleMarkets:eligible.length,sameSideConsensusGroups:found.length,
+    playerPropGroups:found.filter(group => /\b(points?|rebounds?|assists?|three.?pointers?|3.?pointers?|threes?|steals?|blocks?|pra|yards?|receptions?|touchdowns?|strikeouts?|hits?|goals?)\b/i.test(String(group.title || ""))).length
   }));
   return found;
 }
@@ -1323,8 +1313,8 @@ async function enrichConsensusMarkets(holderGroups, nowMs) {
     });
   }
   const fullyExpanded = [...expandedGroups.values()];
-  const directNbaGroups = await getDirectNbaConsensusGroups(nowMs, knownNames);
-  for (const directGroup of directNbaGroups) {
+  const directSportsGroups = await getDirectSportsConsensusGroups(nowMs, knownNames);
+  for (const directGroup of directSportsGroups) {
     const condition = String(directGroup.conditionId || "").toLowerCase();
     const key = condition + "|" + String(directGroup.side || "").toLowerCase();
     const prior = expandedGroups.get(key);
@@ -1339,7 +1329,7 @@ async function enrichConsensusMarkets(holderGroups, nowMs) {
       ...(prior || {}),
       ...directGroup,
       category: "sports",
-      sport: "NBA",
+      sport: directGroup.sport || "sports",
       marketClosed: false,
       marketMetadataVerified: true,
       traders,
@@ -1352,7 +1342,7 @@ async function enrichConsensusMarkets(holderGroups, nowMs) {
     eligibleMarkets: marketLookup.size,
     holderLookups: marketHolderRows.length,
     expandedSameSideGroups: allExpanded.length - enriched.length,
-    directNbaGroups: directNbaGroups.length
+    directSportsGroups: directSportsGroups.length
   }));
   enriched.splice(0, enriched.length, ...allExpanded);
 
@@ -1444,20 +1434,10 @@ function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedM
 
     const strongHolders = holders.filter(holder => holder.strongQualified);
     const developingHolders = holders.filter(holder => holder.developingQualified);
-    let tier, displayTraders, tierReason;
-    if (strongHolders.length >= 2) {
-      tier = "Strong Signals";
-      displayTraders = strongHolders;
-      tierReason = "Every listed trader has positive weekly P&L, a complete 7-day record, at least 10 closes, a 90%+ profitable-close rate, and a verified $10+ position.";
-    } else if (developingHolders.length >= 1) {
-      tier = "Developing Signals";
-      displayTraders = holders;
-      tierReason = "At least one holder has positive weekly P&L, a complete 7-day record, 5+ closes, and a 75%+ profitable-close rate; other holders may not meet the Strong Signals threshold.";
-    } else {
-      tier = "Watchlist";
-      displayTraders = holders;
-      tierReason = "Two or more distinct wallets hold the same outcome, but the historical record is incomplete or below the Developing Signals threshold.";
-    }
+    if (strongHolders.length < 2) continue;
+    const tier = "Strong Signals";
+    const displayTraders = strongHolders;
+    const tierReason = "Every listed trader independently passes the complete 7-day record, 10+ closes, 90%+ profitable-close rate, positive weekly P&L, and verified $10+ position gate.";
 
     const knownRates = displayTraders.map(trader => num(trader.winRate)).filter(rate => rate !== null);
     const avgRate = knownRates.length ? knownRates.reduce((sum, rate) => sum + rate, 0) / knownRates.length : 0;
@@ -1489,11 +1469,7 @@ function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedM
   watchlistGroups.sort(sortGroups);
 
   const perTierLimit = 1500;
-  const result = [
-    ...strongGroups.slice(0, perTierLimit),
-    ...developingGroups.slice(0, perTierLimit),
-    ...watchlistGroups.slice(0, perTierLimit)
-  ];
+  const result = strongGroups.slice(0, perTierLimit);
   console.log("Consensus tier diagnostics:", JSON.stringify({
     ...diagnostics,
     strongMarkets: strongGroups.length, developingMarkets: developingGroups.length,
@@ -1758,7 +1734,15 @@ function makeOutput(period, ranked, sportsRanked, activePositions, tradeRows, no
   // Keep the general leaderboard populated; the public data cannot prove
   // that traders never exit early, so don't use a 100% profitable-close
   // filter as if it were a verified hold-to-settlement guarantee.
-  const leaders = ranked.slice(0, LEADER_COUNT).map(trader => {
+  const leaders = ranked.filter(trader => {
+    const wins = num(trader.wins), losses = num(trader.losses);
+    const resolved = num(trader.resolvedMarkets), rate = num(trader.winRate), pnl = num(trader.pnl);
+    return trader.recordComplete === true &&
+      wins !== null && losses !== null && resolved !== null &&
+      resolved === wins + losses && resolved >= MIN_TRADER_RESOLVED_MARKETS &&
+      rate !== null && rate >= MIN_CONSENSUS_WIN_RATE &&
+      pnl !== null && pnl > 0;
+  }).slice(0, LEADER_COUNT).map(trader => {
     const lifetime = leaderRecords[trader.wallet] || {};
     return {
       ...lifetime,
@@ -1820,7 +1804,8 @@ async function writeJsonUnderLimit(filename, output) {
   const hasLeaders = Array.isArray(output?.leaders) && output.leaders.length > 0;
   const hasConsensus = Array.isArray(output?.consensus) && output.consensus.length > 0;
   const allowEmptyConsensus = String(filename).startsWith("consensus-");
-  if (!output || (!hasLeaders && !hasConsensus && !allowEmptyConsensus)) {
+  const allowEmptyQualifiedLeaderboard = filename === "week.json" || filename === "month.json";
+  if (!output || (!hasLeaders && !hasConsensus && !allowEmptyConsensus && !allowEmptyQualifiedLeaderboard)) {
     throw new Error(`${filename}: refusing to write empty or missing leaderboard/consensus data`);
   }
   const compact = () => JSON.stringify(output);
@@ -1904,7 +1889,7 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
   }
   const consensusRecordWallets = [...consensusWallets]
     .sort((a,b) => (walletCapital.get(b) || 0) - (walletCapital.get(a) || 0))
-    .slice(0, 1000);
+    .slice(0, CONSENSUS_WALLET_LIMIT);
   // Keep the selected-period ranking record scan at its fixed 1,000-wallet
   // budget. Consensus-specific historical context is fetched separately below.
   const recordCandidates = rankingRecordCandidates;
@@ -1925,7 +1910,17 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
   console.log(`${period.key}: verifying settlement outcomes for the top ${rankingRecordCandidates.length} wallets...`);
   const ranked = rankCandidates(candidates, records);
   const sportsRanked = rankSportsCandidates(candidates, records);
-  const leaders = ranked.slice(0, LEADER_COUNT);
+  // The visible Top 100 is a qualified copy-trader list, not a raw volume/P&L leaderboard.
+  // Never fill it with missing records or sub-90% traders just to reach 100 rows.
+  const leaders = ranked.filter(trader => {
+    const wins = num(trader.wins), losses = num(trader.losses);
+    const resolved = num(trader.resolvedMarkets), rate = num(trader.winRate), pnl = num(trader.pnl);
+    return trader.recordComplete === true &&
+      wins !== null && losses !== null && resolved !== null &&
+      resolved === wins + losses && resolved >= MIN_TRADER_RESOLVED_MARKETS &&
+      rate !== null && rate >= MIN_CONSENSUS_WIN_RATE &&
+      pnl !== null && pnl > 0;
+  }).slice(0, LEADER_COUNT);
   // Detailed settlement verification is only needed for the visible Top 100.
   // Scanning 1,000 wallets across three API cohorts twice per period delayed the entire publish.
   // Keep W-L based on the selected-period closed-position scan; don't replace
@@ -2036,7 +2031,7 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     consensusHolderRecordCandidateCount: consensusWallets.size,
     totalRecordCandidateCount: recordCandidates.length,
     scanDiagnostics: lastConsensusDiagnostics,
-    candidatePoolBasis: "Up to 15,000 unique wallets selected from public Data API v2 leaderboard discovery across sports, crypto, esports, politics, culture, mentions, weather, economics, tech, finance, and overall categories. The public API does not expose a literal all-wallet directory. The scan checks up to 300 open positions for sports-category wallets and 100 for other wallets. Discovery includes active positions worth $3+; the Strong Signals tier keeps its separate $10+ entry/current-value requirement.",
+    candidatePoolBasis: "Up to 20,000 unique wallets selected from public Data API v2 leaderboard discovery across sports, crypto, esports, politics, culture, mentions, weather, economics, tech, finance, and overall categories. The public API does not expose a literal all-wallet directory. The scan checks up to 300 open positions for sports-category wallets and 100 for other wallets. Discovery includes active positions worth $3+; the Strong Signals tier keeps its separate $10+ entry/current-value requirement.",
     resolutionWindowHours: CONSENSUS_WINDOW_HOURS,
     recordBasis: "Strong Signals: every listed trader independently passes the complete rolling 7-day profitable-close proxy with at least 10 closes, 90%+ rate, positive weekly P&L, and verified $10+ entry/current value. Developing Signals: at least one holder has 5+ closes and 75%+ rate with positive weekly P&L. Watchlist: 2+ same-side active holders without that developing qualification. Player props are grouped by exact market and outcome. This is a research signal, not a proven profitable strategy.",
     qualificationCount,
@@ -2075,7 +2070,7 @@ async function main() {
   const fullRecordCache = new Map();
   // Select a balanced cross-category sample instead of taking the first N wallets,
   // which would overrepresent sports because discovery intentionally starts there.
-  const categoryOrder = ["sports","crypto","esports","overall","politics","culture","mentions","weather","economics","tech","finance"]; // Sports is intentionally first; its expanded 5,500-wallet quota improves NBA/player-prop coverage.
+  const categoryOrder = ["sports","crypto","esports","overall","politics","culture","mentions","weather","economics","tech","finance"]; // Sports is intentionally prioritized, with direct league discovery below preserving cross-sport coverage.
   const categoryBuckets = new Map(categoryOrder.map(category => [
     category,
     [...unique.values()].filter(trader => Array.isArray(trader.sourceCategories) && trader.sourceCategories.includes(category))

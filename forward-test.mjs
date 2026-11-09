@@ -42,14 +42,19 @@ const orderedSources = sources.sort((a,b)=>(num(b.newestBuy)||0)-(num(a.newestBu
 for (const g of orderedSources) {
   const condition = String(g.conditionId||g.condition_id||"").toLowerCase();
   const side = String(g.side||"").trim();
-  const allTraders = arr(g.traders);
-  const recentTraders = allTraders.filter(t => { const ts=num(t.buyTime); return ts!==null && ts>=freshCutoff && ts<=now; });
+  const allTraders = arr(g.traders).filter(t =>
+    t.qualified === true && t.recordComplete === true &&
+    num(t.winRate) !== null && num(t.winRate) >= 90 &&
+    num(t.resolvedMarkets) !== null && num(t.resolvedMarkets) >= 10 &&
+    num(t.pnl) !== null && num(t.pnl) > 0 &&
+    num(t.entryValue) !== null && num(t.entryValue) >= 10 &&
+    num(t.currentValue) !== null && num(t.currentValue) >= 10
+  );
   const wallets = [...new Set(allTraders.map(t=>String(t.wallet||"").toLowerCase()).filter(Boolean))];
-  const recentWallets = [...new Set(recentTraders.map(t=>String(t.wallet||"").toLowerCase()).filter(Boolean))];
-  if (!condition || !side) continue;
+  const recentWallets = wallets; // Every wallet in this published Strong Signal has passed the strict qualification gate.
+  if (!condition || !side || g.signalTier !== "Strong Signals" || wallets.length < 2) continue;
   const key=condition+"|"+side.toLowerCase();
   let row=byKey.get(key);
-  if (!row && recentWallets.length<2) continue;
   seen.add(key);
   try {
     const m=await marketFor(condition);
@@ -59,7 +64,7 @@ for (const g of orderedSources) {
     const prices=arr(m.outcomePrices).map(num);
     const entryPrice=index>=0?prices[index]:null;
     if (!row) {
-      row={key,conditionId:condition,title:g.title||m.question||m.title||"Untitled market",side,category:category({...m,title:g.title||m.question}),firstSeenAt:iso(now),entryPrice,entryPriceSource:"Market outcome price when at least two qualified traders had recent position activity",stake:10,shares:entryPrice>0&&entryPrice<1?10/entryPrice:null,consensusCount:recentWallets.length,traderWallets:wallets,recentTraderWallets:recentWallets,pool:g.pool,consensusEntryValue:num(g.totalEntry),consensusCurrentValue:num(g.totalValue),recentTraderEntryCount:recentWallets.length,firstSignalPriceAvailable:entryPrice>0&&entryPrice<1,status:entryPrice>0&&entryPrice<1?"PENDING":"ENTRY_UNAVAILABLE",resolvedAt:null,settlement:null,paperPnl:null,exitObservations:[]};
+      row={key,conditionId:condition,title:g.title||m.question||m.title||"Untitled market",side,category:category({...m,title:g.title||m.question}),firstSeenAt:iso(now),entryPrice,entryPriceSource:"Market outcome price at first observation of a fully qualified Strong Signal",stake:10,shares:entryPrice>0&&entryPrice<1?10/entryPrice:null,consensusCount:wallets.length,traderWallets:wallets,recentTraderWallets:wallets,pool:g.pool,consensusEntryValue:num(g.totalEntry),consensusCurrentValue:num(g.totalValue),recentTraderEntryCount:wallets.length,firstSignalPriceAvailable:entryPrice>0&&entryPrice<1,status:entryPrice>0&&entryPrice<1?"PENDING":"ENTRY_UNAVAILABLE",resolvedAt:null,settlement:null,paperPnl:null,exitObservations:[]};
       signals.push(row); byKey.set(key,row);
     } else {
       row.lastSeenAt=iso(now); row.latestConsensusCount=recentWallets.length;
@@ -142,6 +147,6 @@ const openMarkets=valid.filter(s=>s.status==="PENDING"&&s.resolutionCheckReason=
 const closedAwaitingPrice=valid.filter(s=>s.status==="PENDING"&&s.resolutionCheckReason==="closed_but_price_not_terminal").length;
 const terminalAwaitingSettlement=valid.filter(s=>s.status==="PENDING"&&s.resolutionCheckReason==="closed_with_terminal_price").length;
 const sellObservations=signals.reduce((n,s)=>n+(s.exitObservations||[]).filter(t=>t.side==="SELL").length,0);
-const output={generatedAt:iso(now),sourceDataUpdatedAt:sourceTimestamps.sort().at(-1)||null,methodology:"Forward copy test records a signal only when at least two qualified consensus traders show recent position activity within 60 minutes. Entry is the market outcome price observed by this tracker, not the traders’ historical execution price. Consensus invested/current holding values are reported from open-position snapshots and are not the paper test’s P&L. Settlement requires an explicitly closed/resolved market and terminal outcome price. SELL prints are observations, not proof of full exits; partial exits and fees/slippage are not modeled.",metrics:{signals:signals.length,entryPriced:valid.length,freshSignals,pending,resolved:resolved.length,wins,losses,openMarkets,closedAwaitingPrice,terminalAwaitingSettlement,notChecked,markedSignals:marked.length,consensusEntryValue,consensusCurrentValue,sellObservations,winRate:resolved.length?wins/resolved.length*100:null,paperPnl:pnl,worstConsecutiveLosses:worst,byCategory},signals:signals.sort((a,b)=>Date.parse(b.firstSeenAt)-Date.parse(a.firstSeenAt)).slice(0,1500)};
+const output={generatedAt:iso(now),sourceDataUpdatedAt:sourceTimestamps.sort().at(-1)||null,methodology:"Forward copy test records a signal only when at least two independently qualified consensus traders hold the same outcome. It does not require a fresh add-on trade because the scanner is based on currently open holdings. Entry is the market outcome price observed by this tracker, not the traders’ historical execution price. Consensus invested/current holding values are reported from open-position snapshots and are not the paper test’s P&L. Settlement requires an explicitly closed/resolved market and terminal outcome price. SELL prints are observations, not proof of full exits; partial exits and fees/slippage are not modeled.",metrics:{signals:signals.length,entryPriced:valid.length,freshSignals,pending,resolved:resolved.length,wins,losses,openMarkets,closedAwaitingPrice,terminalAwaitingSettlement,notChecked,markedSignals:marked.length,consensusEntryValue,consensusCurrentValue,sellObservations,winRate:resolved.length?wins/resolved.length*100:null,paperPnl:pnl,worstConsecutiveLosses:worst,byCategory},signals:signals.sort((a,b)=>Date.parse(b.firstSeenAt)-Date.parse(a.firstSeenAt)).slice(0,1500)};
 await fs.writeFile(FILE,JSON.stringify(output,null,2)+"\n");
 console.log("Forward test: "+valid.length+" entry-priced signals; "+resolved.length+" resolved; "+wins+" wins / "+losses+" losses; paper P&L $"+pnl.toFixed(2));

@@ -85,12 +85,27 @@ jobs:
 
             if (file === "week.json" || file === "month.json") {
               const leaders = Array.isArray(parsed.leaders) ? parsed.leaders : [];
-              if (leaders.length < 100) {
-                throw new Error(`${file} has only ${leaders.length} leaders; expected 100 before publishing`);
+              if (leaders.length > 1000) {
+                throw new Error(`${file} has ${leaders.length} leaders; maximum is 1,000`);
               }
               const uniqueWallets = new Set(leaders.map(row => String(row.wallet || "").toLowerCase()).filter(Boolean));
               if (uniqueWallets.size !== leaders.length) {
                 throw new Error(`${file} contains duplicate or missing trader wallets`);
+              }
+              const unqualifiedLeaders = leaders.filter(row =>
+                row.recordComplete !== true ||
+                !Number.isFinite(Number(row.resolvedMarkets)) ||
+                Number(row.resolvedMarkets) < 10 ||
+                !Number.isFinite(Number(row.winRate)) ||
+                Number(row.winRate) < 90 ||
+                !Number.isFinite(Number(row.pnl)) ||
+                Number(row.pnl) <= 0 ||
+                !Number.isFinite(Number(row.wins)) ||
+                !Number.isFinite(Number(row.losses)) ||
+                Number(row.resolvedMarkets) !== Number(row.wins) + Number(row.losses)
+              );
+              if (unqualifiedLeaders.length) {
+                throw new Error(`${file} contains ${unqualifiedLeaders.length} traders without a complete 90%+ / 10+ close / positive P&L record`);
               }
               const misleadingCappedRecords = leaders.filter(row =>
                 row.recordComplete === false &&
@@ -99,7 +114,7 @@ jobs:
               if (misleadingCappedRecords.length) {
                 throw new Error(`${file} contains ${misleadingCappedRecords.length} capped records presented as complete counts/rates`);
               }
-              console.log(`${file}: ${leaders.length} leaders; ${leaders.filter(row => row.recordComplete === false).length} incomplete records hidden`);
+              console.log(`${file}: ${leaders.length} qualified 90%+ leaders; incomplete and sub-threshold traders excluded`);
             }
 
             if (file === "consensus-week.json" || file === "consensus-month.json") {

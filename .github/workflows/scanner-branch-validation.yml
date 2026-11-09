@@ -1,0 +1,88 @@
+name: Scanner branch validation
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "update.mjs"
+      - "index.html"
+      - "forward-test.mjs"
+      - ".github/workflows/forward-test.yml"
+      - ".github/workflows/scanner-branch-validation.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: Check JavaScript syntax
+        run: |
+          node --check update.mjs
+          node --check forward-test.mjs
+          node --input-type=module <<'NODE'
+          import fs from "node:fs/promises";
+          const html = await fs.readFile("index.html", "utf8");
+          const scripts = [...html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/gi)];
+          if (!scripts.length) throw new Error("index.html has no script block");
+          for (const match of scripts) new Function(match[1]);
+          console.log("Dashboard JavaScript syntax passed.");
+          NODE
+      - name: Smoke-test Gamma sports tag slugs
+        run: |
+          node --input-type=module <<'NODE'
+          const slugs = ["nfl", "nba", "mlb", "nhl", "soccer", "tennis"];
+          const found = [];
+          for (const slug of slugs) {
+            const q = new URLSearchParams({tag_slug: slug, active: "true", closed: "false", limit: "10"});
+            const response = await fetch("https://gamma-api.polymarket.com/markets?" + q);
+            if (!response.ok) throw new Error(slug + " tag query returned HTTP " + response.status);
+            const markets = await response.json();
+            if (!Array.isArray(markets)) throw new Error(slug + " tag query returned a non-array payload");
+            found.push({sport: slug, sampleMarkets: markets.length});
+          }
+          if (!found.some(x => x.sport === "nfl" && x.sampleMarkets > 0) ||
+              !found.some(x => x.sport === "nba" && x.sampleMarkets > 0)) {
+            throw new Error("NFL and NBA tag-slug queries must both return active markets: " + JSON.stringify(found));
+          }
+          console.log("Gamma sports tag-slug smoke test:", JSON.stringify(found));
+          NODE
+      - name: Check critical scanner safeguards
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from "node:fs/promises";
+          const scanner = await fs.readFile("update.mjs", "utf8");
+          const paper = await fs.readFile("forward-test.mjs", "utf8");
+          const dashboard = await fs.readFile("index.html", "utf8");
+          const requiredScanner = [
+            "getDirectSportsConsensusGroups",
+            "tag_slug:",
+            "CONSENSUS_WALLET_LIMIT = 10000",
+            "MIN_CONSENSUS_WIN_RATE = 90",
+            "MIN_CONSENSUS_CLOSED_MARKETS = 10",
+            "const leaders = ranked.filter",
+            "resolved >= MIN_TRADER_RESOLVED_MARKETS"
+          ];
+          for (const item of requiredScanner) {
+            if (!scanner.includes(item)) throw new Error("Missing scanner safeguard: " + item);
+          }
+          if (scanner.includes("getDirectNbaConsensusGroups")) {
+            throw new Error("NBA-only market discovery remains in scanner");
+          }
+          if (!paper.includes("const recentWallets = wallets")) {
+            throw new Error("Forward-test recentWallets regression");
+          }
+          if (!dashboard.includes("const minimumRecordSample = 10")) {
+            throw new Error("Dashboard still accepts fewer than 10 closes");
+          }
+          if (!paper.includes('g.signalTier !== "Strong Signals"')) {
+            throw new Error("Forward test is not restricted to Strong Signals");
+          }
+          console.log("Cross-sport discovery, strict 90%/10-close gate, and paper-test wallet checks passed.");
+          NODE
