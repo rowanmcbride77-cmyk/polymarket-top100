@@ -643,7 +643,7 @@ function comboProfitRows() {
   // accounting and losing/negative rows rather than filling the Top 100 with them.
   return [...byWallet.values()]
     .filter(row => row.combos > 0 && row.pnlMissing === 0 &&
-      row.pnlKnown === row.combos && Number.isFinite(row.profit) && row.profit >= 100)
+      row.pnlKnown === row.combos && Number.isFinite(row.profit) && row.profit > 0)
     .sort((a,b) => b.profit-a.profit || b.wins-a.wins || b.weeklyCombos-a.weeklyCombos)
     .slice(0,100)
     .map((row,index)=>({...row,displayRank:index+1}));
@@ -932,7 +932,7 @@ async function loadComboPositions() {
     if (!/^0x[a-f0-9]{40}$/i.test(wallet) || seenWallets.has(wallet)) return false;
     seenWallets.add(wallet);
     return true;
-  }).slice(0, 500);
+  }).slice(0, 1000);
 
   traderAliases.clear();
   candidates.forEach((t, i) => traderAliases.set(walletOf(t).toLowerCase(), "Trader " + (i + 1)));
@@ -1004,12 +1004,18 @@ async function loadComboPositions() {
         const activityById = new Map();
         if (needsActivity) {
           try {
-            const ar = await fetch("https://data-api.polymarket.com/v2/activity/combos?user=" + encodeURIComponent(wallet) + "&limit=1000", {
-              cache:"no-store", signal:AbortSignal.timeout(12000)
-            });
-            if (ar.ok) {
+            let activityCursor = null, activityPages = 0;
+            while (activityPages < 10) {
+              const activityUrl = "https://data-api.polymarket.com/v2/activity/combos?user=" +
+                encodeURIComponent(wallet) + "&limit=1000" +
+                (activityCursor ? "&cursor=" + encodeURIComponent(activityCursor) : "");
+              const ar = await fetch(activityUrl, {
+                cache:"no-store", signal:AbortSignal.timeout(12000)
+              });
+              if (!ar.ok) break;
               const aj = await ar.json();
               const events = Array.isArray(aj?.data) ? aj.data : Array.isArray(aj) ? aj : [];
+              activityPages++;
               for (const event of events) {
                 const id = String(event.combo_position_id || "");
                 if (!id) continue;
@@ -1022,6 +1028,8 @@ async function loadComboPositions() {
                 if (!rec.legs?.length && event.legs) rec.legs = event.legs;
                 activityById.set(id, rec);
               }
+              activityCursor = aj?.pagination?.next_cursor || null;
+              if (aj?.pagination?.has_more !== true || !activityCursor || !events.length) break;
             }
           } catch (error) { console.warn("Combo activity unavailable for " + wallet + ": " + error.message); }
         }
