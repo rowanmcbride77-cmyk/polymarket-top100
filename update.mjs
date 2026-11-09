@@ -1132,6 +1132,7 @@ async function getDirectNbaConsensusGroups(nowMs, knownNames = new Map()) {
       sportsMarketType: market.sportsMarketType || market.sports_market_type || "nba",
       gameStartTime: market.gameStartTime || null,
       endDate: market.endDate,
+      marketClosed: false,
       marketMetadataVerified: true
     })))
   );
@@ -1309,6 +1310,7 @@ async function enrichConsensusMarkets(holderGroups, nowMs) {
       category: prior?.category || source?.category || classifyMarketCategory(source || {}, directGroup),
       title: prior?.title || source?.title || directGroup.title,
       endDate: prior?.endDate || source?.endDate || directGroup.endDate,
+      marketClosed: false,
       marketMetadataVerified: true,
       traders: mergedTraders,
       sameSide: mergedTraders.length,
@@ -1338,6 +1340,7 @@ async function enrichConsensusMarkets(holderGroups, nowMs) {
       ...directGroup,
       category: "sports",
       sport: "NBA",
+      marketClosed: false,
       marketMetadataVerified: true,
       traders,
       sameSide: traders.length,
