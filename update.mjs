@@ -18,14 +18,14 @@ const MIN_CONSENSUS_WIN_RATE = 90;
 const LEADER_COUNT = 1000;
 const PAGE_SIZE = 50;
 const MAX_CANDIDATES_PER_PERIOD = 20000;
-const CATEGORY_CANDIDATE_QUOTAS = { sports: 8000, crypto: 2500, esports: 1500, overall: 1500, politics: 1500, culture: 1000, mentions: 1000, weather: 1000, economics: 1000, tech: 1000, finance: 500 };
-const MAX_LEADERBOARD_PAGES_PER_STREAM = 20;
+const CATEGORY_CANDIDATE_QUOTAS = { sports: 10000, crypto: 3000, esports: 2000, overall: 2000, politics: 2000, culture: 1200, mentions: 1200, weather: 1200, economics: 1200, tech: 1200, finance: 700 };
+const MAX_LEADERBOARD_PAGES_PER_STREAM = 30;
 const POSITION_FETCH_LIMIT = 100;
 const POSITIONS_PER_TRADER = 10;
 const RANKING_RECORD_LIMIT = 1000;
 // Bound closed-position history requests. Records that hit this cap are marked
 // incomplete and withheld rather than presented as complete win/loss stats.
-const CLOSED_POSITION_SCAN_LIMIT = 250;
+const CLOSED_POSITION_SCAN_LIMIT = 1000;
 // Keep the full 15,000-wallet live-position scan; optimize request throughput rather than shrinking coverage.
 const CONSENSUS_WALLET_LIMIT = 20000;
 const MAX_CONSENSUS_POSITION_PAGES_PER_WALLET = 2;
@@ -1444,20 +1444,10 @@ function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedM
 
     const strongHolders = holders.filter(holder => holder.strongQualified);
     const developingHolders = holders.filter(holder => holder.developingQualified);
-    let tier, displayTraders, tierReason;
-    if (strongHolders.length >= 2) {
-      tier = "Strong Signals";
-      displayTraders = strongHolders;
-      tierReason = "Every listed trader has positive weekly P&L, a complete 7-day record, at least 10 closes, a 90%+ profitable-close rate, and a verified $10+ position.";
-    } else if (developingHolders.length >= 1) {
-      tier = "Developing Signals";
-      displayTraders = holders;
-      tierReason = "At least one holder has positive weekly P&L, a complete 7-day record, 5+ closes, and a 75%+ profitable-close rate; other holders may not meet the Strong Signals threshold.";
-    } else {
-      tier = "Watchlist";
-      displayTraders = holders;
-      tierReason = "Two or more distinct wallets hold the same outcome, but the historical record is incomplete or below the Developing Signals threshold.";
-    }
+    if (strongHolders.length < 2) continue;
+    const tier = "Strong Signals";
+    const displayTraders = strongHolders;
+    const tierReason = "Every listed trader independently passes the complete 7-day record, 10+ closes, 90%+ profitable-close rate, positive weekly P&L, and verified $10+ position gate.";
 
     const knownRates = displayTraders.map(trader => num(trader.winRate)).filter(rate => rate !== null);
     const avgRate = knownRates.length ? knownRates.reduce((sum, rate) => sum + rate, 0) / knownRates.length : 0;
@@ -1489,11 +1479,7 @@ function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedM
   watchlistGroups.sort(sortGroups);
 
   const perTierLimit = 1500;
-  const result = [
-    ...strongGroups.slice(0, perTierLimit),
-    ...developingGroups.slice(0, perTierLimit),
-    ...watchlistGroups.slice(0, perTierLimit)
-  ];
+  const result = strongGroups.slice(0, perTierLimit);
   console.log("Consensus tier diagnostics:", JSON.stringify({
     ...diagnostics,
     strongMarkets: strongGroups.length, developingMarkets: developingGroups.length,
@@ -1904,7 +1890,7 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
   }
   const consensusRecordWallets = [...consensusWallets]
     .sort((a,b) => (walletCapital.get(b) || 0) - (walletCapital.get(a) || 0))
-    .slice(0, 1000);
+    .slice(0, CONSENSUS_WALLET_LIMIT);
   // Keep the selected-period ranking record scan at its fixed 1,000-wallet
   // budget. Consensus-specific historical context is fetched separately below.
   const recordCandidates = rankingRecordCandidates;
