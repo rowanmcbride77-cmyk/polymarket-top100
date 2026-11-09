@@ -1204,6 +1204,7 @@ async function getDirectSportsConsensusGroups(nowMs, knownNames = new Map()) {
       sportsMarketType: market.sportsMarketType || "game",
       gameStartTime: market.gameStartTime || null,
       endDate: market.endDate,
+      marketClosed: false,
       marketMetadataVerified: true
     })))
   );
