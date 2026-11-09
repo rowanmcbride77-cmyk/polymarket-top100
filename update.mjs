@@ -1179,7 +1179,7 @@ async function getDirectSportsConsensusGroups(nowMs, knownNames = new Map()) {
   for (const market of marketByCondition.values()) {
     const timing = consensusTiming(market);
     let endMs = timestampMs(timing.endDate);
-    if (typeof timing.endDate === "string" && /^\\d{4}-\\d{2}-\\d{2}$/.test(timing.endDate)) {
+    if (typeof timing.endDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(timing.endDate)) {
       endMs = Date.parse(timing.endDate + "T23:59:59.999Z");
     }
     if (endMs === null || endMs <= nowMs ||
@@ -1218,7 +1218,7 @@ async function getDirectSportsConsensusGroups(nowMs, knownNames = new Map()) {
       return counts;
     }, {}),
     playerPropGroups: found.filter(group =>
-      /\\b(points?|rebounds?|assists?|three.?pointers?|3.?pointers?|threes?|steals?|blocks?|pra|double.?double|triple.?double|yards?|receptions?|touchdowns?|strikeouts?|hits?|saves?)\\b/i.test(String(group.title || ""))
+      /\b(points?|rebounds?|assists?|three.?pointers?|3.?pointers?|threes?|steals?|blocks?|pra|double.?double|triple.?double|yards?|receptions?|touchdowns?|strikeouts?|hits?|saves?)\b/i.test(String(group.title || ""))
     ).length
   }));
   return found;
