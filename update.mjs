@@ -1796,7 +1796,8 @@ async function writeJsonUnderLimit(filename, output) {
   const hasLeaders = Array.isArray(output?.leaders) && output.leaders.length > 0;
   const hasConsensus = Array.isArray(output?.consensus) && output.consensus.length > 0;
   const allowEmptyConsensus = String(filename).startsWith("consensus-");
-  if (!output || (!hasLeaders && !hasConsensus && !allowEmptyConsensus)) {
+  const allowEmptyQualifiedLeaderboard = filename === "week.json" || filename === "month.json";
+  if (!output || (!hasLeaders && !hasConsensus && !allowEmptyConsensus && !allowEmptyQualifiedLeaderboard)) {
     throw new Error(`${filename}: refusing to write empty or missing leaderboard/consensus data`);
   }
   const compact = () => JSON.stringify(output);
@@ -1901,7 +1902,17 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
   console.log(`${period.key}: verifying settlement outcomes for the top ${rankingRecordCandidates.length} wallets...`);
   const ranked = rankCandidates(candidates, records);
   const sportsRanked = rankSportsCandidates(candidates, records);
-  const leaders = ranked.slice(0, LEADER_COUNT);
+  // The visible Top 100 is a qualified copy-trader list, not a raw volume/P&L leaderboard.
+  // Never fill it with missing records or sub-90% traders just to reach 100 rows.
+  const leaders = ranked.filter(trader => {
+    const wins = num(trader.wins), losses = num(trader.losses);
+    const resolved = num(trader.resolvedMarkets), rate = num(trader.winRate), pnl = num(trader.pnl);
+    return trader.recordComplete === true &&
+      wins !== null && losses !== null && resolved !== null &&
+      resolved === wins + losses && resolved >= MIN_TRADER_RESOLVED_MARKETS &&
+      rate !== null && rate >= MIN_CONSENSUS_WIN_RATE &&
+      pnl !== null && pnl > 0;
+  }).slice(0, LEADER_COUNT);
   // Detailed settlement verification is only needed for the visible Top 100.
   // Scanning 1,000 wallets across three API cohorts twice per period delayed the entire publish.
   // Keep W-L based on the selected-period closed-position scan; don't replace
