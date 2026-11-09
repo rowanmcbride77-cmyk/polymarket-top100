@@ -677,7 +677,7 @@ async function getMarketConsensus(market, knownNames) {
     const wallet = String(position.proxy_wallet ?? position.proxyWallet ?? position.user ?? "").toLowerCase();
     const side = String(position.outcome ?? position.outcome_name ?? "").trim();
     const value = num(position.current_value ?? position.currentValue);
-    if (!wallet || !side || value === null || value < MIN_CONSENSUS_POSITION_VALUE) continue;
+    if (!wallet || !side || value === null || value < MIN_CONSENSUS_DISCOVERY_VALUE) continue;
 
     // An open, non-redeemable position is active even if the original entry
     // was made earlier. Do not require a recent add-on trade to count it.
@@ -1327,7 +1327,31 @@ function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedM
     developingWinRate: 75, developingMinimumResolvedMarkets: 5,
     discoveryPositionValue: MIN_CONSENSUS_DISCOVERY_VALUE
   }));
-  return result;
+  // Never publish both sides of the same exact market condition as copy signals.
+  // If at least two distinct wallets support two or more different outcomes,
+  // treat the condition as conflicted and suppress every side for that condition.
+  const outcomesByCondition = new Map();
+  for (const market of result) {
+    const condition = String(market.conditionId || "").trim().toLowerCase();
+    const outcome = String(market.side || "").trim().toLowerCase();
+    if (!condition || !outcome) continue;
+    if (!outcomesByCondition.has(condition)) outcomesByCondition.set(condition, new Map());
+    const byOutcome = outcomesByCondition.get(condition);
+    byOutcome.set(outcome, Math.max(byOutcome.get(outcome) || 0, Number(market.sameSide) || 0));
+  }
+  const conflictedConditions = new Set(
+    [...outcomesByCondition.entries()]
+      .filter(([, outcomes]) => [...outcomes.values()].filter(count => count >= 2).length >= 2)
+      .map(([condition]) => condition)
+  );
+  const filteredResult = result.filter(market =>
+    !conflictedConditions.has(String(market.conditionId || "").trim().toLowerCase())
+  );
+  console.log("Conflicting outcome filter:", JSON.stringify({
+    conflictedConditions: conflictedConditions.size,
+    suppressedSignals: result.length - filteredResult.length
+  }));
+  return filteredResult;
 }
 function parseArrayField(value) {
   if (Array.isArray(value)) return value;
