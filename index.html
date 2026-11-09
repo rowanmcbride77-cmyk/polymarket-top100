@@ -191,6 +191,12 @@ dialog::backdrop{background:#000b}
           <div><div class="metric-label">Hypothetical P&amp;L</div><div class="metric-value" id="paperPnl">—</div></div>
           <div><div class="metric-label">New in 24 hours</div><div class="metric-value" id="paperFresh">—</div></div>
         </div>
+        <div class="table-wrap" style="margin-top:12px">
+          <table>
+            <thead><tr><th>Category</th><th>Resolved</th><th>Win rate</th><th>Paper P&amp;L</th></tr></thead>
+            <tbody id="paperCategoryRows"><tr><td colspan="4" class="empty">Waiting for paper-test data…</td></tr></tbody>
+          </table>
+        </div>
         <div class="source-note" id="paperTestNote">Tracks a hypothetical $10 entry at the first observed market price after qualifying trader activity. Unresolved signals are not counted as wins or losses; this is a research test, not verified live-trading performance.</div>
       </section>
       <details class="panel compact-details">
@@ -1648,6 +1654,15 @@ async function loadForwardTest() {
     $("paperPnl").style.color = Number(metrics.paperPnl) > 0 ? "var(--green)" : Number(metrics.paperPnl) < 0 ? "var(--red)" : "var(--text)";
     $("paperFresh").textContent = Number(metrics.freshSignals || 0).toLocaleString();
     $("paperTestUpdated").textContent = d.generatedAt ? "Updated " + new Date(d.generatedAt).toLocaleString() : "Timestamp unavailable";
+    const categoryLabels = {sports:"Sports",crypto:"Crypto",politics:"Politics",other:"Other"};
+    const categoryRows = Object.entries(categoryLabels).map(([key,label]) => {
+      const row = metrics.byCategory?.[key] || {};
+      const resolved = Number(row.resolved || 0), wins = Number(row.wins || 0);
+      const rate = resolved ? (wins / resolved * 100).toFixed(1) + "%" : "N/A";
+      const pnl = money(row.paperPnl);
+      return "<tr><td>" + label + "</td><td>" + resolved.toLocaleString() + "</td><td>" + rate + "</td><td>" + pnl + "</td></tr>";
+    });
+    $("paperCategoryRows").innerHTML = categoryRows.join("");
     const indexed = new Map();
     for (const signal of rows) {
       const condition = String(signal.conditionId || "").toLowerCase(), side = String(signal.side || "").toLowerCase();
