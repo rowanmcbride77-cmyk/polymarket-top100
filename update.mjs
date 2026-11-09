@@ -1074,77 +1074,171 @@ function classifyMarketCategory(market, group = {}) {
   if (/\b(entertainment|celebrity|movie|music|culture|grammy|oscar)\b/.test(raw)) return "culture";
   return "other";
 }
-async function getDirectNbaConsensusGroups(nowMs, knownNames = new Map()) {
-  // NBA markets are discoverable directly from Gamma's NBA tag (745), not
-  // only through wallets that happen to rank in the sports leaderboard.
-  // This is what allows player props to enter consensus even when their
-  // holders are outside the sampled leaderboard wallet pool.
-  const params = new URLSearchParams({
-    tag_id: "745",
-    active: "true",
-    closed: "false",
-    limit: "1000",
-    order: "endDate",
-    ascending: "true"
-  });
-  let markets = [];
+async function getSportsTagId(slug, fallbackId = null) {
   try {
-    markets = asArray(await getJson(`${GAMMA_API}/markets?${params}`));
+    const params = new URLSearchParams({slug});
+    let response = await getJson(`${GAMMA_API}/tags?${params}`);
+    let rows = asArray(response);
+    let match = rows.find(tag =>
+      String(tag.slug || "").toLowerCase() === slug.toLowerCase() ||
+      String(tag.label || "").toLowerCase() === slug.toLowerCase()
+    ) || (response?.id ? response : null) || rows[0];
+
+    // Some Gamma deployments ignore the slug filter; use the public tag list
+    // as a safe fallback rather than silently omitting NFL discovery.
+    if (!match?.id) {
+      response = await getJson(`${GAMMA_API}/tags?limit=500`);
+      rows = asArray(response);
+      match = rows.find(tag =>
+        String(tag.slug || "").toLowerCase() === slug.toLowerCase() ||
+        String(tag.label || "").toLowerCase() === slug.toLowerCase()
+      );
+    }
+
+    const id = num(match?.id);
+    if (id !== null) return String(id);
   } catch (error) {
-    console.warn("Direct NBA market discovery unavailable:", error.message);
-    return [];
+    console.warn(`Could not resolve Gamma tag for ${slug}:`, error.message);
+  }
+  return fallbackId === null ? null : String(fallbackId);
+}
+
+async function getDirectSportsConsensusGroups(nowMs, knownNames = new Map()) {
+  // Discover sport events first, then flatten every nested market. Player props
+  // are frequently nested under an event and are missed by a shallow /markets
+  // request. Gamma's /markets endpoint also caps page size at 100.
+  const leagues = [
+    {sport: "NBA", slug: "nba", fallbackTagId: 745},
+    {sport: "NFL", slug: "nfl", fallbackTagId: null}
+  ];
+  const marketByCondition = new Map();
+
+  for (const league of leagues) {
+    const tagId = await getSportsTagId(league.slug, league.fallbackTagId);
+    if (!tagId) {
+      console.warn(`Skipping ${league.sport} event discovery: Gamma tag ID unavailable.`);
+      continue;
+    }
+
+    let eventCount = 0;
+    let nestedMarketCount = 0;
+    const pageSize = 100;
+    const maxPages = 20;
+
+    for (let page = 0; page < maxPages; page++) {
+      const params = new URLSearchParams({
+        tag_id: tagId,
+        related_tags: "true",
+        active: "true",
+        closed: "false",
+        limit: String(pageSize),
+        offset: String(page * pageSize),
+        order: "startDate",
+        ascending: "true"
+      });
+
+      let events;
+      try {
+        events = asArray(await getJson(`${GAMMA_API}/events?${params}`));
+      } catch (error) {
+        console.warn(`${league.sport} event discovery failed at page ${page + 1}:`, error.message);
+        break;
+      }
+      if (!events.length) break;
+      eventCount += events.length;
+
+      for (const event of events) {
+        if (event.closed === true || String(event.closed).toLowerCase() === "true" ||
+            event.active === false || String(event.active).toLowerCase() === "false") continue;
+        const nested = Array.isArray(event.markets) ? event.markets : [];
+        nestedMarketCount += nested.length;
+        for (const raw of nested) {
+          const conditionId = String(raw.conditionId ?? raw.condition_id ?? "").toLowerCase();
+          if (!conditionId || raw.closed === true || String(raw.closed).toLowerCase() === "true" ||
+              raw.active === false || String(raw.active).toLowerCase() === "false") continue;
+
+          const market = {
+            ...raw,
+            conditionId,
+            title: raw.question || raw.title || "Sports market",
+            category: "sports",
+            sport: league.sport,
+            tags: [...(Array.isArray(raw.tags) ? raw.tags : []), league.sport],
+            events: [...(Array.isArray(raw.events) ? raw.events : []), event],
+            eventTitle: event.title || event.name || null,
+            eventSlug: event.slug || null,
+            eventStartTime: event.startDate || event.startTime || null,
+            gameStartTime: raw.gameStartTime || raw.game_start_time ||
+              event.startDate || event.startTime || null,
+            endDate: raw.endDate || raw.end_date || event.endDate || event.end_date || null,
+            sportsMarketType: raw.sportsMarketType || raw.sports_market_type ||
+              (/(points?|rebounds?|assists?|three.?pointers?|3.?pointers?|threes?|steals?|blocks?|pra|double.?double|triple.?double|yards?|receptions?|touchdowns?|passing.?yards?|rushing.?yards?|receiving.?yards?|completions?|pass.?attempts?|interceptions?|carries|field.?goals?|sacks?|tackles?|strikeouts?|hits?|saves?)/i.test(String(raw.question || raw.title || ""))
+                ? "player_prop" : "game")
+          };
+          if (!marketByCondition.has(conditionId)) marketByCondition.set(conditionId, market);
+        }
+      }
+
+      if (events.length < pageSize) break;
+    }
+
+    console.log(`${league.sport} event-first market discovery: ${JSON.stringify({
+      tagId, events: eventCount, nestedMarkets: nestedMarketCount,
+      uniqueMarkets: [...marketByCondition.values()].filter(market => market.sport === league.sport).length
+    })}`);
   }
 
   const eligible = [];
-  for (const raw of markets) {
-    const market = { ...raw, tags: [...(Array.isArray(raw.tags) ? raw.tags : []), "NBA"] };
-    const conditionId = String(market.conditionId ?? market.condition_id ?? "").toLowerCase();
-    if (!conditionId || market.closed === true || String(market.closed).toLowerCase() === "true" ||
-        market.active === false || String(market.active).toLowerCase() === "false") continue;
+  for (const market of marketByCondition.values()) {
     const timing = consensusTiming(market);
     let endMs = timestampMs(timing.endDate);
     if (typeof timing.endDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(timing.endDate)) {
       endMs = Date.parse(timing.endDate + "T23:59:59.999Z");
     }
-    if (endMs === null || endMs <= nowMs || endMs > nowMs + CONSENSUS_WINDOW_HOURS * 60 * 60 * 1000) continue;
+    const marketWindowHours = market.sport === "NFL" ? 24 * 8 : CONSENSUS_WINDOW_HOURS;
+    if (endMs === null || endMs <= nowMs ||
+        endMs > nowMs + marketWindowHours * 60 * 60 * 1000) continue;
     eligible.push({
       ...market,
-      conditionId,
-      title: market.question || market.title || "NBA market",
-      category: "sports",
-      sport: "NBA",
       endDate: timing.endDate,
-      gameStartTime: timing.gameStartTime || market.gameStartTime || market.game_start_time || null
+      gameStartTime: timing.gameStartTime || market.gameStartTime || null
     });
   }
 
-  // Limit concurrency to protect the public API while keeping this targeted
-  // market-first sweep small relative to the 20,000-wallet scan.
   const groupsByMarket = await mapLimit(eligible, 12, market =>
     getMarketConsensus(market, knownNames).then(groups => groups.map(group => ({
       ...group,
       title: market.title,
       slug: market.slug || null,
-      eventSlug: market.eventSlug || market.event_slug || null,
-      eventTitle: market.eventTitle || market.event_title || null,
+      eventSlug: market.eventSlug || null,
+      eventTitle: market.eventTitle || null,
+      events: market.events || [],
       category: "sports",
-      sport: "NBA",
-      sportsMarketType: market.sportsMarketType || market.sports_market_type || "nba",
+      sport: market.sport,
+      sportsMarketType: market.sportsMarketType || "game",
       gameStartTime: market.gameStartTime || null,
       endDate: market.endDate,
+      marketClosed: false,
       marketMetadataVerified: true
     })))
   );
+
   const found = groupsByMarket.flat();
-  console.log("Direct NBA market discovery: " + JSON.stringify({
-    taggedMarketsReturned: markets.length,
+  console.log("Direct NBA/NFL event-first discovery: " + JSON.stringify({
+    discoveredMarkets: marketByCondition.size,
     eligibleUpcomingMarkets: eligible.length,
+    marketWindowsHours: {NBA: CONSENSUS_WINDOW_HOURS, NFL: 24 * 8},
     sameSideConsensusGroups: found.length,
-    playerPropGroups: found.filter(group => /\b(points?|rebounds?|assists?|three.?pointers?|3.?pointers?|threes?|steals?|blocks?|pra|double.?double|triple.?double)\b/i.test(String(group.title || ""))).length
+    bySport: found.reduce((counts, group) => {
+      counts[group.sport] = (counts[group.sport] || 0) + 1;
+      return counts;
+    }, {}),
+    playerPropGroups: found.filter(group =>
+      /\b(points?|rebounds?|assists?|three.?pointers?|3.?pointers?|threes?|steals?|blocks?|pra|double.?double|triple.?double|yards?|receptions?|touchdowns?|passing.?yards?|rushing.?yards?|receiving.?yards?|completions?|pass.?attempts?|interceptions?|carries|field.?goals?|sacks?|tackles?|strikeouts?|hits?|saves?)\b/i.test(String(group.title || ""))
+    ).length
   }));
   return found;
 }
-
 async function enrichConsensusMarkets(holderGroups, nowMs) {
   // Position records can carry stale/missing end dates. Resolve condition IDs
   // through Gamma before applying the strict 24-hour resolution window; keep undated active
@@ -1321,8 +1415,8 @@ async function enrichConsensusMarkets(holderGroups, nowMs) {
     });
   }
   const fullyExpanded = [...expandedGroups.values()];
-  const directNbaGroups = await getDirectNbaConsensusGroups(nowMs, knownNames);
-  for (const directGroup of directNbaGroups) {
+  const directSportsGroups = await getDirectSportsConsensusGroups(nowMs, knownNames);
+  for (const directGroup of directSportsGroups) {
     const condition = String(directGroup.conditionId || "").toLowerCase();
     const key = condition + "|" + String(directGroup.side || "").toLowerCase();
     const prior = expandedGroups.get(key);
@@ -1337,7 +1431,7 @@ async function enrichConsensusMarkets(holderGroups, nowMs) {
       ...(prior || {}),
       ...directGroup,
       category: "sports",
-      sport: "NBA",
+      sport: directGroup.sport || prior?.sport || null,
       marketMetadataVerified: true,
       traders,
       sameSide: traders.length,
@@ -1349,7 +1443,7 @@ async function enrichConsensusMarkets(holderGroups, nowMs) {
     eligibleMarkets: marketLookup.size,
     holderLookups: marketHolderRows.length,
     expandedSameSideGroups: allExpanded.length - enriched.length,
-    directNbaGroups: directNbaGroups.length
+    directSportsGroups: directSportsGroups.length
   }));
   enriched.splice(0, enriched.length, ...allExpanded);
 
