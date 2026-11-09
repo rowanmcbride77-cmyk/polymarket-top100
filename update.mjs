@@ -1734,7 +1734,15 @@ function makeOutput(period, ranked, sportsRanked, activePositions, tradeRows, no
   // Keep the general leaderboard populated; the public data cannot prove
   // that traders never exit early, so don't use a 100% profitable-close
   // filter as if it were a verified hold-to-settlement guarantee.
-  const leaders = ranked.slice(0, LEADER_COUNT).map(trader => {
+  const leaders = ranked.filter(trader => {
+    const wins = num(trader.wins), losses = num(trader.losses);
+    const resolved = num(trader.resolvedMarkets), rate = num(trader.winRate), pnl = num(trader.pnl);
+    return trader.recordComplete === true &&
+      wins !== null && losses !== null && resolved !== null &&
+      resolved === wins + losses && resolved >= MIN_TRADER_RESOLVED_MARKETS &&
+      rate !== null && rate >= MIN_CONSENSUS_WIN_RATE &&
+      pnl !== null && pnl > 0;
+  }).slice(0, LEADER_COUNT).map(trader => {
     const lifetime = leaderRecords[trader.wallet] || {};
     return {
       ...lifetime,
