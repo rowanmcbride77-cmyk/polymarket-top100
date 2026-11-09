@@ -1172,7 +1172,7 @@ async function getDirectSportsConsensusGroups(nowMs, knownNames = new Map()) {
               event.startDate || event.startTime || null,
             endDate: raw.endDate || raw.end_date || event.endDate || event.end_date || null,
             sportsMarketType: raw.sportsMarketType || raw.sports_market_type ||
-              (/(points?|rebounds?|assists?|three.?pointers?|3.?pointers?|threes?|yards?|receptions?|touchdowns?|strikeouts?|hits?|saves?)/i.test(String(raw.question || raw.title || ""))
+              (/(points?|rebounds?|assists?|three.?pointers?|3.?pointers?|threes?|steals?|blocks?|pra|double.?double|triple.?double|yards?|receptions?|touchdowns?|passing.?yards?|rushing.?yards?|receiving.?yards?|completions?|pass.?attempts?|interceptions?|carries|field.?goals?|sacks?|tackles?|strikeouts?|hits?|saves?)/i.test(String(raw.question || raw.title || ""))
                 ? "player_prop" : "game")
           };
           if (!marketByCondition.has(conditionId)) marketByCondition.set(conditionId, market);
@@ -1195,8 +1195,9 @@ async function getDirectSportsConsensusGroups(nowMs, knownNames = new Map()) {
     if (typeof timing.endDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(timing.endDate)) {
       endMs = Date.parse(timing.endDate + "T23:59:59.999Z");
     }
+    const marketWindowHours = market.sport === "NFL" ? 24 * 8 : CONSENSUS_WINDOW_HOURS;
     if (endMs === null || endMs <= nowMs ||
-        endMs > nowMs + CONSENSUS_WINDOW_HOURS * 60 * 60 * 1000) continue;
+        endMs > nowMs + marketWindowHours * 60 * 60 * 1000) continue;
     eligible.push({
       ...market,
       endDate: timing.endDate,
@@ -1226,6 +1227,7 @@ async function getDirectSportsConsensusGroups(nowMs, knownNames = new Map()) {
   console.log("Direct NBA/NFL event-first discovery: " + JSON.stringify({
     discoveredMarkets: marketByCondition.size,
     eligibleUpcomingMarkets: eligible.length,
+    marketWindowsHours: {NBA: CONSENSUS_WINDOW_HOURS, NFL: 24 * 8},
     sameSideConsensusGroups: found.length,
     bySport: found.reduce((counts, group) => {
       counts[group.sport] = (counts[group.sport] || 0) + 1;
