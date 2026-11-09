@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - "update.mjs"
+      - "index.html"
       - "forward-test.mjs"
       - ".github/workflows/forward-test.yml"
       - ".github/workflows/scanner-branch-validation.yml"
@@ -25,6 +26,14 @@ jobs:
         run: |
           node --check update.mjs
           node --check forward-test.mjs
+          node --input-type=module <<'NODE'
+          import fs from "node:fs/promises";
+          const html = await fs.readFile("index.html", "utf8");
+          const scripts = [...html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/gi)];
+          if (!scripts.length) throw new Error("index.html has no script block");
+          for (const match of scripts) new Function(match[1]);
+          console.log("Dashboard JavaScript syntax passed.");
+          NODE
       - name: Smoke-test Gamma sports tag slugs
         run: |
           node --input-type=module <<'NODE'
