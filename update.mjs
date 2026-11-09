@@ -1234,7 +1234,7 @@ async function getDirectSportsConsensusGroups(nowMs, knownNames = new Map()) {
       return counts;
     }, {}),
     playerPropGroups: found.filter(group =>
-      /\b(points?|rebounds?|assists?|three.?pointers?|3.?pointers?|threes?|steals?|blocks?|pra|double.?double|triple.?double|yards?|receptions?|touchdowns?|strikeouts?|hits?|saves?)\b/i.test(String(group.title || ""))
+      /\b(points?|rebounds?|assists?|three.?pointers?|3.?pointers?|threes?|steals?|blocks?|pra|double.?double|triple.?double|yards?|receptions?|touchdowns?|passing.?yards?|rushing.?yards?|receiving.?yards?|completions?|pass.?attempts?|interceptions?|carries|field.?goals?|sacks?|tackles?|strikeouts?|hits?|saves?)\b/i.test(String(group.title || ""))
     ).length
   }));
   return found;
