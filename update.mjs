@@ -1353,6 +1353,7 @@ function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedM
   }));
   return filteredResult;
 }
+// [run-scanner] Conflict suppression and $3 holder discovery are part of this build.
 function parseArrayField(value) {
   if (Array.isArray(value)) return value;
   if (typeof value !== "string" || !value.trim()) return [];
