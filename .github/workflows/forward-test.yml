@@ -4,6 +4,9 @@ on:
   schedule:
     - cron: "*/30 * * * *"
   workflow_dispatch:
+  workflow_run:
+    workflows: ["Update Polymarket Scanner"]
+    types: [completed]
   push:
     paths:
       - "forward-test.mjs"
@@ -18,8 +21,9 @@ concurrency:
 
 jobs:
   paper-test:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
         with:
