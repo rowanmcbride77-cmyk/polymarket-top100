@@ -1075,61 +1075,42 @@ function classifyMarketCategory(market, group = {}) {
   return "other";
 }
 async function getDirectSportsConsensusGroups(nowMs, knownNames = new Map()) {
-  // Discover sports from Gamma metadata instead of hard-coding NBA tag 745.
-  let metadata = [];
-  try { metadata = asArray(await getJson(`${GAMMA_API}/sports`)); }
-  catch (error) { console.warn("Gamma sports metadata unavailable:", error.message); return []; }
-
-  const families = [
-    ["NFL", /^(nfl|american.?football|football)$/i],
-    ["NBA", /^(nba|basketball)$/i], ["WNBA", /^wnba$/i],
-    ["MLB", /^(mlb|baseball)$/i], ["NHL", /^(nhl|hockey|ice.?hockey)$/i],
-    ["NCAAF", /^(ncaaf|cfb|college.?football)$/i],
-    ["NCAAB", /^(ncaab|cbb|college.?basketball)$/i],
-    ["Soccer", /(soccer|epl|premier|champions|liga|bundesliga|serie.?a|la.?liga|ligue)/i],
-    ["Tennis", /(tennis|atp|wta)/i], ["MMA", /(ufc|mma|boxing)/i],
-    ["Golf", /(golf|pga|lpga)/i], ["Cricket", /cricket/i],
-    ["Rugby", /rugby/i], ["Esports", /(esport|counter.?strike|dota|league.?of.?legends|valorant)/i]
+  // Query Gamma by documented sport tag slugs. This avoids the NBA-only tag ID
+  // and avoids relying on inconsistent /sports metadata label shapes.
+  const sports = [
+    ["NFL","nfl"],["NBA","nba"],["WNBA","wnba"],["MLB","mlb"],["NHL","nhl"],
+    ["NCAAF","ncaaf"],["NCAAB","ncaab"],["Soccer","soccer"],["EPL","epl"],
+    ["Tennis","tennis"],["MMA","ufc"],["Golf","golf"],["Cricket","cricket"],
+    ["Rugby","rugby"],["Esports","esports"]
   ];
-  const tagsByFamily = new Map();
-  for (const row of metadata) {
-    const label = String(row.sport || row.league || row.name || "").trim();
-    const family = families.find(([, pattern]) => pattern.test(label));
-    if (!family) continue;
-    const rawTags = Array.isArray(row.tags) ? row.tags : String(row.tags || "").split(",");
-    const ids = rawTags.map(value => String(typeof value === "object" ? (value.id ?? value.tag_id ?? "") : value).trim())
-      .filter(value => /^\d+$/.test(value));
-    if (!tagsByFamily.has(family[0])) tagsByFamily.set(family[0], new Set());
-    for (const id of ids) tagsByFamily.get(family[0]).add(id);
-  }
-
   const marketByCondition = new Map(), familyCounts = {};
   // Bound each league's sweep so one large NBA slate cannot crowd out other sports.
-  for (const [family, tagSet] of tagsByFamily) {
+  for (const [family, tagSlug] of sports) {
+    const params = new URLSearchParams({
+      tag_slug:tagSlug,active:"true",closed:"false",limit:"1000",order:"endDate",ascending:"true"
+    });
     let familyMarkets = 0;
-    for (const tagId of [...tagSet].slice(0, 4)) {
-      const params = new URLSearchParams({tag_id:tagId,active:"true",closed:"false",limit:"1000",order:"endDate",ascending:"true"});
-      try {
-        const rows = asArray(await getJson(`${GAMMA_API}/markets?${params}`));
-        for (const raw of rows) {
-          const market = {...raw,tags:[...(Array.isArray(raw.tags)?raw.tags:[]),family]};
-          const conditionId = String(market.conditionId ?? market.condition_id ?? "").toLowerCase();
-          if (!conditionId || market.closed === true || String(market.closed).toLowerCase() === "true" ||
-              market.active === false || String(market.active).toLowerCase() === "false" || !isSportsMarket(market)) continue;
-          const timing = consensusTiming(market);
-          let endMs = timestampMs(timing.endDate);
-          if (typeof timing.endDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(timing.endDate)) endMs = Date.parse(timing.endDate + "T23:59:59.999Z");
-          if (endMs === null || endMs <= nowMs || endMs > nowMs + CONSENSUS_WINDOW_HOURS * 60 * 60 * 1000) continue;
-          if (!marketByCondition.has(conditionId)) {
-            marketByCondition.set(conditionId,{...market,conditionId,category:"sports",sport:family,
-              title:market.question || market.title || `${family} market`,endDate:timing.endDate,
-              gameStartTime:timing.gameStartTime || market.gameStartTime || market.game_start_time || null});
-            familyMarkets++;
-          }
-          if (familyMarkets >= 35) break;
+    try {
+      const rows = asArray(await getJson(`${GAMMA_API}/markets?${params}`));
+      for (const raw of rows) {
+        const market = {...raw,tags:[...(Array.isArray(raw.tags)?raw.tags:[]),family]};
+        const conditionId = String(market.conditionId ?? market.condition_id ?? "").toLowerCase();
+        if (!conditionId || market.closed === true || String(market.closed).toLowerCase() === "true" ||
+            market.active === false || String(market.active).toLowerCase() === "false" || !isSportsMarket(market)) continue;
+        const timing = consensusTiming(market);
+        let endMs = timestampMs(timing.endDate);
+        if (typeof timing.endDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(timing.endDate)) endMs = Date.parse(timing.endDate + "T23:59:59.999Z");
+        if (endMs === null || endMs <= nowMs || endMs > nowMs + CONSENSUS_WINDOW_HOURS * 60 * 60 * 1000) continue;
+        if (!marketByCondition.has(conditionId)) {
+          marketByCondition.set(conditionId,{...market,conditionId,category:"sports",sport:family,
+            title:market.question || market.title || `${family} market`,endDate:timing.endDate,
+            gameStartTime:timing.gameStartTime || market.gameStartTime || market.game_start_time || null});
+          familyMarkets++;
         }
-      } catch (error) { console.warn(`Direct ${family} discovery failed for tag ${tagId}:`,error.message); }
-      if (familyMarkets >= 35) break;
+        if (familyMarkets >= 35) break;
+      }
+    } catch (error) {
+      console.warn(`Direct ${family} discovery failed for tag slug ${tagSlug}:`,error.message);
     }
     familyCounts[family] = familyMarkets;
   }
