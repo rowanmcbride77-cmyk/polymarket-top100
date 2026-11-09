@@ -27,7 +27,7 @@ const RANKING_RECORD_LIMIT = 1000;
 // incomplete and withheld rather than presented as complete win/loss stats.
 const CLOSED_POSITION_SCAN_LIMIT = 1000;
 // Keep the full 15,000-wallet live-position scan; optimize request throughput rather than shrinking coverage.
-const CONSENSUS_WALLET_LIMIT = 20000;
+const CONSENSUS_WALLET_LIMIT = 10000; // Verify records for the highest-capital 10k unique consensus holders to keep the 20k discovery scan inside the workflow budget.
 const MAX_CONSENSUS_POSITION_PAGES_PER_WALLET = 2;
 const MAX_SPORTS_CONSENSUS_POSITION_PAGES_PER_WALLET = 5;
 const LEADER_RECORD_LIMIT = RANKING_RECORD_LIMIT;
@@ -2031,7 +2031,7 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     consensusHolderRecordCandidateCount: consensusWallets.size,
     totalRecordCandidateCount: recordCandidates.length,
     scanDiagnostics: lastConsensusDiagnostics,
-    candidatePoolBasis: "Up to 15,000 unique wallets selected from public Data API v2 leaderboard discovery across sports, crypto, esports, politics, culture, mentions, weather, economics, tech, finance, and overall categories. The public API does not expose a literal all-wallet directory. The scan checks up to 300 open positions for sports-category wallets and 100 for other wallets. Discovery includes active positions worth $3+; the Strong Signals tier keeps its separate $10+ entry/current-value requirement.",
+    candidatePoolBasis: "Up to 20,000 unique wallets selected from public Data API v2 leaderboard discovery across sports, crypto, esports, politics, culture, mentions, weather, economics, tech, finance, and overall categories. The public API does not expose a literal all-wallet directory. The scan checks up to 300 open positions for sports-category wallets and 100 for other wallets. Discovery includes active positions worth $3+; the Strong Signals tier keeps its separate $10+ entry/current-value requirement.",
     resolutionWindowHours: CONSENSUS_WINDOW_HOURS,
     recordBasis: "Strong Signals: every listed trader independently passes the complete rolling 7-day profitable-close proxy with at least 10 closes, 90%+ rate, positive weekly P&L, and verified $10+ entry/current value. Developing Signals: at least one holder has 5+ closes and 75%+ rate with positive weekly P&L. Watchlist: 2+ same-side active holders without that developing qualification. Player props are grouped by exact market and outcome. This is a research signal, not a proven profitable strategy.",
     qualificationCount,
