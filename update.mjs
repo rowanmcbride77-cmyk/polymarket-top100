@@ -46,7 +46,7 @@ const TRADE_LIMIT = 10;
 const MAX_JSON_BYTES = 20 * 1024 * 1024;
 const CONCURRENCY = 20;
 const DELAY_MS = 0;
-// Sports-category wallets receive deeper position pagination; a direct NBA market sweep below independently discovers active game lines and player props.
+// Sports-category wallets receive deeper position pagination; Gamma sports metadata drives a balanced market-first sweep across major leagues and props.
 let lastConsensusDiagnostics = null;
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -1348,7 +1348,7 @@ async function enrichConsensusMarkets(holderGroups, nowMs) {
       ...(prior || {}),
       ...directGroup,
       category: "sports",
-      sport: "NBA",
+      sport: directGroup.sport || "sports",
       marketClosed: false,
       marketMetadataVerified: true,
       traders,
@@ -2070,7 +2070,7 @@ async function main() {
   const fullRecordCache = new Map();
   // Select a balanced cross-category sample instead of taking the first N wallets,
   // which would overrepresent sports because discovery intentionally starts there.
-  const categoryOrder = ["sports","crypto","esports","overall","politics","culture","mentions","weather","economics","tech","finance"]; // Sports is intentionally first; its expanded 5,500-wallet quota improves NBA/player-prop coverage.
+  const categoryOrder = ["sports","crypto","esports","overall","politics","culture","mentions","weather","economics","tech","finance"]; // Sports is intentionally prioritized, with direct league discovery below preserving cross-sport coverage.
   const categoryBuckets = new Map(categoryOrder.map(category => [
     category,
     [...unique.values()].filter(trader => Array.isArray(trader.sourceCategories) && trader.sourceCategories.includes(category))
