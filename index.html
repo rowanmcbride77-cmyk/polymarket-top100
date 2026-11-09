@@ -471,7 +471,7 @@ function consensus() {
       Array.isArray(market.members) ? market.members : [];
     const qualifiedTraders = traders.filter(trader => trader?.qualified === true).length;
     return {...market, traders, sameSide:traders.length, qualifiedTraders};
-  }).filter(market => market.traders.length >= 2 && market.traders.every(t => t.qualified === true));
+  }).filter(market => market.traders.length >= 2 && (market.signalTier !== "Strong Signals" || market.traders.every(t => t.qualified === true)));
 }
 
 async function loadConsensusData() {
