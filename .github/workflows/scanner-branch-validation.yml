@@ -59,12 +59,15 @@ jobs:
           import fs from "node:fs/promises";
           const scanner = await fs.readFile("update.mjs", "utf8");
           const paper = await fs.readFile("forward-test.mjs", "utf8");
+          const dashboard = await fs.readFile("index.html", "utf8");
           const requiredScanner = [
             "getDirectSportsConsensusGroups",
             "tag_slug:",
             "CONSENSUS_WALLET_LIMIT = 10000",
             "MIN_CONSENSUS_WIN_RATE = 90",
-            "MIN_CONSENSUS_CLOSED_MARKETS = 10"
+            "MIN_CONSENSUS_CLOSED_MARKETS = 10",
+            "const leaders = ranked.filter",
+            "resolved >= MIN_TRADER_RESOLVED_MARKETS"
           ];
           for (const item of requiredScanner) {
             if (!scanner.includes(item)) throw new Error("Missing scanner safeguard: " + item);
@@ -74,6 +77,9 @@ jobs:
           }
           if (!paper.includes("const recentWallets = wallets")) {
             throw new Error("Forward-test recentWallets regression");
+          }
+          if (!dashboard.includes("const minimumRecordSample = 10")) {
+            throw new Error("Dashboard still accepts fewer than 10 closes");
           }
           if (!paper.includes('g.signalTier !== "Strong Signals"')) {
             throw new Error("Forward test is not restricted to Strong Signals");
