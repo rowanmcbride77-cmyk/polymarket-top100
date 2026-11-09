@@ -111,7 +111,11 @@ jobs:
                 const isStrong = tier === "Strong Signals";
                 const validTier = ["Strong Signals", "Developing Signals", "Watchlist"].includes(tier);
                 const invalidTrader = traders.some(row => {
-                  if (!Number.isFinite(Number(row.currentValue)) || Number(row.currentValue) < 3) return true;
+                  const currentValue = Number(row.currentValue);
+                  if (!Number.isFinite(currentValue) || currentValue <= 0) return true;
+                  // Developing requires the $3 discovery floor; Strong has a stricter $10 floor below.
+                  // Watchlist intentionally preserves smaller positive positions for visibility.
+                  if (tier !== "Watchlist" && currentValue < 3) return true;
                   if (!isStrong) return false;
                   // Only Strong Signals are held to the complete 90% / 10+ close / $10 entry gate.
                   const wins = Number(row.wins);
