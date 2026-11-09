@@ -22,9 +22,9 @@ permissions:
   contents: write
 
 concurrency:
-  # A new code push replaces an obsolete scan instead of waiting behind it.
+  # Scans can take 30+ minutes. Queue newer runs; never kill an active scan.
   group: polymarket-scanner-update-v5
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   update:
@@ -106,7 +106,6 @@ jobs:
               const invalidGroups = groups.filter(group => {
                 const traders = Array.isArray(group.traders) ? group.traders : [];
                 const wallets = new Set(traders.map(row => String(row.wallet || "").toLowerCase()).filter(Boolean));
-                const validationNow = Date.parse(parsed.generatedAt);
                 const tier = String(group.signalTier || "");
                 const isStrong = tier === "Strong Signals";
                 const validTier = ["Strong Signals", "Developing Signals", "Watchlist"].includes(tier);
@@ -139,8 +138,13 @@ jobs:
                 // normalizing Gamma timestamps, including sports estimated-finish dates.
                 // Re-parsing and rechecking the raw date here used a different rule and
                 // rejected valid groups. Retain structural metadata checks at publish time.
+                // update.mjs deliberately retains some verified markets with unknown
+                // end dates (unknownDateKept). Do not reject those a second time here:
+                // the scanner's category-aware eligibility filter is authoritative.
+                // If a date is supplied, however, it must parse successfully.
+                const hasEndDate = endRaw !== null && endRaw !== undefined && String(endRaw).trim() !== "";
                 const invalidMarket = group.marketMetadataVerified !== true ||
-                  group.marketClosed !== false || !Number.isFinite(endMs);
+                  group.marketClosed !== false || (hasEndDate && !Number.isFinite(endMs));
                 return !validTier || invalidMarket || wallets.size < 2 || wallets.size !== traders.length ||
                   group.sameSide !== traders.length || invalidTrader;
               });
