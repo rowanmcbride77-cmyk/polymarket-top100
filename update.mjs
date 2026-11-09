@@ -29,11 +29,12 @@ const CLOSED_POSITION_SCAN_LIMIT = 250;
 // Keep the full 15,000-wallet live-position scan; optimize request throughput rather than shrinking coverage.
 const CONSENSUS_WALLET_LIMIT = 15000;
 const MAX_CONSENSUS_POSITION_PAGES_PER_WALLET = 1;
-const MAX_SPORTS_CONSENSUS_POSITION_PAGES_PER_WALLET = 2;
+const MAX_SPORTS_CONSENSUS_POSITION_PAGES_PER_WALLET = 3;
 const LEADER_RECORD_LIMIT = RANKING_RECORD_LIMIT;
 // Keep upcoming markets in the data so the UI can filter 24h / 3d / 7d accurately.
-const CONSENSUS_WINDOW_HOURS = 24; // Only active markets resolving in the next 24 hours years away
+const CONSENSUS_WINDOW_HOURS = 48; // Sports markets may remain eligible through the estimated finish of games starting within 48 hours.
 const CONSENSUS_HOLDERS_PER_MARKET = 1500;
+const MIN_CONSENSUS_DISCOVERY_VALUE = 3; // Discovery feeds Developing/Watchlist; Strong Signals retain the $10 gate.
 const MIN_CONSENSUS_POSITION_VALUE = 10;
 const MIN_CONSENSUS_ENTRY_VALUE = 10; // Exclude tiny/dust entries when verified cost basis is available.
 const CONSENSUS_ENTRY_WINDOW_MINUTES = 90;
@@ -825,7 +826,8 @@ function isSportsMarket(market) {
     "lacrosse", "esports", "e-sports", "super bowl", "stanley cup", "world series",
     "march madness", "liga", "bundesliga", "serie a", "la liga", "ligue 1"
   ];
-  return keywords.some(keyword => metadata.includes(keyword));
+  const playerProp = /\b(over|under)\s+\d+(?:\.\d+)?\s+(?:points?|rebounds?|assists?|three.?pointers?|3.?pointers?|threes?|steals?|blocks?|yards?|receptions?|touchdowns?|strikeouts?|hits?|runs?|goals?|shots?|saves?|aces?)\b/i.test(metadata) || /\b\d+(?:\.\d+)?\+\s+(?:points?|rebounds?|assists?|three.?pointers?|3.?pointers?|threes?|yards?|receptions?|touchdowns?|strikeouts?|hits?|goals?)\b/i.test(metadata);
+  return playerProp || keywords.some(keyword => metadata.includes(keyword));
 }
 
 function isResolvingSoon(market, nowMs) {
@@ -855,7 +857,7 @@ function isLiveConsensusPosition(position) {
   const size = num(position.size ?? position.current_size ?? position.currentSize);
   const currentValue = num(position.current_value ?? position.currentValue);
   if (size === null || size <= 0) return false;
-  if (currentValue === null || currentValue < MIN_CONSENSUS_POSITION_VALUE) return false;
+  if (currentValue === null || currentValue < MIN_CONSENSUS_DISCOVERY_VALUE) return false;
   if (position.closed === true || position.redeemable === true || position.mergeable === true) return false;
   const status = String(position.status ?? "").toUpperCase();
   return !status || status === "OPEN" || status === "ACTIVE";
@@ -1037,7 +1039,7 @@ async function getBroadConsensusMarkets(knownTraders, nowMs, activePositions) {
     sportsWalletsScanned,
     sportsPositionPagesFetched,
     sportsPageCapPerWallet: MAX_SPORTS_CONSENSUS_POSITION_PAGES_PER_WALLET,
-    note: "Consensus discovery scans up to 10 pages (1,000 positions) for sports-category leaderboard traders and 6 pages (600 positions) for other traders, within the 15,000-wallet cap. Each outcome is evaluated independently. Published groups require 2+ distinct same-side holders, verified entry prices and positions of at least $10 per holder, any verified category, and a maximum 24-hour market end window."
+    note: "Consensus discovery scans up to 3 pages (300 positions) for sports-category leaderboard traders and 1 page (100 positions) for other traders, within the 15,000-wallet cap. Discovery includes active holdings worth at least $3; Strong Signals retain the $10 entry/current-value gate. Player props are classified as sports and each exact market/outcome is grouped separately. Sports may remain eligible for 48 hours; other categories use 24 hours."
   };
   console.log("Consensus scan diagnostics: " + JSON.stringify(lastConsensusDiagnostics));
   const activePositionsByWallet = Object.fromEntries(consensusPositions.map(([wallet, positions]) => [wallet, positions]));
@@ -1053,11 +1055,12 @@ function classifyMarketCategory(market, group = {}) {
   // be swallowed by the general sports bucket.
   if (/\b(esports|e-sports|league of legends|lol|dota\s*2|counter.?strike|cs2|valorant|overwatch|rocket league)\b/.test(raw)) return "esports";
   const sportsSlug = /\b(nba|wnba|nfl|mlb|nhl|ncaab|ncaaf|ncaa|mls|epl|ucl|ufc|atp|wta|pga|f1|nascar|cfl|liga|bundesliga|laliga|serie-a|ligue-1|cricket|rugby|tennis|golf|boxing|mma)\b/.test(raw);
+  const playerProp = /\b(over|under)\s+\d+(?:\.\d+)?\s+(?:points?|rebounds?|assists?|three.?pointers?|3.?pointers?|threes?|steals?|blocks?|yards?|receptions?|touchdowns?|strikeouts?|hits?|runs?|goals?|shots?|saves?|aces?)\b/i.test(raw) || /\b\d+(?:\.\d+)?\+\s+(?:points?|rebounds?|assists?|three.?pointers?|3.?pointers?|threes?|yards?|receptions?|touchdowns?|strikeouts?|hits?|goals?)\b/i.test(raw);
   // Many active sports positions omit an explicit league/category field.
   // Their market question or slug still contains the participating team.
   const sportsTeam = /\b(lakers|celtics|warriors|knicks|nets|bulls|heat|bucks|sixers|76ers|cavaliers|cavs|clippers|suns|nuggets|mavericks|mavs|rockets|spurs|grizzlies|thunder|timberwolves|pelicans|kings|trail blazers|blazers|jazz|hawks|magic|hornets|pistons|raptors|wizards|chiefs|eagles|cowboys|49ers|niners|ravens|bills|bengals|steelers|packers|lions|vikings|bears|commanders|giants|jets|patriots|dolphins|broncos|chargers|raiders|seahawks|rams|cardinals|falcons|panthers|saints|buccaneers|bucs|titans|colts|texans|jaguars|browns|orioles|yankees|red sox|blue jays|rays|astros|mariners|rangers|dodgers|padres|giants|mets|phillies|braves|cubs|cardinals|brewers|twins|guardians|tigers|royals|athletics|angels|white sox|reds|pirates|marlins|nationals|rockies|maple leafs|bruins|rangers|penguins|capitals|lightning|panthers|oilers|canucks|flames|avalanche|golden knights|stars|wild|jets|predators|hurricanes|islanders|devils|sabres|red wings|senators|ducks|sharks|kings|kraken|blues|blackhawks|canadiens|flyers|blue jackets)\b/.test(raw);
   if (market?.gameId || market?.game_id || market?.gameStartTime || market?.game_start_time ||
-      group?.gameId || group?.gameStartTime || group?.sportsMarketType || sportsSlug || sportsTeam ||
+      group?.gameId || group?.gameStartTime || group?.sportsMarketType || sportsSlug || sportsTeam || playerProp ||
       (/\b(moneyline|spread|over\/under|point spread|total points|win the game|wins the match|versus)\b/.test(raw) &&
        /\b(nba|wnba|nfl|mlb|nhl|ncaa|football|basketball|baseball|hockey|soccer|tennis|golf|ufc|mma|team|match|game)\b/.test(raw))) return "sports";
   if (/\b(politic|election|president|congress|senate|democrat|republican|parliament|governor|vote)\b/.test(raw)) return "politics";
@@ -1149,7 +1152,8 @@ async function enrichConsensusMarkets(holderGroups, nowMs) {
       staleDateCleared++;
       continue;
     }
-    if (endMs > nowMs + CONSENSUS_WINDOW_HOURS * 60 * 60 * 1000) {
+    const marketWindowHours = isSportsMarket(market || group) ? CONSENSUS_WINDOW_HOURS : 24;
+    if (endMs > nowMs + marketWindowHours * 60 * 60 * 1000) {
       outsideWindowRemoved++;
       continue;
     }
@@ -1192,16 +1196,11 @@ async function enrichConsensusMarkets(holderGroups, nowMs) {
 
 function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedMarkets = MIN_CONSENSUS_CLOSED_MARKETS) {
   const candidateMap = new Map(candidates.map(trader => [String(trader.wallet || "").toLowerCase(), trader]));
-  const qualifiedGroups = [];
-  let rawGroupsWithTwoHolders = 0;
-  let groupsWithTwoQualified = 0;
-  const qualificationDiagnostics = {
-    holdersEvaluated: 0,
-    incompleteRecord: 0,
-    fewerThanMinimumCloses: 0,
-    belowMinimumWinRate: 0,
-    qualifiedHolders: 0,
-    recordSamples: []
+  const strongGroups = [], developingGroups = [], watchlistGroups = [];
+  const diagnostics = {
+    rawGroupsWithTwoHolders: 0, holdersEvaluated: 0, incompleteRecord: 0,
+    fewerThanMinimumCloses: 0, belowMinimumWinRate: 0, nonPositiveWeeklyPnl: 0,
+    missingVerifiedEntry: 0, strongHolders: 0, developingHolders: 0
   };
 
   for (const group of holderGroups) {
@@ -1211,145 +1210,120 @@ function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedM
         .map(holder => [String(holder.wallet).trim().toLowerCase(), holder])
     ).values()];
     if (uniqueHolders.length < 2) continue;
-    rawGroupsWithTwoHolders++;
+    diagnostics.rawGroupsWithTwoHolders++;
 
-    const traders = uniqueHolders.map(holder => {
+    const holders = uniqueHolders.map(holder => {
       const wallet = String(holder.wallet || "").toLowerCase();
       const candidate = candidateMap.get(wallet) || {};
       const record = records[wallet] || records[candidate.wallet] || {};
-      const wins = num(record.wins);
-      const losses = num(record.losses);
-      const resolvedMarkets = wins !== null && losses !== null
-        ? wins + losses
-        : num(record.resolvedMarkets);
+      const wins = num(record.wins), losses = num(record.losses);
+      const resolvedMarkets = wins !== null && losses !== null ? wins + losses : num(record.resolvedMarkets);
       const winRate = wins !== null && losses !== null && resolvedMarkets > 0
-        ? wins / resolvedMarkets * 100
-        : num(record.winRate);
-      // Historical performance is a hard qualification gate: only independently verified
-      // traders with a complete 7-day sample, at least 10 resolved markets, and >=90% wins qualify.
-      const entryPrice = num(holder.avgPrice);
-      const entryShares = num(holder.size ?? holder.shares);
-      const entryCost = num(holder.entryValue);
-      const hasVerifiedEntryPrice =
-        entryPrice !== null && entryPrice > 0 && entryPrice <= 1 &&
-        entryShares !== null && entryShares > 0 &&
-        entryCost !== null && entryCost > 0;
-      const hasMinimumEntry = hasVerifiedEntryPrice && entryCost >= MIN_CONSENSUS_ENTRY_VALUE &&
-        (num(holder.currentValue) ?? 0) >= MIN_CONSENSUS_POSITION_VALUE;
+        ? wins / resolvedMarkets * 100 : num(record.winRate);
+      const entryPrice = num(holder.avgPrice), entryShares = num(holder.size ?? holder.shares);
+      const entryCost = num(holder.entryValue), currentValue = num(holder.currentValue);
+      const hasVerifiedEntryPrice = entryPrice !== null && entryPrice > 0 && entryPrice <= 1 &&
+        entryShares !== null && entryShares > 0 && entryCost !== null && entryCost > 0;
+      const hasStrongEntry = hasVerifiedEntryPrice && entryCost >= MIN_CONSENSUS_ENTRY_VALUE &&
+        currentValue !== null && currentValue >= MIN_CONSENSUS_POSITION_VALUE;
+      const hasDevelopingEntry = currentValue !== null && currentValue >= MIN_CONSENSUS_DISCOVERY_VALUE;
       const periodPnl = num(candidate.pnl ?? holder.pnl);
-      // A high profitable-close ratio cannot override a losing 7-day account result.
-      // Require positive Polymarket WEEK leaderboard P&L before calling a trader a copy signal.
-      const isQualified =
-        periodPnl !== null && periodPnl > 0 &&
-        record.recordComplete === true &&
-        resolvedMarkets !== null &&
-        resolvedMarkets >= minimumResolvedMarkets &&
-        winRate !== null &&
-        winRate >= MIN_CONSENSUS_WIN_RATE;
-      const isPublishableHolder = hasMinimumEntry && isQualified;
+      const complete = record.recordComplete === true;
+      const strongQualified = periodPnl !== null && periodPnl > 0 && complete &&
+        resolvedMarkets !== null && resolvedMarkets >= minimumResolvedMarkets &&
+        winRate !== null && winRate >= MIN_CONSENSUS_WIN_RATE && hasStrongEntry;
+      const developingQualified = periodPnl !== null && periodPnl > 0 && complete &&
+        resolvedMarkets !== null && resolvedMarkets >= 5 && winRate !== null &&
+        winRate >= 75 && hasDevelopingEntry;
 
-      qualificationDiagnostics.holdersEvaluated++;
-      if (record.recordComplete !== true) qualificationDiagnostics.incompleteRecord++;
-      if (periodPnl === null || periodPnl <= 0) qualificationDiagnostics.nonPositiveWeeklyPnl = (qualificationDiagnostics.nonPositiveWeeklyPnl || 0) + 1;
-      if (resolvedMarkets === null || resolvedMarkets < minimumResolvedMarkets) qualificationDiagnostics.fewerThanMinimumCloses++;
-      if (winRate === null || winRate < MIN_CONSENSUS_WIN_RATE) qualificationDiagnostics.belowMinimumWinRate++;
-      if (!hasMinimumEntry) qualificationDiagnostics.missingEntryPrice = (qualificationDiagnostics.missingEntryPrice || 0) + 1;
-      if (isQualified) qualificationDiagnostics.qualifiedHolders++;
-      qualificationDiagnostics.recordSamples.push({
-        resolvedMarkets,
-        winRate: winRate === null ? null : Math.round(winRate * 100) / 100,
-        recordComplete: record.recordComplete === true,
-        scannedPositions: num(record.scannedPositions)
-      });
+      diagnostics.holdersEvaluated++;
+      if (!complete) diagnostics.incompleteRecord++;
+      if (resolvedMarkets === null || resolvedMarkets < minimumResolvedMarkets) diagnostics.fewerThanMinimumCloses++;
+      if (winRate === null || winRate < MIN_CONSENSUS_WIN_RATE) diagnostics.belowMinimumWinRate++;
+      if (periodPnl === null || periodPnl <= 0) diagnostics.nonPositiveWeeklyPnl++;
+      if (!hasStrongEntry) diagnostics.missingVerifiedEntry++;
+      if (strongQualified) diagnostics.strongHolders++;
+      if (developingQualified) diagnostics.developingHolders++;
 
       return {
-        ...holder,
-        wallet,
-        name: holder.name || candidate.name || "Trader",
+        ...holder, wallet, name: holder.name || candidate.name || "Trader",
         rank: candidate.sportsRank ?? candidate.rank ?? holder.rank ?? null,
-        overallRank: candidate.rank ?? null,
-        pnl: periodPnl,
-        volume: candidate.volume ?? holder.volume ?? null,
-        wins,
-        losses,
-        winRate,
-        resolvedMarkets,
-        earlyExitPositions: num(record.earlyExitPositions),
-        recordComplete: record.recordComplete === true,
-        qualified: isQualified,
-        publishable: isPublishableHolder,
-        recordBasis: record.recordComplete === true
-          ? "Rolling 7-day realized profitable-close proxy; displayed as context, not a guarantee"
-          : "Rolling 7-day record incomplete or unavailable; historical performance is unknown"
+        overallRank: candidate.rank ?? null, pnl: periodPnl,
+        volume: candidate.volume ?? holder.volume ?? null, wins, losses, winRate,
+        resolvedMarkets, recordComplete: complete, qualified: strongQualified,
+        strongQualified, developingQualified, entryVerified: hasVerifiedEntryPrice,
+        recordStatus: !complete ? "Incomplete / unavailable" :
+          (resolvedMarkets === null || resolvedMarkets < minimumResolvedMarkets ? "Fewer than 10 closes" :
+            (winRate !== null && winRate < MIN_CONSENSUS_WIN_RATE ? "Below 90% strong-signal threshold" : "Meets historical record threshold")),
+        recordBasis: complete
+          ? "Rolling 7-day realized profitable-close proxy; early exits count and this is not verified settlement accuracy"
+          : "Rolling 7-day record incomplete or unavailable"
       };
-    }).filter(trader => trader.publishable);
-
-    // Publish only genuine high-quality overlap: every displayed trader independently
-    // passes the complete 7-day record gate. Weak or incomplete holders cannot dilute a signal.
-    if (traders.length < 2) continue;
-    if (traders.length < 2) continue;
-    groupsWithTwoQualified++;
-    qualifiedGroups.push({
-      ...group,
-      traders,
-      sameSide: traders.length,
-      qualifiedTraders: traders.length,
-      // Combined Value is the current mark-to-market value, not historical entry cost.
-      totalValue: traders.reduce((sum, trader) => sum + (num(trader.currentValue) ?? 0), 0),
-      totalEntry: traders.every(trader => {
-        const entry = num(trader.entryValue);
-        return entry !== null && entry > 0;
-      }) ? traders.reduce((sum, trader) => sum + num(trader.entryValue), 0) : null
     });
+
+    const strongHolders = holders.filter(holder => holder.strongQualified);
+    const developingHolders = holders.filter(holder => holder.developingQualified);
+    let tier, displayTraders, tierReason;
+    if (strongHolders.length >= 2) {
+      tier = "Strong Signals";
+      displayTraders = strongHolders;
+      tierReason = "Every listed trader has positive weekly P&L, a complete 7-day record, at least 10 closes, a 90%+ profitable-close rate, and a verified $10+ position.";
+    } else if (developingHolders.length >= 1) {
+      tier = "Developing Signals";
+      displayTraders = holders;
+      tierReason = "At least one holder has positive weekly P&L, a complete 7-day record, 5+ closes, and a 75%+ profitable-close rate; other holders may not meet the Strong Signals threshold.";
+    } else {
+      tier = "Watchlist";
+      displayTraders = holders;
+      tierReason = "Two or more distinct wallets hold the same outcome, but the historical record is incomplete or below the Developing Signals threshold.";
+    }
+
+    const knownRates = displayTraders.map(trader => num(trader.winRate)).filter(rate => rate !== null);
+    const avgRate = knownRates.length ? knownRates.reduce((sum, rate) => sum + rate, 0) / knownRates.length : 0;
+    const entries = displayTraders.map(trader => num(trader.entryValue)).filter(value => value !== null && value > 0);
+    const totalEntry = entries.length ? entries.reduce((sum, value) => sum + value, 0) : null;
+    const totalValue = displayTraders.reduce((sum, trader) => sum + (num(trader.currentValue) ?? 0), 0);
+    const breadthScore = Math.min(displayTraders.length, 20) / 20 * 55;
+    const capitalScore = Math.min(Math.log10(Math.max(1, totalEntry || 0) + 1) / Math.log10(10001), 1) * 25;
+    const qualityScore = knownRates.length ? avgRate / 100 * 10 : 0;
+    const result = {
+      ...group, traders: displayTraders, sameSide: displayTraders.length,
+      qualifiedTraders: strongHolders.length, developingTraders: developingHolders.length,
+      strongHolderCount: strongHolders.length, signalTier: tier, tierReason,
+      consensusScore: Math.round(breadthScore + capitalScore + qualityScore),
+      totalValue, totalEntry
+    };
+    if (tier === "Strong Signals") strongGroups.push(result);
+    else if (tier === "Developing Signals") developingGroups.push(result);
+    else watchlistGroups.push(result);
   }
 
-  // [run-scanner] Exclude an entire market when qualified traders are active on
-  // multiple outcomes. A larger YES/Over group is not clean consensus
-  // when 2+ independently qualified traders also hold NO/Under.
-  const qualifiedSidesByCondition = new Map();
-  for (const group of qualifiedGroups) {
-    const conditionId = String(group.conditionId || "").toLowerCase();
-    const side = String(group.side || "").trim().toLowerCase();
-    if (!conditionId || !side) continue;
-    if (!qualifiedSidesByCondition.has(conditionId)) qualifiedSidesByCondition.set(conditionId, new Set());
-    qualifiedSidesByCondition.get(conditionId).add(side);
-  }
-  const conflictingConditions = new Set(
-    [...qualifiedSidesByCondition.entries()]
-      .filter(([, sides]) => sides.size > 1)
-      .map(([conditionId]) => conditionId)
-  );
-  const cleanQualifiedGroups = qualifiedGroups.filter(group =>
-    !conflictingConditions.has(String(group.conditionId || "").toLowerCase())
-  );
-  console.log("Opposing-side consensus filter:", JSON.stringify({
-    conflictingMarkets: conflictingConditions.size,
-    groupsRemoved: qualifiedGroups.length - cleanQualifiedGroups.length,
-    cleanMarketsRemaining: cleanQualifiedGroups.length
-  }));
+  const sortGroups = (a, b) =>
+    (b.consensusScore ?? 0) - (a.consensusScore ?? 0) ||
+    b.sameSide - a.sameSide ||
+    (b.totalValue ?? 0) - (a.totalValue ?? 0) ||
+    (b.newestBuy || 0) - (a.newestBuy || 0);
+  strongGroups.sort(sortGroups);
+  developingGroups.sort(sortGroups);
+  watchlistGroups.sort(sortGroups);
 
-  const result = cleanQualifiedGroups.map(group => {
-    const knownRates = group.traders.map(t => num(t.winRate)).filter(rate => rate !== null);
-    const avgRate = knownRates.length ? knownRates.reduce((sum,rate) => sum + rate,0) / knownRates.length : 0;
-    const knownSamples = group.traders.map(t => num(t.resolvedMarkets)).filter(sample => sample !== null);
-    const avgSample = knownSamples.length ? knownSamples.reduce((sum,sample) => sum + Math.min(100,sample),0) / knownSamples.length : 0;
-    const combinedEntry = group.totalEntry ?? 0;
-    // Heuristic strength score (not a win probability): prioritize breadth,
-    // then verified dollars committed, then known historical close quality.
-    const breadthScore = Math.min(group.sameSide,20) / 20 * 55;
-    const capitalScore = Math.min(Math.log10(Math.max(1, combinedEntry) + 1) / Math.log10(10001), 1) * 25;
-    const qualityScore = knownRates.length ? (avgRate / 100 * 10 + Math.min(avgSample,100) / 100 * 10) : 0;
-    const consensusScore = Math.round(breadthScore + capitalScore + qualityScore);
-    return {...group, consensusScore, signalTier: group.sameSide >= 10 ? "Strong consensus" : group.sameSide >= 5 ? "High consensus" : group.sameSide >= 3 ? "Growing consensus" : "2 traders"};
-  }).sort((a, b) => b.consensusScore - a.consensusScore || b.sameSide - a.sameSide || b.totalValue - a.totalValue || (b.newestBuy || 0) - (a.newestBuy || 0));
-  console.log("Consensus holder qualification diagnostics:", JSON.stringify(qualificationDiagnostics));
-  console.log("Consensus qualification:", JSON.stringify({
-    rawGroupsWithTwoHolders,
-    groupsWithTwoQualified,
-    publishedGroups: result.length,
-    minimumWinRate: MIN_CONSENSUS_WIN_RATE,
-    minimumResolvedMarkets,
-    qualificationWindowDays: 7
+  const perTierLimit = 1500;
+  const result = [
+    ...strongGroups.slice(0, perTierLimit),
+    ...developingGroups.slice(0, perTierLimit),
+    ...watchlistGroups.slice(0, perTierLimit)
+  ];
+  console.log("Consensus tier diagnostics:", JSON.stringify({
+    ...diagnostics,
+    strongMarkets: strongGroups.length, developingMarkets: developingGroups.length,
+    watchlistMarkets: watchlistGroups.length,
+    publishedStrong: Math.min(strongGroups.length, perTierLimit),
+    publishedDeveloping: Math.min(developingGroups.length, perTierLimit),
+    publishedWatchlist: Math.min(watchlistGroups.length, perTierLimit),
+    minimumStrongWinRate: MIN_CONSENSUS_WIN_RATE,
+    minimumStrongResolvedMarkets: minimumResolvedMarkets,
+    developingWinRate: 75, developingMinimumResolvedMarkets: 5,
+    discoveryPositionValue: MIN_CONSENSUS_DISCOVERY_VALUE
   }));
   return result;
 }
@@ -1752,7 +1726,7 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
   // it with a second, lifetime-shaped settlement cohort scan.
   const settlementRecords = {};
   const consensusMinimumResolved = MIN_CONSENSUS_CLOSED_MARKETS;
-  console.log(`${period.key}: Consensus Markets require 2+ distinct same-side open holders; every displayed holder must have a complete 7-day record, 10+ closes, >=90% win rate, and verified entry.`);
+  console.log(`${period.key}: Strong Signals require 2+ same-side holders each with a complete 7-day record, 10+ closes, >=90% profitable-close rate, positive weekly P&L, and verified $10+ entry/current value. Developing and Watchlist tiers preserve broader 2+ holder overlap.`);
   // Reuse the period-scoped record sample used for ranking; avoid a second history scan.
   const leaderRecords = records;
   const tradeRows = await mapLimit(
@@ -1848,7 +1822,7 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     qualificationWindowDays: 7,
     minimumWinRate: MIN_CONSENSUS_WIN_RATE,
     minimumResolvedMarkets: MIN_CONSENSUS_CLOSED_MARKETS,
-    qualificationBasis: "A market is published only when at least 2 distinct wallets are confirmed holding the same side in the live OPEN positions endpoint, and every displayed trader independently has a complete rolling 7-day profitable-close record with at least 10 resolved markets, at least 90% win rate, verified positive entry price and shares, at least $10 entry cost, and at least $10 current value. This close-profitability proxy is not guaranteed settlement accuracy or profit.",
+    qualificationBasis: "Signals are grouped by exact Polymarket condition and outcome, including individual player props. Strong Signals preserve the strict 90%+ complete rolling 7-day profitable-close proxy, 10+ closes, positive weekly P&L, and verified $10+ entry/current value for every displayed holder. Developing Signals and Watchlist retain 2+ distinct same-side holders with their record status shown; these tiers are not represented as 90% signals.",
     minimumSameSideTraders: 2,
     candidateCount: ranked.length,
     discoveredCandidateCount: discoveredCandidates.length,
@@ -1856,9 +1830,9 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     consensusHolderRecordCandidateCount: consensusWallets.size,
     totalRecordCandidateCount: recordCandidates.length,
     scanDiagnostics: lastConsensusDiagnostics,
-    candidatePoolBasis: "All unique wallets exposed by available public Data API v2 leaderboard cursors across overall, sports, politics, crypto, esports, culture, mentions, weather, economics, tech, and finance categories and DAY/WEEK/MONTH/ALL periods, sorted by PnL and volume. The public API does not expose a literal all-wallet directory, so this is the broadest discoverable leaderboard pool rather than a guaranteed census. Every available open-position page is scanned; final consensus includes same-outcome groups with at least 2 distinct holders and verified entry prices.",
+    candidatePoolBasis: "Up to 15,000 unique wallets selected from public Data API v2 leaderboard discovery across sports, crypto, esports, politics, culture, mentions, weather, economics, tech, finance, and overall categories. The public API does not expose a literal all-wallet directory. The scan checks up to 300 open positions for sports-category wallets and 100 for other wallets. Discovery includes active positions worth $3+; the Strong Signals tier keeps its separate $10+ entry/current-value requirement.",
     resolutionWindowHours: CONSENSUS_WINDOW_HOURS,
-    recordBasis: "Only active markets with at least 2 distinct same-outcome qualified traders. Every listed trader independently passes a complete rolling 7-day profitable-close record of at least 10 resolved markets and at least 90% wins, plus verified live holding and entry data. This is a research signal, not a proven profitable strategy.",
+    recordBasis: "Strong Signals: every listed trader independently passes the complete rolling 7-day profitable-close proxy with at least 10 closes, 90%+ rate, positive weekly P&L, and verified $10+ entry/current value. Developing Signals: at least one holder has 5+ closes and 75%+ rate with positive weekly P&L. Watchlist: 2+ same-side active holders without that developing qualification. Player props are grouped by exact market and outcome. This is a research signal, not a proven profitable strategy.",
     qualificationCount,
     consensus: consensusRows
   });
