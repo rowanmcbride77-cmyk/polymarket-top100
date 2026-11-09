@@ -28,12 +28,12 @@ const RANKING_RECORD_LIMIT = 1000;
 const CLOSED_POSITION_SCAN_LIMIT = 250;
 // Keep the full 15,000-wallet live-position scan; optimize request throughput rather than shrinking coverage.
 const CONSENSUS_WALLET_LIMIT = 15000;
-const MAX_CONSENSUS_POSITION_PAGES_PER_WALLET = 1;
+const MAX_CONSENSUS_POSITION_PAGES_PER_WALLET = 2;
 const MAX_SPORTS_CONSENSUS_POSITION_PAGES_PER_WALLET = 5;
 const LEADER_RECORD_LIMIT = RANKING_RECORD_LIMIT;
 // Keep upcoming markets in the data so the UI can filter 24h / 3d / 7d accurately.
 const CONSENSUS_WINDOW_HOURS = 48; // Sports markets may remain eligible through the estimated finish of games starting within 48 hours.
-const CONSENSUS_HOLDERS_PER_MARKET = 1500;
+const CONSENSUS_HOLDERS_PER_MARKET = 1000;
 const MIN_CONSENSUS_DISCOVERY_VALUE = 3; // Discovery feeds Developing/Watchlist; Strong Signals retain the $10 gate.
 const MIN_CONSENSUS_POSITION_VALUE = 10;
 const MIN_CONSENSUS_ENTRY_VALUE = 10; // Exclude tiny/dust entries when verified cost basis is available.
@@ -672,7 +672,7 @@ async function getMarketConsensus(market, knownNames) {
   const grouped = new Map();
 
   for (const position of rows) {
-    if (position.redeemable === true || position.mergeable === true) continue;
+    if (!isLiveConsensusPosition(position)) continue;
 
     const wallet = String(position.proxy_wallet ?? position.proxyWallet ?? position.user ?? "").toLowerCase();
     const side = String(position.outcome ?? position.outcome_name ?? "").trim();
@@ -1036,12 +1036,13 @@ async function getBroadConsensusMarkets(knownTraders, nowMs, activePositions) {
     walletsWithMorePositions,
     sameSideGroups: holderGroups.length,
     pageCapPerWallet: MAX_CONSENSUS_POSITION_PAGES_PER_WALLET,
+    allWalletPositionPageCap: MAX_CONSENSUS_POSITION_PAGES_PER_WALLET, 
     nbaSportsWalletTarget: CATEGORY_CANDIDATE_QUOTAS.sports,
     nbaSportsPositionPageCap: MAX_SPORTS_CONSENSUS_POSITION_PAGES_PER_WALLET,
     sportsWalletsScanned,
     sportsPositionPagesFetched,
     sportsPageCapPerWallet: MAX_SPORTS_CONSENSUS_POSITION_PAGES_PER_WALLET,
-    note: "Consensus discovery scans up to 3 pages (300 positions) for sports-category leaderboard traders and 1 page (100 positions) for other traders, within the 15,000-wallet cap. Discovery includes active holdings worth at least $3; Strong Signals retain the $10 entry/current-value gate. Player props are classified as sports and each exact market/outcome is grouped separately. Sports may remain eligible for 48 hours; other categories use 24 hours."
+    note: `Consensus discovery scans up to ${MAX_CONSENSUS_POSITION_PAGES_PER_WALLET * 100} positions for every selected wallet and up to ${MAX_SPORTS_CONSENSUS_POSITION_PAGES_PER_WALLET * 100} for sports-category wallets, within the 15,000-wallet cap. This deliberately scans beyond the first 100 highest-value positions for non-sports wallets so player props held by cross-category traders are not missed. Active holdings worth $3+ are eligible for Developing/Watchlist; Strong Signals retain the $10 entry/current-value gate. Exact market condition and outcome are grouped separately. Sports may remain eligible for 48 hours; other categories use 24 hours.`
   };
   console.log("Consensus scan diagnostics: " + JSON.stringify(lastConsensusDiagnostics));
   const activePositionsByWallet = Object.fromEntries(consensusPositions.map(([wallet, positions]) => [wallet, positions]));
@@ -1176,6 +1177,85 @@ async function enrichConsensusMarkets(holderGroups, nowMs) {
       marketMetadataVerified: true
     });
   }
+
+  // Expand each discovered, upcoming market from the market side as well as the
+  // leaderboard-wallet side. This finds holders outside the 15k sampled wallet pool
+  // and prevents consensus counts from being limited to leaderboard candidates.
+  const marketLookup = new Map();
+  const knownNames = new Map();
+  for (const group of enriched) {
+    const condition = String(group.conditionId || "").toLowerCase();
+    if (!condition) continue;
+    if (!marketLookup.has(condition)) {
+      marketLookup.set(condition, {
+        conditionId: condition,
+        question: group.title,
+        title: group.title,
+        endDate: group.endDate,
+        events: group.gameStartTime ? [{startDate: group.gameStartTime}] : [],
+        category: group.category,
+        sport: group.sport,
+        sportsMarketType: group.sportsMarketType,
+        tags: group.tags || []
+      });
+    }
+    for (const trader of group.traders || []) {
+      const wallet = String(trader.wallet || "").toLowerCase();
+      if (wallet && !knownNames.has(wallet)) knownNames.set(wallet, trader);
+    }
+  }
+  const marketHolderRows = await mapLimit(
+    [...marketLookup.values()],
+    10,
+    async market => {
+      try {
+        return await getMarketConsensus(market, knownNames);
+      } catch (error) {
+        console.warn("Market-first holder expansion failed for " + market.conditionId + ": " + error.message);
+        return [];
+      }
+    }
+  );
+  const expandedGroups = new Map(
+    enriched.map(group => [String(group.conditionId || "").toLowerCase() + "|" + String(group.side || "").toLowerCase(), group])
+  );
+  for (const directGroup of marketHolderRows.flat()) {
+    const condition = String(directGroup.conditionId || "").toLowerCase();
+    const key = condition + "|" + String(directGroup.side || "").toLowerCase();
+    const source = marketLookup.get(condition);
+    const prior = expandedGroups.get(key);
+    const traders = new Map();
+    for (const trader of [...(prior?.traders || []), ...(directGroup.traders || [])]) {
+      const wallet = String(trader.wallet || "").toLowerCase();
+      if (wallet && !traders.has(wallet)) traders.set(wallet, trader);
+    }
+    const mergedTraders = [...traders.values()].slice(0, TRADERS_PER_MARKET);
+    if (mergedTraders.length < 2) continue;
+    expandedGroups.set(key, {
+      ...(source || {}),
+      ...(prior || {}),
+      ...directGroup,
+      category: prior?.category || source?.category || classifyMarketCategory(source || {}, directGroup),
+      title: prior?.title || source?.title || directGroup.title,
+      endDate: prior?.endDate || source?.endDate || directGroup.endDate,
+      marketMetadataVerified: true,
+      traders: mergedTraders,
+      sameSide: mergedTraders.length,
+      totalValue: mergedTraders.reduce((sum, trader) => sum + (num(trader.currentValue) || 0), 0),
+      newestBuy: mergedTraders.reduce((latest, trader) => Math.max(latest, num(trader.buyTime) || 0), 0) || null,
+      oldestBuy: mergedTraders.reduce((earliest, trader) => {
+        const time = num(trader.buyTime);
+        return time === null ? earliest : (earliest === null ? time : Math.min(earliest, time));
+      }, null)
+    });
+  }
+  const fullyExpanded = [...expandedGroups.values()];
+  console.log("Market-first holder expansion: " + JSON.stringify({
+    eligibleMarkets: marketLookup.size,
+    holderLookups: marketHolderRows.length,
+    expandedSameSideGroups: fullyExpanded.length - enriched.length
+  }));
+  enriched.splice(0, enriched.length, ...fullyExpanded);
 
   const categoryCounts = enriched.reduce((counts, group) => { counts[group.category] = (counts[group.category] || 0) + 1; return counts; }, {});
   console.log("Consensus Gamma enrichment: " + JSON.stringify({
