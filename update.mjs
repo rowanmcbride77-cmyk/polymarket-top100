@@ -1103,7 +1103,7 @@ async function getDirectNbaConsensusGroups(nowMs, knownNames = new Map()) {
         market.active === false || String(market.active).toLowerCase() === "false") continue;
     const timing = consensusTiming(market);
     let endMs = timestampMs(timing.endDate);
-    if (typeof timing.endDate === "string" && /^\\d{4}-\\d{2}-\\d{2}$/.test(timing.endDate)) {
+    if (typeof timing.endDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(timing.endDate)) {
       endMs = Date.parse(timing.endDate + "T23:59:59.999Z");
     }
     if (endMs === null || endMs <= nowMs || endMs > nowMs + CONSENSUS_WINDOW_HOURS * 60 * 60 * 1000) continue;
@@ -1140,7 +1140,7 @@ async function getDirectNbaConsensusGroups(nowMs, knownNames = new Map()) {
     taggedMarketsReturned: markets.length,
     eligibleUpcomingMarkets: eligible.length,
     sameSideConsensusGroups: found.length,
-    playerPropGroups: found.filter(group => /\\b(points?|rebounds?|assists?|three.?pointers?|3.?pointers?|threes?|steals?|blocks?|pra|double.?double|triple.?double)\\b/i.test(String(group.title || ""))).length
+    playerPropGroups: found.filter(group => /\b(points?|rebounds?|assists?|three.?pointers?|3.?pointers?|threes?|steals?|blocks?|pra|double.?double|triple.?double)\b/i.test(String(group.title || ""))).length
   }));
   return found;
 }
