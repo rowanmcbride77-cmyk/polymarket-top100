@@ -1074,74 +1074,83 @@ function classifyMarketCategory(market, group = {}) {
   if (/\b(entertainment|celebrity|movie|music|culture|grammy|oscar)\b/.test(raw)) return "culture";
   return "other";
 }
-async function getDirectNbaConsensusGroups(nowMs, knownNames = new Map()) {
-  // NBA markets are discoverable directly from Gamma's NBA tag (745), not
-  // only through wallets that happen to rank in the sports leaderboard.
-  // This is what allows player props to enter consensus even when their
-  // holders are outside the sampled leaderboard wallet pool.
-  const params = new URLSearchParams({
-    tag_id: "745",
-    active: "true",
-    closed: "false",
-    limit: "1000",
-    order: "endDate",
-    ascending: "true"
-  });
-  let markets = [];
-  try {
-    markets = asArray(await getJson(`${GAMMA_API}/markets?${params}`));
-  } catch (error) {
-    console.warn("Direct NBA market discovery unavailable:", error.message);
-    return [];
+async function getDirectSportsConsensusGroups(nowMs, knownNames = new Map()) {
+  // Discover sports from Gamma metadata instead of hard-coding NBA tag 745.
+  let metadata = [];
+  try { metadata = asArray(await getJson(`${GAMMA_API}/sports`)); }
+  catch (error) { console.warn("Gamma sports metadata unavailable:", error.message); return []; }
+
+  const families = [
+    ["NFL", /^(nfl|american.?football|football)$/i],
+    ["NBA", /^(nba|basketball)$/i], ["WNBA", /^wnba$/i],
+    ["MLB", /^(mlb|baseball)$/i], ["NHL", /^(nhl|hockey|ice.?hockey)$/i],
+    ["NCAAF", /^(ncaaf|cfb|college.?football)$/i],
+    ["NCAAB", /^(ncaab|cbb|college.?basketball)$/i],
+    ["Soccer", /(soccer|epl|premier|champions|liga|bundesliga|serie.?a|la.?liga|ligue)/i],
+    ["Tennis", /(tennis|atp|wta)/i], ["MMA", /(ufc|mma|boxing)/i],
+    ["Golf", /(golf|pga|lpga)/i], ["Cricket", /cricket/i],
+    ["Rugby", /rugby/i], ["Esports", /(esport|counter.?strike|dota|league.?of.?legends|valorant)/i]
+  ];
+  const tagsByFamily = new Map();
+  for (const row of metadata) {
+    const label = String(row.sport || row.league || row.name || "").trim();
+    const family = families.find(([, pattern]) => pattern.test(label));
+    if (!family) continue;
+    const rawTags = Array.isArray(row.tags) ? row.tags : String(row.tags || "").split(",");
+    const ids = rawTags.map(value => String(typeof value === "object" ? (value.id ?? value.tag_id ?? "") : value).trim())
+      .filter(value => /^\d+$/.test(value));
+    if (!tagsByFamily.has(family[0])) tagsByFamily.set(family[0], new Set());
+    for (const id of ids) tagsByFamily.get(family[0]).add(id);
   }
 
-  const eligible = [];
-  for (const raw of markets) {
-    const market = { ...raw, tags: [...(Array.isArray(raw.tags) ? raw.tags : []), "NBA"] };
-    const conditionId = String(market.conditionId ?? market.condition_id ?? "").toLowerCase();
-    if (!conditionId || market.closed === true || String(market.closed).toLowerCase() === "true" ||
-        market.active === false || String(market.active).toLowerCase() === "false") continue;
-    const timing = consensusTiming(market);
-    let endMs = timestampMs(timing.endDate);
-    if (typeof timing.endDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(timing.endDate)) {
-      endMs = Date.parse(timing.endDate + "T23:59:59.999Z");
+  const marketByCondition = new Map(), familyCounts = {};
+  // Bound each league's sweep so one large NBA slate cannot crowd out other sports.
+  for (const [family, tagSet] of tagsByFamily) {
+    let familyMarkets = 0;
+    for (const tagId of [...tagSet].slice(0, 4)) {
+      const params = new URLSearchParams({tag_id:tagId,active:"true",closed:"false",limit:"1000",order:"endDate",ascending:"true"});
+      try {
+        const rows = asArray(await getJson(`${GAMMA_API}/markets?${params}`));
+        for (const raw of rows) {
+          const market = {...raw,tags:[...(Array.isArray(raw.tags)?raw.tags:[]),family]};
+          const conditionId = String(market.conditionId ?? market.condition_id ?? "").toLowerCase();
+          if (!conditionId || market.closed === true || String(market.closed).toLowerCase() === "true" ||
+              market.active === false || String(market.active).toLowerCase() === "false" || !isSportsMarket(market)) continue;
+          const timing = consensusTiming(market);
+          let endMs = timestampMs(timing.endDate);
+          if (typeof timing.endDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(timing.endDate)) endMs = Date.parse(timing.endDate + "T23:59:59.999Z");
+          if (endMs === null || endMs <= nowMs || endMs > nowMs + CONSENSUS_WINDOW_HOURS * 60 * 60 * 1000) continue;
+          if (!marketByCondition.has(conditionId)) {
+            marketByCondition.set(conditionId,{...market,conditionId,category:"sports",sport:family,
+              title:market.question || market.title || `${family} market`,endDate:timing.endDate,
+              gameStartTime:timing.gameStartTime || market.gameStartTime || market.game_start_time || null});
+            familyMarkets++;
+          }
+          if (familyMarkets >= 35) break;
+        }
+      } catch (error) { console.warn(`Direct ${family} discovery failed for tag ${tagId}:`,error.message); }
+      if (familyMarkets >= 35) break;
     }
-    if (endMs === null || endMs <= nowMs || endMs > nowMs + CONSENSUS_WINDOW_HOURS * 60 * 60 * 1000) continue;
-    eligible.push({
-      ...market,
-      conditionId,
-      title: market.question || market.title || "NBA market",
-      category: "sports",
-      sport: "NBA",
-      endDate: timing.endDate,
-      gameStartTime: timing.gameStartTime || market.gameStartTime || market.game_start_time || null
-    });
+    familyCounts[family] = familyMarkets;
   }
 
-  // Limit concurrency to protect the public API while keeping this targeted
-  // market-first sweep small relative to the 20,000-wallet scan.
-  const groupsByMarket = await mapLimit(eligible, 12, market =>
-    getMarketConsensus(market, knownNames).then(groups => groups.map(group => ({
-      ...group,
-      title: market.title,
-      slug: market.slug || null,
-      eventSlug: market.eventSlug || market.event_slug || null,
-      eventTitle: market.eventTitle || market.event_title || null,
-      category: "sports",
-      sport: "NBA",
-      sportsMarketType: market.sportsMarketType || market.sports_market_type || "nba",
-      gameStartTime: market.gameStartTime || null,
-      endDate: market.endDate,
-      marketClosed: false,
-      marketMetadataVerified: true
+  const eligible = [...marketByCondition.values()];
+  const groupsByMarket = await mapLimit(eligible,12,market =>
+    getMarketConsensus(market,knownNames).then(groups => groups.map(group => ({
+      ...group,title:market.title,slug:market.slug || null,
+      eventSlug:market.eventSlug || market.event_slug || null,
+      eventTitle:market.eventTitle || market.event_title || null,
+      category:"sports",sport:market.sport,
+      sportsMarketType:market.sportsMarketType || market.sports_market_type || null,
+      gameStartTime:market.gameStartTime || null,endDate:market.endDate,
+      marketClosed:false,marketMetadataVerified:true
     })))
   );
   const found = groupsByMarket.flat();
-  console.log("Direct NBA market discovery: " + JSON.stringify({
-    taggedMarketsReturned: markets.length,
-    eligibleUpcomingMarkets: eligible.length,
-    sameSideConsensusGroups: found.length,
-    playerPropGroups: found.filter(group => /\b(points?|rebounds?|assists?|three.?pointers?|3.?pointers?|threes?|steals?|blocks?|pra|double.?double|triple.?double)\b/i.test(String(group.title || ""))).length
+  console.log("Direct multi-sport market discovery:",JSON.stringify({
+    sportFamilies:Object.keys(familyCounts),eligibleMarketsBySport:familyCounts,
+    eligibleMarkets:eligible.length,sameSideConsensusGroups:found.length,
+    playerPropGroups:found.filter(group => /\b(points?|rebounds?|assists?|three.?pointers?|3.?pointers?|threes?|steals?|blocks?|pra|yards?|receptions?|touchdowns?|strikeouts?|hits?|goals?)\b/i.test(String(group.title || ""))).length
   }));
   return found;
 }
@@ -1323,8 +1332,8 @@ async function enrichConsensusMarkets(holderGroups, nowMs) {
     });
   }
   const fullyExpanded = [...expandedGroups.values()];
-  const directNbaGroups = await getDirectNbaConsensusGroups(nowMs, knownNames);
-  for (const directGroup of directNbaGroups) {
+  const directSportsGroups = await getDirectSportsConsensusGroups(nowMs, knownNames);
+  for (const directGroup of directSportsGroups) {
     const condition = String(directGroup.conditionId || "").toLowerCase();
     const key = condition + "|" + String(directGroup.side || "").toLowerCase();
     const prior = expandedGroups.get(key);
@@ -1352,7 +1361,7 @@ async function enrichConsensusMarkets(holderGroups, nowMs) {
     eligibleMarkets: marketLookup.size,
     holderLookups: marketHolderRows.length,
     expandedSameSideGroups: allExpanded.length - enriched.length,
-    directNbaGroups: directNbaGroups.length
+    directSportsGroups: directSportsGroups.length
   }));
   enriched.splice(0, enriched.length, ...allExpanded);
 
