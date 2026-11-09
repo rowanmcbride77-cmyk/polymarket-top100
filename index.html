@@ -69,7 +69,7 @@ select{max-width:155px}
 .market-title{line-height:1.4;min-width:0}
 .side-tag{display:inline-block;padding:5px 8px;border-radius:7px;background:#07543f;color:#7df5c7;font-weight:700;font-size:12px}
 .side-tag.no{background:#55232f;color:#ffb4c1}
-.click-row{cursor:pointer}
+.signal-section td{background:#102235;border-top:2px solid #31506b;padding:13px 8px;color:#e9f4ff}.signal-section strong{display:block;font-size:14px}.signal-section small{display:block;color:var(--muted);font-weight:400;margin-top:4px;line-height:1.45}.click-row{cursor:pointer}
 .click-row:hover td{background:#0e1c2a}
 .expand-row td{background:#0b1825;padding:14px}
 .expand-title{font-weight:700;margin-bottom:12px}
@@ -210,7 +210,7 @@ dialog::backdrop{background:#000b}
           </label>
           <label>Market window
             <select id="recency" onchange="renderConsensus()">
-              <option value="24h">Next 24 hours</option>
+              <option value="48h" selected>Next 48 hours (sports) / 24 hours (other)</option>
               
               
             </select>
@@ -477,7 +477,7 @@ function consensus() {
 async function loadConsensusData() {
   const pool = $("consensusPool").value;
   $("consensusBody").innerHTML = `<tr><td colspan="7" class="loading">Loading ${esc(pool)} consensus markets…</td></tr>`;
-  $("consensusPeriod").textContent = "All categories · closes within 24 hours · 2+ same-side holders · 90%+ win rate · 10+ closed markets in 7 days";
+  $("consensusPeriod").textContent = "15K-wallet scan · 48h sports / 24h other · Strong 90%+ · Developing · Watchlist";
   const filename = CONSENSUS_FILES[pool];
   try {
     const urls = [
@@ -498,7 +498,7 @@ async function loadConsensusData() {
     candidates.sort((a, b) => (Date.parse(b.generatedAt || "") || 0) - (Date.parse(a.generatedAt || "") || 0));
     consensusData = candidates[0];
     renderConsensus();
-    $("consensusPeriod").textContent = "7-day records · open holdings";
+    $("consensusPeriod").textContent = "Strong 90%+ · Developing · Watchlist";
   } catch (error) {
     consensusData = {consensus:[]};
     $("consensusBody").innerHTML = `<tr><td colspan="7" class="empty">${esc(error.message)}</td></tr>`;
@@ -813,7 +813,7 @@ async function loadConsensusTradeHistory(wallet, conditionId, outcome) {
 function renderConsensus() {
   const minCount = Number($("minTraders").value || 2);
   const nowSeconds = Date.now() / 1000;
-  const windowHours = 24; // Consensus Markets are always limited to the next 24 hours.
+  const windowHours = 48; // Sports markets may remain visible for 48 hours; non-sports are filtered to 24 hours below.
   const cutoffSeconds = nowSeconds + windowHours * 60 * 60;
   const filtered = consensus().map((market, index) => {
       const endSeconds = marketEndTimestamp(market);
@@ -824,14 +824,28 @@ function renderConsensus() {
       market._endSeconds !== null &&
       market._endSeconds > nowSeconds &&
       market._endSeconds <= cutoffSeconds &&
+      (String(market.category || "").toLowerCase() === "sports" || market._endSeconds <= nowSeconds + 24 * 60 * 60) &&
       traderCount(market) >= minCount)
     .sort((a, b) =>
+      (["Strong Signals","Developing Signals","Watchlist"].indexOf(a.signalTier) - ["Strong Signals","Developing Signals","Watchlist"].indexOf(b.signalTier)) ||
       (num(b.consensusScore) ?? 0) - (num(a.consensusScore) ?? 0) ||
       traderCount(b) - traderCount(a) ||
       (marketAmount(b) ?? -1) - (marketAmount(a) ?? -1) ||
       a._endSeconds - b._endSeconds);
 
-  const visible = allMarkets ? filtered : filtered.slice(0, 15);
+  const tierSections = [
+    {title:"Strong Signals", note:"Every listed trader meets the complete 7-day, 10+ close, 90%+ profitable-close and $10+ position requirements.", rows:filtered.filter(m => m.signalTier === "Strong Signals")},
+    {title:"Developing Signals", note:"At least one holder has a complete 7-day record, 5+ closes and 75%+ profitable-close rate; remaining holders may not meet the strict threshold.", rows:filtered.filter(m => m.signalTier === "Developing Signals")},
+    {title:"Watchlist", note:"2+ distinct wallets hold the same outcome, but historical qualification is incomplete or below the Developing threshold.", rows:filtered.filter(m => m.signalTier === "Watchlist")}
+  ];
+  const visible = tierSections.flatMap(section =>
+    (allMarkets ? section.rows : section.rows.slice(0, 10)).map((market, index) => ({
+      ...market,
+      _sectionHeader: index === 0 ? section.title : null,
+      _sectionNote: section.note
+    }))
+  );
+  const hasMoreMarkets = tierSections.some(section => section.rows.length > 10);
 
   $("consensusBody").innerHTML = visible.length ? visible.map((market, index) => {
     const key = marketKey(market, market._index);
@@ -851,6 +865,7 @@ function renderConsensus() {
       ? `<small class="subtitle">Avg. buy: ${buyPreview}${members.length > 3 ? " · +" + (members.length - 3) + " more" : ""}</small>`
       : "";
 
+    const sectionHeader = market._sectionHeader ? `<tr class="signal-section"><td colspan="6"><strong>${esc(market._sectionHeader)}</strong><small>${esc(market._sectionNote)}</small></td></tr>` : "";
     const row = `<tr class="click-row" onclick="toggleMarket('${esc(key)}')">
       <td>${index + 1}</td>
       <td><div class="market-name"><span class="market-symbol">◈</span><span class="market-title">${esc(marketTitle(market))}</span></div>${buyPreviewHtml}</td>
@@ -891,18 +906,18 @@ function renderConsensus() {
         const hasReportedEntry = !buy && reportedAvgPrice !== null;
         const sellCost = sell?._cost;
         return '<div class="member member-compact">' +
-          '<div class="member-identity"><strong>' + profileButton(member, memberName) + favoriteButton(wallet) + '</strong><small class="member-record">' + "7-day profitable closes: " + (num(member.wins) !== null && num(member.losses) !== null ? num(member.wins).toLocaleString() + "–" + num(member.losses).toLocaleString() + " · " + (num(member.winRate) !== null ? num(member.winRate).toFixed(1) + "% profitable-close rate" : "profitable-close rate N/A") + " · " + (num(member.resolvedMarkets) ?? (num(member.wins)+num(member.losses))).toLocaleString() + " closed positions grouped by market" : "Qualified period record unavailable") + '</small><small>' + (hasObservedBuy ? "Observed BUY · "+esc(dateText(buy?.timestamp)) : "Open position confirmed · original BUY timestamp not required") + '</small><small>' + (sell ? "SELL observed · "+esc(dateText(sell.timestamp)) : (!events ? "Checking later SELL trades…" : (member.isStillHolding === true || String(member.positionStatus || "").toUpperCase() === "OPEN" ? "Still listed as an open position; no SELL required" : "No matching SELL found in returned trade history"))) + '</small></div>' +
+          '<div class="member-identity"><strong>' + profileButton(member, memberName) + favoriteButton(wallet) + '</strong><small class="member-record">' + "7-day profitable closes: " + (num(member.wins) !== null && num(member.losses) !== null ? num(member.wins).toLocaleString() + "–" + num(member.losses).toLocaleString() + " · " + (num(member.winRate) !== null ? num(member.winRate).toFixed(1) + "% profitable-close rate" : "profitable-close rate N/A") + " · " + (num(member.resolvedMarkets) ?? (num(member.wins)+num(member.losses))).toLocaleString() + " closed positions grouped by market" : "Record incomplete / unavailable") + '</small><small>' + (hasObservedBuy ? "Observed BUY · "+esc(dateText(buy?.timestamp)) : "Open position confirmed · original BUY timestamp not required") + '</small><small>' + (sell ? "SELL observed · "+esc(dateText(sell.timestamp)) : (!events ? "Checking later SELL trades…" : (member.isStillHolding === true || String(member.positionStatus || "").toUpperCase() === "OPEN" ? "Still listed as an open position; no SELL required" : "No matching SELL found in returned trade history"))) + '</small></div>' +
           '<div><strong>' + (buyPrice === null ? "N/A" : tokenPrice(buyPrice)) + '</strong><small>' + (hasObservedBuy ? "Observed BUY price" : (reportedAvgPrice !== null ? "Average buy price from open position" : "Average buy price unavailable")) + '</small><small>' + (bought === null || bought === undefined ? (memberEntry !== null ? "Reported position entry value "+consensusCash(memberEntry)+" · exact trade cost unavailable" : "Entry cost unavailable; no matching BUY trade found") : (hasObservedBuy ? "Observed BUY / position entry "+consensusCash(bought) : "Reported position entry "+consensusCash(bought))+(shares !== null ? " · "+shares.toFixed(1)+" shares" : "")) + '</small>' + (bought !== null && memberValue !== null ? '<small>' + (buy ? "Approx. unrealized change: " : "Approx. change vs estimated entry: ") + (memberValue-bought>0?"+":"") + consensusCash(memberValue-bought) + " (" + (bought>0?((memberValue-bought)/bought*100).toFixed(1):"N/A") + "%)" + '</small>' : "") + '</div>' +
           '<div><strong>' + (sell && sell._price !== null ? (sell._price*100).toFixed(1)+"¢" : "—") + '</strong><small>Observed sell price</small><small>' + (sell ? "SELL transaction "+(sellCost === null ? "amount unavailable" : cash(sellCost)) : (!events ? "Loading transaction history" : "No matching SELL found")) + '</small><small>' + (memberValue !== null ? "Position value reported "+consensusCash(memberValue) : "Current held value unavailable") + '</small></div>' +
         '</div>';
       }).join("")}</div>` : `<div class="empty">No trader-level position details were supplied for this market.</div>`}
     </td></tr>` : "";
 
-    return row + detail;
-  }).join("") : `<tr><td colspan="6" class="empty">No verified market currently has 2+ distinct same-side holders with verified entries and a close time within the next 24 hours.</td></tr>`;
+    return sectionHeader + row + detail;
+  }).join("") : `<tr><td colspan="6" class="empty">No market with 2+ distinct same-side holders was found in the current time window.</td></tr>`;
 
   $("consensusMore").textContent = allMarkets ? "Show fewer ↑" : "View all consensus markets →";
-  $("consensusMore").style.display = filtered.length > 15 ? "inline-block" : "none";
+  $("consensusMore").style.display = hasMoreMarkets ? "inline-block" : "none";
 }
 
 async function loadComboPositions() {
