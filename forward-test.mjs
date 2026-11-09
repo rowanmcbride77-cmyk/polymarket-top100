@@ -42,14 +42,18 @@ const orderedSources = sources.sort((a,b)=>(num(b.newestBuy)||0)-(num(a.newestBu
 for (const g of orderedSources) {
   const condition = String(g.conditionId||g.condition_id||"").toLowerCase();
   const side = String(g.side||"").trim();
-  const allTraders = arr(g.traders);
-  const recentTraders = allTraders.filter(t => { const ts=num(t.buyTime); return ts!==null && ts>=freshCutoff && ts<=now; });
+  const allTraders = arr(g.traders).filter(t =>
+    t.qualified === true && t.recordComplete === true &&
+    num(t.winRate) !== null && num(t.winRate) >= 90 &&
+    num(t.resolvedMarkets) !== null && num(t.resolvedMarkets) >= 10 &&
+    num(t.pnl) !== null && num(t.pnl) > 0 &&
+    num(t.entryValue) !== null && num(t.entryValue) >= 10 &&
+    num(t.currentValue) !== null && num(t.currentValue) >= 10
+  );
   const wallets = [...new Set(allTraders.map(t=>String(t.wallet||"").toLowerCase()).filter(Boolean))];
-  const recentWallets = [...new Set(recentTraders.map(t=>String(t.wallet||"").toLowerCase()).filter(Boolean))];
-  if (!condition || !side) continue;
+  if (!condition || !side || g.signalTier !== "Strong Signals" || wallets.length < 2) continue;
   const key=condition+"|"+side.toLowerCase();
   let row=byKey.get(key);
-  if (!row && recentWallets.length<2) continue;
   seen.add(key);
   try {
     const m=await marketFor(condition);
@@ -59,7 +63,7 @@ for (const g of orderedSources) {
     const prices=arr(m.outcomePrices).map(num);
     const entryPrice=index>=0?prices[index]:null;
     if (!row) {
-      row={key,conditionId:condition,title:g.title||m.question||m.title||"Untitled market",side,category:category({...m,title:g.title||m.question}),firstSeenAt:iso(now),entryPrice,entryPriceSource:"Market outcome price when at least two qualified traders had recent position activity",stake:10,shares:entryPrice>0&&entryPrice<1?10/entryPrice:null,consensusCount:recentWallets.length,traderWallets:wallets,recentTraderWallets:recentWallets,pool:g.pool,consensusEntryValue:num(g.totalEntry),consensusCurrentValue:num(g.totalValue),recentTraderEntryCount:recentWallets.length,firstSignalPriceAvailable:entryPrice>0&&entryPrice<1,status:entryPrice>0&&entryPrice<1?"PENDING":"ENTRY_UNAVAILABLE",resolvedAt:null,settlement:null,paperPnl:null,exitObservations:[]};
+      row={key,conditionId:condition,title:g.title||m.question||m.title||"Untitled market",side,category:category({...m,title:g.title||m.question}),firstSeenAt:iso(now),entryPrice,entryPriceSource:"Market outcome price at first observation of a fully qualified Strong Signal",stake:10,shares:entryPrice>0&&entryPrice<1?10/entryPrice:null,consensusCount:wallets.length,traderWallets:wallets,recentTraderWallets:wallets,pool:g.pool,consensusEntryValue:num(g.totalEntry),consensusCurrentValue:num(g.totalValue),recentTraderEntryCount:wallets.length,firstSignalPriceAvailable:entryPrice>0&&entryPrice<1,status:entryPrice>0&&entryPrice<1?"PENDING":"ENTRY_UNAVAILABLE",resolvedAt:null,settlement:null,paperPnl:null,exitObservations:[]};
       signals.push(row); byKey.set(key,row);
     } else {
       row.lastSeenAt=iso(now); row.latestConsensusCount=recentWallets.length;
