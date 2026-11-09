@@ -18,7 +18,7 @@ const MIN_CONSENSUS_WIN_RATE = 90;
 const LEADER_COUNT = 1000;
 const PAGE_SIZE = 50;
 const MAX_CANDIDATES_PER_PERIOD = 15000;
-const CATEGORY_CANDIDATE_QUOTAS = { sports: 4000, crypto: 2000, esports: 1500, overall: 1000, politics: 1000, culture: 750, mentions: 750, weather: 750, economics: 750, tech: 750, finance: 1750 };
+const CATEGORY_CANDIDATE_QUOTAS = { sports: 5500, crypto: 2000, esports: 1500, overall: 1000, politics: 1000, culture: 750, mentions: 750, weather: 750, economics: 750, tech: 750, finance: 250 };
 const MAX_LEADERBOARD_PAGES_PER_STREAM = 20;
 const POSITION_FETCH_LIMIT = 100;
 const POSITIONS_PER_TRADER = 10;
@@ -29,7 +29,7 @@ const CLOSED_POSITION_SCAN_LIMIT = 250;
 // Keep the full 15,000-wallet live-position scan; optimize request throughput rather than shrinking coverage.
 const CONSENSUS_WALLET_LIMIT = 15000;
 const MAX_CONSENSUS_POSITION_PAGES_PER_WALLET = 1;
-const MAX_SPORTS_CONSENSUS_POSITION_PAGES_PER_WALLET = 3;
+const MAX_SPORTS_CONSENSUS_POSITION_PAGES_PER_WALLET = 5;
 const LEADER_RECORD_LIMIT = RANKING_RECORD_LIMIT;
 // Keep upcoming markets in the data so the UI can filter 24h / 3d / 7d accurately.
 const CONSENSUS_WINDOW_HOURS = 48; // Sports markets may remain eligible through the estimated finish of games starting within 48 hours.
@@ -657,7 +657,7 @@ async function getMarketConsensus(market, knownNames) {
     sort_by: "CURRENT_VALUE",
     sort_direction: "DESC",
     filter_type: "CASH",
-    filter_amount: String(MIN_CONSENSUS_POSITION_VALUE)
+    filter_amount: String(MIN_CONSENSUS_DISCOVERY_VALUE)
   });
 
   let response;
@@ -1036,6 +1036,8 @@ async function getBroadConsensusMarkets(knownTraders, nowMs, activePositions) {
     walletsWithMorePositions,
     sameSideGroups: holderGroups.length,
     pageCapPerWallet: MAX_CONSENSUS_POSITION_PAGES_PER_WALLET,
+    nbaSportsWalletTarget: CATEGORY_CANDIDATE_QUOTAS.sports,
+    nbaSportsPositionPageCap: MAX_SPORTS_CONSENSUS_POSITION_PAGES_PER_WALLET,
     sportsWalletsScanned,
     sportsPositionPagesFetched,
     sportsPageCapPerWallet: MAX_SPORTS_CONSENSUS_POSITION_PAGES_PER_WALLET,
