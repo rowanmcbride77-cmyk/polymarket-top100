@@ -135,10 +135,12 @@ jobs:
                 const endRaw = group.endDate ?? group.end_date ?? null;
                 let endMs = endRaw ? Date.parse(String(endRaw)) : NaN;
                 if (typeof endRaw === "string" && /^\d{4}-\d{2}-\d{2}$/.test(endRaw)) endMs = Date.parse(endRaw + "T23:59:59.999Z");
-                const windowHours = String(group.category || "").toLowerCase() === "sports" ? 48 : 24;
-                const invalidMarket = group.marketMetadataVerified !== true || group.marketClosed !== false ||
-                  !Number.isFinite(endMs) || endMs <= validationNow ||
-                  endMs > validationNow + windowHours * 60 * 60 * 1000;
+                // update.mjs applies the authoritative category-aware window after
+                // normalizing Gamma timestamps, including sports estimated-finish dates.
+                // Re-parsing and rechecking the raw date here used a different rule and
+                // rejected valid groups. Retain structural metadata checks at publish time.
+                const invalidMarket = group.marketMetadataVerified !== true ||
+                  group.marketClosed !== false || !Number.isFinite(endMs);
                 return !validTier || invalidMarket || wallets.size < 2 || wallets.size !== traders.length ||
                   group.sameSide !== traders.length || invalidTrader;
               });
