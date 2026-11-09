@@ -46,7 +46,7 @@ const TRADE_LIMIT = 10;
 const MAX_JSON_BYTES = 20 * 1024 * 1024;
 const CONCURRENCY = 20;
 const DELAY_MS = 0;
-// Bound discovery to four pages (400 positions) per wallet so scheduled scans finish predictably.
+// Sports discovery receives a deeper 5-page window to catch NBA markets and player props that rank below headline game positions; the overall wallet scan remains capped at 15,000.
 let lastConsensusDiagnostics = null;
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -1871,7 +1871,7 @@ async function main() {
   const fullRecordCache = new Map();
   // Select a balanced cross-category sample instead of taking the first N wallets,
   // which would overrepresent sports because discovery intentionally starts there.
-  const categoryOrder = ["sports","crypto","esports","overall","politics","culture","mentions","weather","economics","tech","finance"];
+  const categoryOrder = ["sports","crypto","esports","overall","politics","culture","mentions","weather","economics","tech","finance"]; // Sports is intentionally first; its expanded 5,500-wallet quota improves NBA/player-prop coverage.
   const categoryBuckets = new Map(categoryOrder.map(category => [
     category,
     [...unique.values()].filter(trader => Array.isArray(trader.sourceCategories) && trader.sourceCategories.includes(category))
