@@ -1077,11 +1077,24 @@ function classifyMarketCategory(market, group = {}) {
 async function getSportsTagId(slug, fallbackId = null) {
   try {
     const params = new URLSearchParams({slug});
-    const rows = asArray(await getJson(`${GAMMA_API}/tags?${params}`));
-    const match = rows.find(tag =>
+    let response = await getJson(`${GAMMA_API}/tags?${params}`);
+    let rows = asArray(response);
+    let match = rows.find(tag =>
       String(tag.slug || "").toLowerCase() === slug.toLowerCase() ||
       String(tag.label || "").toLowerCase() === slug.toLowerCase()
-    ) || rows[0];
+    ) || (response?.id ? response : null) || rows[0];
+
+    // Some Gamma deployments ignore the slug filter; use the public tag list
+    // as a safe fallback rather than silently omitting NFL discovery.
+    if (!match?.id) {
+      response = await getJson(`${GAMMA_API}/tags?limit=500`);
+      rows = asArray(response);
+      match = rows.find(tag =>
+        String(tag.slug || "").toLowerCase() === slug.toLowerCase() ||
+        String(tag.label || "").toLowerCase() === slug.toLowerCase()
+      );
+    }
+
     const id = num(match?.id);
     if (id !== null) return String(id);
   } catch (error) {
