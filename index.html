@@ -178,6 +178,21 @@ dialog::backdrop{background:#000b}
           <div><div class="metric-label">Avg. Profitable Close Rate</div><div class="metric-value" id="avgWinRate">N/A</div></div>
         </div>
         </section>
+      <section class="panel">
+        <div class="panel-heading">
+          <div class="heading-left"><span class="heading-icon">🧪</span><h2>Copy-Signal Paper Test</h2></div>
+          <span class="pill" id="paperTestUpdated">Loading…</span>
+        </div>
+        <div class="overview-grid paper-test-grid">
+          <div><div class="metric-label">Tracked signals</div><div class="metric-value" id="paperSignals">—</div></div>
+          <div><div class="metric-label">Open / pending</div><div class="metric-value" id="paperPending">—</div></div>
+          <div><div class="metric-label">Resolved</div><div class="metric-value" id="paperResolved">—</div></div>
+          <div><div class="metric-label">Resolved win rate</div><div class="metric-value" id="paperWinRate">—</div></div>
+          <div><div class="metric-label">Hypothetical P&amp;L</div><div class="metric-value" id="paperPnl">—</div></div>
+          <div><div class="metric-label">New in 24 hours</div><div class="metric-value" id="paperFresh">—</div></div>
+        </div>
+        <div class="source-note" id="paperTestNote">Tracks a hypothetical $10 entry at the first observed market price after qualifying trader activity. Unresolved signals are not counted as wins or losses; this is a research test, not verified live-trading performance.</div>
+      </section>
       <details class="panel compact-details">
         <summary>Sports Trader Rankings</summary>
         <div class="table-wrap"><table><thead><tr><th>#</th><th>Trader</th><th>Profitable / unprofitable</th><th>Close rate</th><th>Sample</th></tr></thead><tbody id="sportsLeadersBody"><tr><td colspan="5" class="loading">Loading sports traders…</td></tr></tbody></table></div>
@@ -1622,6 +1637,17 @@ async function loadForwardTest() {
     const response = await fetch("forward-test.json?t=" + Date.now(), {cache:"no-store"});
     if (!response.ok) throw new Error("HTTP " + response.status);
     const d = await response.json(), rows = Array.isArray(d.signals) ? d.signals : [];
+    const metrics = d.metrics || {};
+    const money = value => value == null || !Number.isFinite(Number(value)) ? "—" :
+      (Number(value) < 0 ? "-$" : "$") + Math.abs(Number(value)).toFixed(2);
+    $("paperSignals").textContent = Number(metrics.signals || 0).toLocaleString();
+    $("paperPending").textContent = Number(metrics.pending || 0).toLocaleString();
+    $("paperResolved").textContent = Number(metrics.resolved || 0).toLocaleString();
+    $("paperWinRate").textContent = metrics.winRate == null ? "N/A" : Number(metrics.winRate).toFixed(1) + "%";
+    $("paperPnl").textContent = money(metrics.paperPnl);
+    $("paperPnl").style.color = Number(metrics.paperPnl) > 0 ? "var(--green)" : Number(metrics.paperPnl) < 0 ? "var(--red)" : "var(--text)";
+    $("paperFresh").textContent = Number(metrics.freshSignals || 0).toLocaleString();
+    $("paperTestUpdated").textContent = d.generatedAt ? "Updated " + new Date(d.generatedAt).toLocaleString() : "Timestamp unavailable";
     const indexed = new Map();
     for (const signal of rows) {
       const condition = String(signal.conditionId || "").toLowerCase(), side = String(signal.side || "").toLowerCase();
@@ -1638,7 +1664,13 @@ async function loadForwardTest() {
     }
     forwardTradesByMarket = indexed;
     renderConsensus();
-  } catch (e) { console.warn("Recent buy details unavailable", e); }
+  } catch (e) {
+    console.warn("Forward-test data unavailable", e);
+    const note = $("paperTestNote");
+    if (note) note.textContent = "Paper-test data is temporarily unavailable. No performance figures are being assumed.";
+    const stamp = $("paperTestUpdated");
+    if (stamp) stamp.textContent = "Unavailable";
+  }
 }
 loadData();
 loadConsensusData();
