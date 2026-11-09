@@ -17,8 +17,8 @@ const MIN_CONSENSUS_WIN_RATE = 90;
 // [run-scanner] Prioritize sports, crypto and esports while retaining broad category coverage.
 const LEADER_COUNT = 1000;
 const PAGE_SIZE = 50;
-const MAX_CANDIDATES_PER_PERIOD = 15000;
-const CATEGORY_CANDIDATE_QUOTAS = { sports: 5500, crypto: 2000, esports: 1500, overall: 1000, politics: 1000, culture: 750, mentions: 750, weather: 750, economics: 750, tech: 750, finance: 250 };
+const MAX_CANDIDATES_PER_PERIOD = 20000;
+const CATEGORY_CANDIDATE_QUOTAS = { sports: 8000, crypto: 2500, esports: 1500, overall: 1500, politics: 1500, culture: 1000, mentions: 1000, weather: 1000, economics: 1000, tech: 1000, finance: 500 };
 const MAX_LEADERBOARD_PAGES_PER_STREAM = 20;
 const POSITION_FETCH_LIMIT = 100;
 const POSITIONS_PER_TRADER = 10;
@@ -27,7 +27,7 @@ const RANKING_RECORD_LIMIT = 1000;
 // incomplete and withheld rather than presented as complete win/loss stats.
 const CLOSED_POSITION_SCAN_LIMIT = 250;
 // Keep the full 15,000-wallet live-position scan; optimize request throughput rather than shrinking coverage.
-const CONSENSUS_WALLET_LIMIT = 15000;
+const CONSENSUS_WALLET_LIMIT = 20000;
 const MAX_CONSENSUS_POSITION_PAGES_PER_WALLET = 2;
 const MAX_SPORTS_CONSENSUS_POSITION_PAGES_PER_WALLET = 5;
 const LEADER_RECORD_LIMIT = RANKING_RECORD_LIMIT;
@@ -46,7 +46,7 @@ const TRADE_LIMIT = 10;
 const MAX_JSON_BYTES = 20 * 1024 * 1024;
 const CONCURRENCY = 20;
 const DELAY_MS = 0;
-// Sports discovery receives a deeper 5-page window to catch NBA markets and player props that rank below headline game positions; the overall wallet scan remains capped at 15,000.
+// Sports-category wallets receive deeper position pagination; a direct NBA market sweep below independently discovers active game lines and player props.
 let lastConsensusDiagnostics = null;
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -1074,6 +1074,77 @@ function classifyMarketCategory(market, group = {}) {
   if (/\b(entertainment|celebrity|movie|music|culture|grammy|oscar)\b/.test(raw)) return "culture";
   return "other";
 }
+async function getDirectNbaConsensusGroups(nowMs, knownNames = new Map()) {
+  // NBA markets are discoverable directly from Gamma's NBA tag (745), not
+  // only through wallets that happen to rank in the sports leaderboard.
+  // This is what allows player props to enter consensus even when their
+  // holders are outside the sampled leaderboard wallet pool.
+  const params = new URLSearchParams({
+    tag_id: "745",
+    active: "true",
+    closed: "false",
+    limit: "1000",
+    order: "endDate",
+    ascending: "true"
+  });
+  let markets = [];
+  try {
+    markets = asArray(await getJson(`${GAMMA_API}/markets?${params}`));
+  } catch (error) {
+    console.warn("Direct NBA market discovery unavailable:", error.message);
+    return [];
+  }
+
+  const eligible = [];
+  for (const raw of markets) {
+    const market = { ...raw, tags: [...(Array.isArray(raw.tags) ? raw.tags : []), "NBA"] };
+    const conditionId = String(market.conditionId ?? market.condition_id ?? "").toLowerCase();
+    if (!conditionId || market.closed === true || String(market.closed).toLowerCase() === "true" ||
+        market.active === false || String(market.active).toLowerCase() === "false") continue;
+    const timing = consensusTiming(market);
+    let endMs = timestampMs(timing.endDate);
+    if (typeof timing.endDate === "string" && /^\\d{4}-\\d{2}-\\d{2}$/.test(timing.endDate)) {
+      endMs = Date.parse(timing.endDate + "T23:59:59.999Z");
+    }
+    if (endMs === null || endMs <= nowMs || endMs > nowMs + CONSENSUS_WINDOW_HOURS * 60 * 60 * 1000) continue;
+    eligible.push({
+      ...market,
+      conditionId,
+      title: market.question || market.title || "NBA market",
+      category: "sports",
+      sport: "NBA",
+      endDate: timing.endDate,
+      gameStartTime: timing.gameStartTime || market.gameStartTime || market.game_start_time || null
+    });
+  }
+
+  // Limit concurrency to protect the public API while keeping this targeted
+  // market-first sweep small relative to the 20,000-wallet scan.
+  const groupsByMarket = await mapLimit(eligible, 12, market =>
+    getMarketConsensus(market, knownNames).then(groups => groups.map(group => ({
+      ...group,
+      title: market.title,
+      slug: market.slug || null,
+      eventSlug: market.eventSlug || market.event_slug || null,
+      eventTitle: market.eventTitle || market.event_title || null,
+      category: "sports",
+      sport: "NBA",
+      sportsMarketType: market.sportsMarketType || market.sports_market_type || "nba",
+      gameStartTime: market.gameStartTime || null,
+      endDate: market.endDate,
+      marketMetadataVerified: true
+    })))
+  );
+  const found = groupsByMarket.flat();
+  console.log("Direct NBA market discovery: " + JSON.stringify({
+    taggedMarketsReturned: markets.length,
+    eligibleUpcomingMarkets: eligible.length,
+    sameSideConsensusGroups: found.length,
+    playerPropGroups: found.filter(group => /\\b(points?|rebounds?|assists?|three.?pointers?|3.?pointers?|threes?|steals?|blocks?|pra|double.?double|triple.?double)\\b/i.test(String(group.title || ""))).length
+  }));
+  return found;
+}
+
 async function enrichConsensusMarkets(holderGroups, nowMs) {
   // Position records can carry stale/missing end dates. Resolve condition IDs
   // through Gamma before applying the strict 24-hour resolution window; keep undated active
@@ -1250,12 +1321,37 @@ async function enrichConsensusMarkets(holderGroups, nowMs) {
     });
   }
   const fullyExpanded = [...expandedGroups.values()];
+  const directNbaGroups = await getDirectNbaConsensusGroups(nowMs, knownNames);
+  for (const directGroup of directNbaGroups) {
+    const condition = String(directGroup.conditionId || "").toLowerCase();
+    const key = condition + "|" + String(directGroup.side || "").toLowerCase();
+    const prior = expandedGroups.get(key);
+    const merged = new Map();
+    for (const trader of [...(prior?.traders || []), ...(directGroup.traders || [])]) {
+      const wallet = String(trader.wallet || "").toLowerCase();
+      if (wallet && !merged.has(wallet)) merged.set(wallet, trader);
+    }
+    const traders = [...merged.values()].slice(0, TRADERS_PER_MARKET);
+    if (traders.length < 2) continue;
+    expandedGroups.set(key, {
+      ...(prior || {}),
+      ...directGroup,
+      category: "sports",
+      sport: "NBA",
+      marketMetadataVerified: true,
+      traders,
+      sameSide: traders.length,
+      totalValue: traders.reduce((sum, trader) => sum + (num(trader.currentValue) || 0), 0)
+    });
+  }
+  const allExpanded = [...expandedGroups.values()];
   console.log("Market-first holder expansion: " + JSON.stringify({
     eligibleMarkets: marketLookup.size,
     holderLookups: marketHolderRows.length,
-    expandedSameSideGroups: fullyExpanded.length - enriched.length
+    expandedSameSideGroups: allExpanded.length - enriched.length,
+    directNbaGroups: directNbaGroups.length
   }));
-  enriched.splice(0, enriched.length, ...fullyExpanded);
+  enriched.splice(0, enriched.length, ...allExpanded);
 
   const categoryCounts = enriched.reduce((counts, group) => { counts[group.category] = (counts[group.category] || 0) + 1; return counts; }, {});
   console.log("Consensus Gamma enrichment: " + JSON.stringify({
