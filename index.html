@@ -284,6 +284,7 @@ let allMarkets = false;
 let allCombos = false;
 let comboRows = [];
 let comboLoadFinished = false;
+let comboLoadStarted = false;
 let forwardTradesByMarket = new Map();
 const expandedCombos = new Set();
 const comboActivityCache = new Map();
@@ -945,6 +946,10 @@ function renderConsensus() {
 }
 
 async function loadComboPositions() {
+  if (comboLoadStarted) return;
+  comboLoadStarted = true;
+  const loadButton = $("loadCombosButton");
+  if (loadButton) { loadButton.disabled = true; loadButton.textContent = "Scanning combo wallets…"; }
   // Scan a broader leaderboard-derived wallet pool. Combo endpoints are user-anchored;
   // this is broader coverage, not a claim to enumerate every Polymarket wallet.
   const source = Array.isArray(data?.comboCandidates) && data.comboCandidates.length
@@ -965,6 +970,8 @@ async function loadComboPositions() {
   if (!candidates.length) {
     $("comboList").innerHTML = '<div class="empty">No valid trader wallets were found in the loaded leaderboard.</div>';
     comboLoadFinished = true;
+    if (loadButton) { loadButton.disabled = false; loadButton.textContent = "Retry combo scan"; }
+    comboLoadStarted = false;
     return;
   }
   $("comboList").innerHTML = '<div class="loading">Checking actual combo positions for ' + candidates.length + ' traders…</div>';
@@ -1103,6 +1110,8 @@ async function loadComboPositions() {
     $("comboList").innerHTML = '<div class="empty">No combo positions were returned for the ' + candidates.length +
       ' wallets scanned. ' + failed + ' wallet lookups failed. This is an API coverage result, not proof that Polymarket has no combos.</div>';
   }
+  comboLoadStarted = false;
+  if (loadButton) { loadButton.disabled = false; loadButton.textContent = "Refresh combo data"; }
 }
 
 function comboLegStartMs(leg) {
@@ -1665,7 +1674,7 @@ async function loadData(forceReload = false) {
   $("errorBox").innerHTML = "";
   $("leadersBody").innerHTML = `<tr><td colspan="6" class="loading">Loading traders…</td></tr>`;
   $("consensusBody").innerHTML = `<tr><td colspan="7" class="loading">Loading consensus markets…</td></tr>`;
-  $("comboList").innerHTML = `<div class="loading">Loading actual combo positions…</div>`;
+  $("comboList").innerHTML = `<div class="empty">Combo scanning is paused so the leaderboard and consensus dashboard can load first. Select “Load combo data” to scan trader wallets.</div>`;
 
   try {
     const filename = FILES[period];
