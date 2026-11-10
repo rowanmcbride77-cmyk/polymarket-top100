@@ -1800,7 +1800,8 @@ function makeOutput(period, ranked, sportsRanked, activePositions, tradeRows, no
   const leaderPositions = Object.fromEntries(
     leaders.map(trader => [
       trader.wallet,
-      activePositions[trader.wallet] || []
+      // Keep the initial dashboard payload light; profiles need only a preview.
+      (activePositions[trader.wallet] || []).slice(0, 3)
     ])
   );
 
@@ -1832,7 +1833,8 @@ function makeOutput(period, ranked, sportsRanked, activePositions, tradeRows, no
       recordComplete: trader.recordComplete === true,
       recordBasis: trader.recordBasis || "Period market record unavailable"
     })),
-    traderActiveTrades: Object.fromEntries(tradeRows.filter(Boolean)),
+    // Three recent BUY prints per Top-100 wallet are enough for the initial preview.
+    traderActiveTrades: Object.fromEntries(tradeRows.filter(Boolean).map(([wallet, rows]) => [wallet, (rows || []).slice(0, 3)])),
     traderActivePositions: leaderPositions,
     consensus: buildConsensus(consensusGroups, consensusCandidates || ranked, consensusRecords || {}, MIN_CONSENSUS_CLOSED_MARKETS, consensusPeriodRecords || {}, consensusVolumeStats || {}, period.key)
   };
