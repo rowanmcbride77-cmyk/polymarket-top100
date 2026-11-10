@@ -1388,7 +1388,7 @@ function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedM
   const strongGroups = [], developingGroups = [], watchlistGroups = [];
   const diagnostics = {
     rawGroupsWithTwoHolders: 0, holdersEvaluated: 0, incompleteRecord: 0,
-    fewerThanMinimumCloses: 0, belowMinimumWinRate: 0, nonPositiveWeeklyPnl: 0,
+    fewerThanMinimumCloses: 0, belowMinimumWinRate: 0, nonPositive30dPnl: 0,
     missingVerifiedEntry: 0, strongHolders: 0, developingHolders: 0
   };
 
