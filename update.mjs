@@ -1815,7 +1815,7 @@ function makeOutput(period, ranked, sportsRanked, activePositions, tradeRows, no
     leaders,
     // Combo discovery pool is intentionally broad: combo traders can be profitable
     // despite low win rates or small sample sizes. Rank and display their actual combo positions.
-    comboCandidates: ranked.map(trader => ({
+    comboCandidates: ranked.slice(0, RANKING_RECORD_LIMIT).map(trader => ({
       wallet: trader.wallet,
       name: trader.name || trader.username || "",
       rank: trader.rank ?? null,
@@ -1951,40 +1951,9 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     {volume: trader.volume ?? null, volumeBasis: trader.volumeBasis || "Unavailable from period user-volume endpoint"}
   ]));
   console.log(period.key + ": scanned up to " + CLOSED_POSITION_SCAN_LIMIT + " closed positions per consensus holder for selected-period and 30-day records; capped/incomplete records are withheld.");
-  console.log(`${period.key}: verifying settlement outcomes for the top ${rankingRecordCandidates.length} wallets...`);
-  const ranked = rankCandidates(candidates, records);
-  const sportsRanked = rankSportsCandidates(candidates, records);
-  // The visible Top 100 is a qualified copy-trader list, not a raw volume/P&L leaderboard.
-  // Never fill it with missing records or sub-90% traders just to reach 100 rows.
-  const proxyQualifiedLeaders = ranked.filter(trader => {
-    const wins = num(trader.wins), losses = num(trader.losses);
-    const resolved = num(trader.resolvedMarkets), rate = num(trader.winRate), pnl = num(trader.pnl);
-    return trader.recordComplete === true &&
-      wins !== null && losses !== null && resolved !== null &&
-      resolved === wins + losses && resolved >= MIN_TRADER_RESOLVED_MARKETS &&
-      rate !== null && rate >= MIN_CONSENSUS_WIN_RATE &&
-      pnl !== null && pnl > 0;
-  }).slice(0, LEADER_COUNT);
-
-  // Fetch actual resolved outcomes for the traders displayed in the Top 100.
-  // Do not publish profitable-close proxy counts as prediction wins/losses.
-  const settlementRows = await attachSettlementStats(proxyQualifiedLeaders, period, nowMs);
-  const settlementByWallet = new Map(settlementRows.map(row => [
-    String(row.wallet || "").toLowerCase(), row
-  ]));
-  for (const trader of ranked) {
-    const settled = settlementByWallet.get(String(trader.wallet || "").toLowerCase());
-    if (!settled) continue;
-    // Settlement verification is supplemental; never overwrite the selected-period
-    // profitable-close record used for leaderboard ranking and display.
-    trader.settlementWins = settled.settlementWins ?? null;
-    trader.settlementLosses = settled.settlementLosses ?? null;
-    trader.settlementRecordComplete = settled.settlementRecordComplete === true;
-    trader.settlementRecordBasis = settled.settlementRecordBasis ?? null;
-    trader.settlementRecordCoverage = settled.settlementRecordCoverage ?? null;
-    trader.settlementPositionsChecked = settled.settlementPositionsChecked ?? 0;
-    trader.settlementPositionsUnclassified = settled.settlementPositionsUnclassified ?? 0;
-  }
+  // Keep the period-scoped realized-close records as the single source for
+  // leaderboard W/L. The separate settlement-history lookup was slow, incomplete,
+  // and caused the selected-period record to be overwritten or withheld.
   const leaders = ranked.filter(trader => {
     const wins = num(trader.wins), losses = num(trader.losses);
     const resolved = num(trader.resolvedMarkets), rate = num(trader.winRate), pnl = num(trader.pnl);
