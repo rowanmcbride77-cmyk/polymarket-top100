@@ -519,7 +519,7 @@ async function loadConsensusData() {
     candidates.sort((a, b) => (Date.parse(b.generatedAt || "") || 0) - (Date.parse(a.generatedAt || "") || 0));
     consensusData = candidates[0];
     renderConsensus();
-    $("consensusPeriod").textContent = "Strong 90%+ · Developing · Watchlist";
+    $("consensusPeriod").textContent = `Strong 90%+ over ${Number(consensusData?.qualificationWindowDays) || 7} days · ${Number(consensusData?.minimumResolvedMarkets) || 10}+ closes`;
   } catch (error) {
     consensusData = {consensus:[]};
     $("consensusBody").innerHTML = `<tr><td colspan="7" class="empty">${esc(error.message)}</td></tr>`;
@@ -833,6 +833,8 @@ async function loadConsensusTradeHistory(wallet, conditionId, outcome) {
 
 function renderConsensus() {
   const minCount = Number($("minTraders").value || 2);
+  const qualificationDays = Number(consensusData?.qualificationWindowDays) || 7;
+  const qualificationCloses = Number(consensusData?.minimumResolvedMarkets) || 10;
   const nowSeconds = Date.now() / 1000;
   const windowHours = 48; // Sports markets may remain visible for 48 hours; non-sports are filtered to 24 hours below.
   const cutoffSeconds = nowSeconds + windowHours * 60 * 60;
@@ -855,8 +857,8 @@ function renderConsensus() {
       a._endSeconds - b._endSeconds);
 
   const tierSections = [
-    {title:"Strong Signals", note:"Every listed trader meets the complete 7-day, 10+ close, 90%+ profitable-close and $10+ position requirements.", rows:filtered.filter(m => m.signalTier === "Strong Signals")},
-    {title:"Developing Signals", note:"At least one holder has a complete 7-day record, 5+ closes and 75%+ profitable-close rate; remaining holders may not meet the strict threshold.", rows:filtered.filter(m => m.signalTier === "Developing Signals")},
+    {title:"Strong Signals", note:`Every listed trader meets the complete ${qualificationDays}-day, ${qualificationCloses}+ close, 90%+ profitable-close and $10+ position requirements.`, rows:filtered.filter(m => m.signalTier === "Strong Signals")},
+    {title:"Developing Signals", note:`At least one holder has a complete ${qualificationDays}-day record, 10+ closes and 75%+ profitable-close rate; remaining holders may not meet the strict threshold.`, rows:filtered.filter(m => m.signalTier === "Developing Signals")},
     {title:"Watchlist", note:"2+ distinct wallets hold the same outcome, but historical qualification is incomplete or below the Developing threshold.", rows:filtered.filter(m => m.signalTier === "Watchlist")}
   ];
   const visible = tierSections.flatMap(section =>
@@ -927,7 +929,7 @@ function renderConsensus() {
         const hasReportedEntry = !buy && reportedAvgPrice !== null;
         const sellCost = sell?._cost;
         return '<div class="member member-compact">' +
-          '<div class="member-identity"><strong>' + profileButton(member, memberName) + favoriteButton(wallet) + '</strong><small class="member-record">' + "30-day profitable closes: " + (num(member.wins) !== null && num(member.losses) !== null ? num(member.wins).toLocaleString() + "–" + num(member.losses).toLocaleString() + " · " + (num(member.winRate) !== null ? num(member.winRate).toFixed(1) + "% profitable-close rate" : "profitable-close rate N/A") + " · " + (num(member.resolvedMarkets) ?? (num(member.wins)+num(member.losses))).toLocaleString() + " closed markets" : "Record incomplete / unavailable") + '</small><small>' + (num(member.weeklyPnl) !== null ? "7-day leaderboard P&L: " + consensusCash(num(member.weeklyPnl)) : "7-day leaderboard P&L unavailable") + '</small><small>' + (hasObservedBuy ? "Observed BUY · "+esc(dateText(buy?.timestamp)) : "Open position confirmed · original BUY timestamp not required") + '</small><small>' + (sell ? "SELL observed · "+esc(dateText(sell.timestamp)) : (!events ? "Checking later SELL trades…" : (member.isStillHolding === true || String(member.positionStatus || "").toUpperCase() === "OPEN" ? "Still listed as an open position; no SELL required" : "No matching SELL found in returned trade history"))) + '</small></div>' +
+          '<div class="member-identity"><strong>' + profileButton(member, memberName) + favoriteButton(wallet) + '</strong><small class="member-record">' + (Number(consensusData?.qualificationWindowDays) || 7) + "-day profitable closes: " + (num(member.wins) !== null && num(member.losses) !== null ? num(member.wins).toLocaleString() + "–" + num(member.losses).toLocaleString() + " · " + (num(member.winRate) !== null ? num(member.winRate).toFixed(1) + "% profitable-close rate" : "profitable-close rate N/A") + " · " + (num(member.resolvedMarkets) ?? (num(member.wins)+num(member.losses))).toLocaleString() + " closed markets" : "Record incomplete / unavailable") + '</small><small>' + (num(member.weeklyPnl) !== null ? "7-day leaderboard P&L: " + consensusCash(num(member.weeklyPnl)) : "7-day leaderboard P&L unavailable") + '</small><small>' + (hasObservedBuy ? "Observed BUY · "+esc(dateText(buy?.timestamp)) : "Open position confirmed · original BUY timestamp not required") + '</small><small>' + (sell ? "SELL observed · "+esc(dateText(sell.timestamp)) : (!events ? "Checking later SELL trades…" : (member.isStillHolding === true || String(member.positionStatus || "").toUpperCase() === "OPEN" ? "Still listed as an open position; no SELL required" : "No matching SELL found in returned trade history"))) + '</small></div>' +
           '<div><strong>' + (buyPrice === null ? "N/A" : tokenPrice(buyPrice)) + '</strong><small>' + (hasObservedBuy ? "Observed BUY price" : (reportedAvgPrice !== null ? "Average buy price from open position" : "Average buy price unavailable")) + '</small><small>' + (bought === null || bought === undefined ? (memberEntry !== null ? "Reported position entry value "+consensusCash(memberEntry)+" · exact trade cost unavailable" : "Entry cost unavailable; no matching BUY trade found") : (hasObservedBuy ? "Observed BUY / position entry "+consensusCash(bought) : "Reported position entry "+consensusCash(bought))+(shares !== null ? " · "+shares.toFixed(1)+" shares" : "")) + '</small>' + (bought !== null && memberValue !== null ? '<small>' + (buy ? "Approx. unrealized change: " : "Approx. change vs estimated entry: ") + (memberValue-bought>0?"+":"") + consensusCash(memberValue-bought) + " (" + (bought>0?((memberValue-bought)/bought*100).toFixed(1):"N/A") + "%)" + '</small>' : "") + '</div>' +
           '<div><strong>' + (sell && sell._price !== null ? (sell._price*100).toFixed(1)+"¢" : "—") + '</strong><small>Observed sell price</small><small>' + (sell ? "SELL transaction "+(sellCost === null ? "amount unavailable" : cash(sellCost)) : (!events ? "Loading transaction history" : "No matching SELL found")) + '</small><small>' + (memberValue !== null ? "Position value reported "+consensusCash(memberValue) : "Current held value unavailable") + '</small></div>' +
         '</div>';
