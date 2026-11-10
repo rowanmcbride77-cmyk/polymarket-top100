@@ -1389,7 +1389,8 @@ function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedM
   const diagnostics = {
     rawGroupsWithTwoHolders: 0, holdersEvaluated: 0, incompleteRecord: 0,
     fewerThanMinimumCloses: 0, belowMinimumWinRate: 0, nonPositive30dPnl: 0,
-    missingVerifiedEntry: 0, strongHolders: 0, developingHolders: 0
+    missingVerifiedEntry: 0, strongHolders: 0, developingHolders: 0,
+    marketsWithTenStrongHolders: 0, marketsWithTenDevelopingHolders: 0
   };
 
   for (const group of holderGroups) {
@@ -1453,11 +1454,27 @@ function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedM
 
     const strongHolders = holders.filter(holder => holder.strongQualified);
     const developingHolders = holders.filter(holder => holder.developingQualified);
-    if (strongHolders.length < 2) continue;
-    const tier = "Strong Signals";
-    const displayTraders = strongHolders;
-    const tierReason = "Every listed trader independently passes a complete rolling 30-day record, 20+ resolved markets, 90%+ profitable-close rate, positive 30-day realized P&L, and verified $10+ position gate. Seven-day leaderboard P&L is shown separately as recent performance."
+    let tier, displayTraders, tierReason;
+    if (strongHolders.length >= 2) {
+      tier = "Strong Signals";
+      displayTraders = strongHolders;
+      tierReason = "Every listed trader independently passes a complete rolling 30-day record, 20+ resolved markets, 90%+ profitable-close rate, positive 30-day realized P&L, and verified $10+ entry/current value.";
+    } else if (developingHolders.length >= 2) {
+      // Preserve the strict Strong gate, but publish the already-calculated
+      // Developing tier instead of silently dropping those same-side holders.
+      tier = "Developing Signals";
+      displayTraders = developingHolders;
+      tierReason = "Every listed trader has a complete rolling 30-day record, 10+ resolved markets, 75%+ profitable-close rate, positive 30-day realized P&L, and a $3+ active position.";
+    } else {
+      // Keep genuine 2+ same-outcome holdings visible as Watchlist, without
+      // presenting incomplete or sub-threshold records as qualified signals.
+      tier = "Watchlist";
+      displayTraders = holders;
+      tierReason = "Two or more distinct wallets hold the same outcome; at least one holder does not meet the Developing historical-record threshold.";
+    }
 
+    if (displayTraders.length >= 10 && tier === "Strong Signals") diagnostics.marketsWithTenStrongHolders++;
+    if (displayTraders.length >= 10 && tier === "Developing Signals") diagnostics.marketsWithTenDevelopingHolders++;
     const knownRates = displayTraders.map(trader => num(trader.winRate)).filter(rate => rate !== null);
     const avgRate = knownRates.length ? knownRates.reduce((sum, rate) => sum + rate, 0) / knownRates.length : 0;
     const entries = displayTraders.map(trader => num(trader.entryValue)).filter(value => value !== null && value > 0);
@@ -1488,7 +1505,11 @@ function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedM
   watchlistGroups.sort(sortGroups);
 
   const perTierLimit = 1500;
-  const result = strongGroups.slice(0, perTierLimit);
+  const result = [
+    ...strongGroups.slice(0, perTierLimit),
+    ...developingGroups.slice(0, perTierLimit),
+    ...watchlistGroups.slice(0, perTierLimit)
+  ];
   console.log("Consensus tier diagnostics:", JSON.stringify({
     ...diagnostics,
     strongMarkets: strongGroups.length, developingMarkets: developingGroups.length,
@@ -1500,33 +1521,13 @@ function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedM
     minimumStrongResolvedMarkets: minimumResolvedMarkets,
     strongQualificationWindowDays: 30,
     developingWinRate: 75, developingMinimumResolvedMarkets: 10,
-    discoveryPositionValue: MIN_CONSENSUS_DISCOVERY_VALUE
+    discoveryPositionValue: MIN_CONSENSUS_DISCOVERY_VALUE,
+    preferredSameSideTraders: 10
   }));
-  // Never publish both sides of the same exact market condition as copy signals.
-  // If at least two distinct wallets support two or more different outcomes,
-  // treat the condition as conflicted and suppress every side for that condition.
-  const outcomesByCondition = new Map();
-  for (const market of result) {
-    const condition = String(market.conditionId || "").trim().toLowerCase();
-    const outcome = String(market.side || "").trim().toLowerCase();
-    if (!condition || !outcome) continue;
-    if (!outcomesByCondition.has(condition)) outcomesByCondition.set(condition, new Map());
-    const byOutcome = outcomesByCondition.get(condition);
-    byOutcome.set(outcome, Math.max(byOutcome.get(outcome) || 0, Number(market.sameSide) || 0));
-  }
-  const conflictedConditions = new Set(
-    [...outcomesByCondition.entries()]
-      .filter(([, outcomes]) => [...outcomes.values()].filter(count => count >= 2).length >= 2)
-      .map(([condition]) => condition)
-  );
-  const filteredResult = result.filter(market =>
-    !conflictedConditions.has(String(market.conditionId || "").trim().toLowerCase())
-  );
-  console.log("Conflicting outcome filter:", JSON.stringify({
-    conflictedConditions: conflictedConditions.size,
-    suppressedSignals: result.length - filteredResult.length
-  }));
-  return filteredResult;
+  // Same-side outcomes are grouped independently. If both outcomes have
+  // 2+ holders, publish both rows explicitly rather than suppressing a
+  // market with real, separate directional camps.
+  return result;
 }
 // [run-scanner] Conflict suppression and $3 holder discovery are part of this build.
 function parseArrayField(value) {
