@@ -16,6 +16,7 @@ const MIN_CONSENSUS_WIN_RATE = 90;
 // [run-scanner] Expand candidate discovery and live-position overlap scan to 15,000 wallets.
 // [run-scanner] Prioritize sports, crypto and esports while retaining broad category coverage.
 const LEADER_COUNT = 100; // Publish the actual Top 100; keep the 1,000-wallet record sample.
+// [run-scanner] validate the period-record handoff and trimmed dashboard output.
 const PAGE_SIZE = 50;
 const MAX_CANDIDATES_PER_PERIOD = 20000;
 const CATEGORY_CANDIDATE_QUOTAS = { sports: 10000, crypto: 3000, esports: 2000, overall: 2000, politics: 2000, culture: 1200, mentions: 1200, weather: 1200, economics: 1200, tech: 1200, finance: 700 };
