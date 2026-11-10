@@ -27,7 +27,7 @@ const RANKING_RECORD_LIMIT = 1000;
 // incomplete and withheld rather than presented as complete win/loss stats.
 const CLOSED_POSITION_SCAN_LIMIT = 1000;
 // Keep the full 15,000-wallet live-position scan; optimize request throughput rather than shrinking coverage.
-const CONSENSUS_WALLET_LIMIT = 10000; // Verify records for the highest-capital 10k unique consensus holders to keep the 20k discovery scan inside the workflow budget.
+const CONSENSUS_WALLET_LIMIT = 20000; // Scan the full discovered 20k candidate-wallet pool for active-position overlap.
 const MAX_CONSENSUS_POSITION_PAGES_PER_WALLET = 2;
 const MAX_SPORTS_CONSENSUS_POSITION_PAGES_PER_WALLET = 5;
 const LEADER_RECORD_LIMIT = RANKING_RECORD_LIMIT;
@@ -1075,8 +1075,8 @@ function classifyMarketCategory(market, group = {}) {
   return "other";
 }
 async function getDirectSportsConsensusGroups(nowMs, knownNames = new Map()) {
-  // Query Gamma by documented sport tag slugs. This avoids the NBA-only tag ID
-  // and avoids relying on inconsistent /sports metadata label shapes.
+  // Gamma groups sports markets under events. Query /events by league tag,
+  // then flatten each event's markets so event kickoff metadata is retained.
   const sports = [
     ["NFL","nfl"],["NBA","nba"],["WNBA","wnba"],["MLB","mlb"],["NHL","nhl"],
     ["NCAAF","ncaaf"],["NCAAB","ncaab"],["Soccer","soccer"],["EPL","epl"],
@@ -1084,35 +1084,53 @@ async function getDirectSportsConsensusGroups(nowMs, knownNames = new Map()) {
     ["Rugby","rugby"],["Esports","esports"]
   ];
   const marketByCondition = new Map(), familyCounts = {};
-  // Bound each league's sweep so one large NBA slate cannot crowd out other sports.
   for (const [family, tagSlug] of sports) {
     const params = new URLSearchParams({
-      tag_slug:tagSlug,active:"true",closed:"false",limit:"1000",order:"endDate",ascending:"true"
+      tag_slug:tagSlug,active:"true",closed:"false",limit:"100",order:"startDate",ascending:"true"
     });
-    let familyMarkets = 0;
+    let familyMarkets = 0, eventCount = 0, marketCount = 0, inWindow = 0;
     try {
-      const rows = asArray(await getJson(`${GAMMA_API}/markets?${params}`));
-      for (const raw of rows) {
-        const market = {...raw,tags:[...(Array.isArray(raw.tags)?raw.tags:[]),family]};
+      const events = asArray(await getJson(`${GAMMA_API}/events?${params}`));
+      eventCount = events.length;
+      const flattened = events.flatMap(event => {
+        const nested = Array.isArray(event.markets) ? event.markets : [];
+        return nested.map(raw => ({
+          ...raw,
+          events:[event],
+          eventTitle:raw.eventTitle || event.title || null,
+          eventSlug:raw.eventSlug || event.slug || null,
+          eventStartTime:raw.eventStartTime || event.startDate || event.startTime || null,
+          eventEndDate:raw.eventEndDate || event.endDate || null,
+          tags:[...(Array.isArray(event.tags)?event.tags:[]),...(Array.isArray(raw.tags)?raw.tags:[]),family]
+        }));
+      });
+      marketCount = flattened.length;
+      for (const market of flattened) {
         const conditionId = String(market.conditionId ?? market.condition_id ?? "").toLowerCase();
         if (!conditionId || market.closed === true || String(market.closed).toLowerCase() === "true" ||
-            market.active === false || String(market.active).toLowerCase() === "false" || !isSportsMarket(market)) continue;
+            market.active === false || String(market.active).toLowerCase() === "false") continue;
         const timing = consensusTiming(market);
         let endMs = timestampMs(timing.endDate);
-        if (typeof timing.endDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(timing.endDate)) endMs = Date.parse(timing.endDate + "T23:59:59.999Z");
+        if (typeof timing.endDate === "string" && /^\\d{4}-\\d{2}-\\d{2}$/.test(timing.endDate)) {
+          endMs = Date.parse(timing.endDate + "T23:59:59.999Z");
+        }
         if (endMs === null || endMs <= nowMs || endMs > nowMs + CONSENSUS_WINDOW_HOURS * 60 * 60 * 1000) continue;
+        inWindow++;
         if (!marketByCondition.has(conditionId)) {
-          marketByCondition.set(conditionId,{...market,conditionId,category:"sports",sport:family,
-            title:market.question || market.title || `${family} market`,endDate:timing.endDate,
-            gameStartTime:timing.gameStartTime || market.gameStartTime || market.game_start_time || null});
+          marketByCondition.set(conditionId,{
+            ...market,conditionId,category:"sports",sport:family,
+            title:market.question || market.title || `${family} market`,
+            endDate:timing.endDate,
+            gameStartTime:timing.gameStartTime || market.eventStartTime || market.startDate || null
+          });
           familyMarkets++;
         }
-        if (familyMarkets >= 35) break;
+        if (familyMarkets >= 100) break;
       }
     } catch (error) {
-      console.warn(`Direct ${family} discovery failed for tag slug ${tagSlug}:`,error.message);
+      console.warn(`Direct ${family} event discovery failed for tag slug ${tagSlug}:`,error.message);
     }
-    familyCounts[family] = familyMarkets;
+    familyCounts[family] = {events:eventCount,markets:marketCount,inWindow,eligible:familyMarkets};
   }
 
   const eligible = [...marketByCondition.values()];
@@ -1128,10 +1146,10 @@ async function getDirectSportsConsensusGroups(nowMs, knownNames = new Map()) {
     })))
   );
   const found = groupsByMarket.flat();
-  console.log("Direct multi-sport market discovery:",JSON.stringify({
-    sportFamilies:Object.keys(familyCounts),eligibleMarketsBySport:familyCounts,
-    eligibleMarkets:eligible.length,sameSideConsensusGroups:found.length,
-    playerPropGroups:found.filter(group => /\b(points?|rebounds?|assists?|three.?pointers?|3.?pointers?|threes?|steals?|blocks?|pra|yards?|receptions?|touchdowns?|strikeouts?|hits?|goals?)\b/i.test(String(group.title || ""))).length
+  console.log("Direct multi-sport event discovery:",JSON.stringify({
+    sportFamilies:familyCounts,eligibleMarkets:eligible.length,
+    sameSideConsensusGroups:found.length,
+    playerPropGroups:found.filter(group => /\\b(points?|rebounds?|assists?|three.?pointers?|3.?pointers?|threes?|steals?|blocks?|pra|yards?|receptions?|touchdowns?|strikeouts?|hits?|goals?)\\b/i.test(String(group.title || ""))).length
   }));
   return found;
 }
