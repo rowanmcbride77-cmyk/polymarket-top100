@@ -493,7 +493,7 @@ function consensus() {
     const traders = Array.isArray(market.traders) ? market.traders :
       Array.isArray(market.members) ? market.members : [];
     const qualifiedTraders = traders.filter(trader => trader?.qualified === true).length;
-    return {...market, traders, sameSide:traders.length, qualifiedTraders};
+    return {...market, traders, sameSide:num(market?.sameSide) ?? traders.length, qualifiedTraders:num(market?.qualifiedTraders) ?? qualifiedTraders};
   }).filter(market => market.traders.length >= 2 && (market.signalTier !== "Strong Signals" || market.traders.every(t => t.qualified === true)));
 }
 
