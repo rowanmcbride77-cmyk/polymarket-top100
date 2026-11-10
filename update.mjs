@@ -39,8 +39,8 @@ const MIN_CONSENSUS_POSITION_VALUE = 10;
 const MIN_CONSENSUS_ENTRY_VALUE = 10; // Exclude tiny/dust entries when verified cost basis is available.
 const CONSENSUS_ENTRY_WINDOW_MINUTES = 90;
 const MIN_TRADER_RESOLVED_MARKETS = 10;
-const MIN_CONSENSUS_CLOSED_MARKETS = 10; // Require at least 10 resolved markets in the complete rolling 7-day record.
-const CONSENSUS_RECORD_PERIOD = {key: "week", api: "WEEK"};
+const MIN_CONSENSUS_CLOSED_MARKETS = 20; // Strong consensus qualification uses a complete rolling 30-day record with 20+ resolved markets.
+const CONSENSUS_RECORD_PERIOD = {key: "month", api: "MONTH"};
 const TRADERS_PER_MARKET = 500;
 const TRADE_LIMIT = 10;
 const MAX_JSON_BYTES = 20 * 1024 * 1024;
@@ -189,7 +189,7 @@ function normalizeLeader(row, index) {
 async function getResolvedRecord(wallet, period, nowMs, maxPositions = RANKING_RECORD_LIMIT) {
   if (!wallet) return null;
 
-  // Consensus eligibility uses the selected rolling 7-day period. Capped or incomplete samples are withheld.
+  // Consensus eligibility uses the selected rolling 30-day period. Capped or incomplete samples are withheld.
   const periodKey = String(period?.api || period?.key || period || "").toUpperCase();
   const allTime = periodKey === "ALL" || periodKey === "ALL_TIME" || periodKey === "ALLTIME";
   const periodDays = periodKey === "MONTH" ? 30 : 7;
@@ -1416,20 +1416,21 @@ function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedM
       const hasStrongEntry = hasVerifiedEntryPrice && entryCost >= MIN_CONSENSUS_ENTRY_VALUE &&
         currentValue !== null && currentValue >= MIN_CONSENSUS_POSITION_VALUE;
       const hasDevelopingEntry = currentValue !== null && currentValue >= MIN_CONSENSUS_DISCOVERY_VALUE;
-      const periodPnl = num(candidate.pnl ?? holder.pnl);
+      const weeklyPnl = num(candidate.pnl ?? holder.pnl);
+      const historicalPnl30d = num(record.realizedPnlTotal);
       const complete = record.recordComplete === true;
-      const strongQualified = periodPnl !== null && periodPnl > 0 && complete &&
+      const strongQualified = historicalPnl30d !== null && historicalPnl30d > 0 && complete &&
         resolvedMarkets !== null && resolvedMarkets >= minimumResolvedMarkets &&
         winRate !== null && winRate >= MIN_CONSENSUS_WIN_RATE && hasStrongEntry;
-      const developingQualified = periodPnl !== null && periodPnl > 0 && complete &&
-        resolvedMarkets !== null && resolvedMarkets >= 5 && winRate !== null &&
+      const developingQualified = historicalPnl30d !== null && historicalPnl30d > 0 && complete &&
+        resolvedMarkets !== null && resolvedMarkets >= 10 && winRate !== null &&
         winRate >= 75 && hasDevelopingEntry;
 
       diagnostics.holdersEvaluated++;
       if (!complete) diagnostics.incompleteRecord++;
       if (resolvedMarkets === null || resolvedMarkets < minimumResolvedMarkets) diagnostics.fewerThanMinimumCloses++;
       if (winRate === null || winRate < MIN_CONSENSUS_WIN_RATE) diagnostics.belowMinimumWinRate++;
-      if (periodPnl === null || periodPnl <= 0) diagnostics.nonPositiveWeeklyPnl++;
+      if (historicalPnl30d === null || historicalPnl30d <= 0) diagnostics.nonPositive30dPnl++;
       if (!hasStrongEntry) diagnostics.missingVerifiedEntry++;
       if (strongQualified) diagnostics.strongHolders++;
       if (developingQualified) diagnostics.developingHolders++;
@@ -1437,16 +1438,16 @@ function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedM
       return {
         ...holder, wallet, name: holder.name || candidate.name || "Trader",
         rank: candidate.sportsRank ?? candidate.rank ?? holder.rank ?? null,
-        overallRank: candidate.rank ?? null, pnl: periodPnl,
+        overallRank: candidate.rank ?? null, pnl: weeklyPnl, weeklyPnl, historicalPnl30d,
         volume: candidate.volume ?? holder.volume ?? null, wins, losses, winRate,
         resolvedMarkets, recordComplete: complete, qualified: strongQualified,
         strongQualified, developingQualified, entryVerified: hasVerifiedEntryPrice,
         recordStatus: !complete ? "Incomplete / unavailable" :
-          (resolvedMarkets === null || resolvedMarkets < minimumResolvedMarkets ? "Fewer than 10 closes" :
-            (winRate !== null && winRate < MIN_CONSENSUS_WIN_RATE ? "Below 90% strong-signal threshold" : "Meets historical record threshold")),
+          (resolvedMarkets === null || resolvedMarkets < minimumResolvedMarkets ? "Fewer than 20 closes in 30 days" :
+            (winRate !== null && winRate < MIN_CONSENSUS_WIN_RATE ? "Below 90% 30-day threshold" : "Meets 30-day historical threshold")),
         recordBasis: complete
-          ? "Rolling 7-day realized profitable-close proxy; early exits count and this is not verified settlement accuracy"
-          : "Rolling 7-day record incomplete or unavailable"
+          ? "Rolling 30-day realized profitable-close proxy; early exits count and this is not verified settlement accuracy"
+          : "Rolling 30-day record incomplete or unavailable"
       };
     });
 
@@ -1455,7 +1456,7 @@ function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedM
     if (strongHolders.length < 2) continue;
     const tier = "Strong Signals";
     const displayTraders = strongHolders;
-    const tierReason = "Every listed trader independently passes the complete 7-day record, 10+ closes, 90%+ profitable-close rate, positive weekly P&L, and verified $10+ position gate.";
+    const tierReason = "Every listed trader independently passes a complete rolling 30-day record, 20+ resolved markets, 90%+ profitable-close rate, positive 30-day realized P&L, and verified $10+ position gate. Seven-day leaderboard P&L is shown separately as recent performance."
 
     const knownRates = displayTraders.map(trader => num(trader.winRate)).filter(rate => rate !== null);
     const avgRate = knownRates.length ? knownRates.reduce((sum, rate) => sum + rate, 0) / knownRates.length : 0;
@@ -1497,7 +1498,8 @@ function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedM
     publishedWatchlist: Math.min(watchlistGroups.length, perTierLimit),
     minimumStrongWinRate: MIN_CONSENSUS_WIN_RATE,
     minimumStrongResolvedMarkets: minimumResolvedMarkets,
-    developingWinRate: 75, developingMinimumResolvedMarkets: 5,
+    strongQualificationWindowDays: 30,
+    developingWinRate: 75, developingMinimumResolvedMarkets: 10,
     discoveryPositionValue: MIN_CONSENSUS_DISCOVERY_VALUE
   }));
   // Never publish both sides of the same exact market condition as copy signals.
@@ -2038,10 +2040,10 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
   await writeJsonUnderLimit(`consensus-${period.key}.json`, {
     generatedAt: new Date(nowMs).toISOString(),
     pool: period.key,
-    qualificationWindowDays: 7,
+    qualificationWindowDays: 30,
     minimumWinRate: MIN_CONSENSUS_WIN_RATE,
     minimumResolvedMarkets: MIN_CONSENSUS_CLOSED_MARKETS,
-    qualificationBasis: "Signals are grouped by exact Polymarket condition and outcome, including individual player props. Strong Signals preserve the strict 90%+ complete rolling 7-day profitable-close proxy, 10+ closes, positive weekly P&L, and verified $10+ entry/current value for every displayed holder. Developing Signals and Watchlist retain 2+ distinct same-side holders with their record status shown; these tiers are not represented as 90% signals.",
+    qualificationBasis: "Signals are grouped by exact Polymarket condition and outcome, including individual player props. Strong Signals require each holder to have a complete rolling 30-day profitable-close proxy, 20+ resolved markets, 90%+ rate, positive 30-day realized P&L, and verified $10+ entry/current value. Seven-day leaderboard P&L is displayed separately as recent performance; it is not substituted for the 30-day historical record.",
     minimumSameSideTraders: 2,
     candidateCount: ranked.length,
     discoveredCandidateCount: discoveredCandidates.length,
@@ -2051,7 +2053,7 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     scanDiagnostics: lastConsensusDiagnostics,
     candidatePoolBasis: "Up to 20,000 unique wallets selected from public Data API v2 leaderboard discovery across sports, crypto, esports, politics, culture, mentions, weather, economics, tech, finance, and overall categories. The public API does not expose a literal all-wallet directory. The scan checks up to 300 open positions for sports-category wallets and 100 for other wallets. Discovery includes active positions worth $3+; the Strong Signals tier keeps its separate $10+ entry/current-value requirement.",
     resolutionWindowHours: CONSENSUS_WINDOW_HOURS,
-    recordBasis: "Strong Signals: every listed trader independently passes the complete rolling 7-day profitable-close proxy with at least 10 closes, 90%+ rate, positive weekly P&L, and verified $10+ entry/current value. Developing Signals: at least one holder has 5+ closes and 75%+ rate with positive weekly P&L. Watchlist: 2+ same-side active holders without that developing qualification. Player props are grouped by exact market and outcome. This is a research signal, not a proven profitable strategy.",
+    recordBasis: "Strong Signals: every listed trader independently passes the complete rolling 30-day profitable-close proxy with at least 20 closes, 90%+ rate, positive 30-day realized P&L, and verified $10+ entry/current value. Seven-day leaderboard P&L is shown separately. Player props are grouped by exact market and outcome. This is a research signal, not a proven profitable strategy.",
     qualificationCount,
     consensus: consensusRows
   });
