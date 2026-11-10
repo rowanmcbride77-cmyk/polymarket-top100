@@ -1939,7 +1939,11 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     ? await attachRecords(consensusRecordCandidates, period, nowMs, CLOSED_POSITION_SCAN_LIMIT, fullRecordCache)
     : consensusRecords;
   // USD volume comes from the dedicated user-volume endpoint, never share volume.
-  const consensusVolumeStats = await attachPeriodVolumes(consensusRecordCandidates, period, nowMs);
+  const consensusVolumeRows = await attachPeriodVolumes(consensusRecordCandidates, period, nowMs);
+  const consensusVolumeStats = Object.fromEntries(consensusVolumeRows.map(trader => [
+    String(trader.wallet || "").toLowerCase(),
+    {volume: trader.volume ?? null, volumeBasis: trader.volumeBasis || "Unavailable from period user-volume endpoint"}
+  ]));
   console.log(period.key + ": scanned up to " + CLOSED_POSITION_SCAN_LIMIT + " closed positions per consensus holder for selected-period and 30-day records; capped/incomplete records are withheld.");
   console.log(`${period.key}: verifying settlement outcomes for the top ${rankingRecordCandidates.length} wallets...`);
   const ranked = rankCandidates(candidates, records);
@@ -1980,7 +1984,7 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     activePositions,
     tradeRows,
     nowMs,
-    consensusCandidates,
+    discoveredCandidates,
     records,
     leaderRecords,
     consensusGroups,
