@@ -1783,7 +1783,12 @@ function makeOutput(period, ranked, sportsRanked, activePositions, tradeRows, no
       losses: trader.losses,
       winRate: trader.winRate,
       resolvedMarkets: trader.resolvedMarkets,
-      recordBasis: trader.recordBasis
+      recordBasis: trader.recordBasis,
+      recordVerified: trader.recordVerified === true,
+      settlementRecordComplete: trader.settlementRecordComplete === true,
+      settlementRecordCoverage: trader.settlementRecordCoverage ?? null,
+      settlementPositionsChecked: trader.settlementPositionsChecked ?? 0,
+      settlementPositionsUnclassified: trader.settlementPositionsUnclassified ?? 0
     };
   });
 
@@ -1976,7 +1981,8 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
       ? trader.wins / trader.resolvedMarkets
       : null;
     trader.recordComplete = settled.settlementRecordComplete === true;
-    trader.recordVerified = true;
+    trader.recordVerified = settled.settlementRecordComplete === true;
+    trader.settlementRecordComplete = settled.settlementRecordComplete === true;
     trader.recordBasis = settled.settlementRecordBasis;
     trader.settlementRecordCoverage = settled.settlementRecordCoverage;
     trader.settlementPositionsChecked = settled.settlementPositionsChecked;
