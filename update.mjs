@@ -29,10 +29,9 @@ const RANKING_RECORD_LIMIT = 1000;
 // Bound closed-position history requests. Records that hit this cap are marked
 // incomplete and withheld rather than presented as complete win/loss stats.
 const CLOSED_POSITION_SCAN_LIMIT = 1000;
-// Scan a balanced 6,000-wallet pool for live overlap. The larger 20,000-wallet
-// leaderboard discovery pool is retained, while this cap keeps the API sweep
-// comfortably inside the Actions runtime and still exceeds the 5,000-wallet target.
-const CONSENSUS_WALLET_LIMIT = 6000;
+// Scan the full 20,000-wallet balanced candidate pool for live-position overlap.
+// Keep discovery and overlap coverage broad; optimize request efficiency separately.
+const CONSENSUS_WALLET_LIMIT = 20000;
 const MAX_CONSENSUS_POSITION_PAGES_PER_WALLET = 2;
 const MAX_SPORTS_CONSENSUS_POSITION_PAGES_PER_WALLET = 5;
 const LEADER_RECORD_LIMIT = RANKING_RECORD_LIMIT;
@@ -1935,6 +1934,13 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
   const recordCandidates = rankingRecordCandidates;
   console.log(`Discovered ${discoveredCandidates.length} ${period.key} candidates; scanning active positions across ${candidates.length} wallets, leaderboard records for ${rankingRecordCandidates.length}, and consensus-holder records for ${consensusWallets.size} (unique record scan: ${recordCandidates.length}).`);
   const records = await attachRecords(recordCandidates, period, nowMs, CLOSED_POSITION_SCAN_LIMIT, fullRecordCache);
+
+  // Build both ranking arrays from the selected period's own candidate and
+  // realized-close records. These declarations must exist before leaderboard
+  // filtering and makeOutput; without them buildPeriod crashes at publication.
+  const ranked = rankCandidates(candidates, records);
+  const sportsRanked = rankSportsCandidates(candidates, records);
+  console.log(`${period.key}: ranked ${ranked.length} candidates; ${sportsRanked.length} sports-qualified candidates.`);
   // Consensus holder records are scanned across the complete rolling 7-day window; leaderboard records remain separately capped.
   const consensusRecordCandidates = consensusRecordWallets.map(wallet =>
     candidateByWallet.get(wallet) || {wallet}
