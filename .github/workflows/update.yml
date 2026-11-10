@@ -168,7 +168,7 @@ jobs:
                 const invalidMarket = group.marketMetadataVerified !== true ||
                   group.marketClosed !== false || (hasEndDate && !Number.isFinite(endMs));
                 return !validTier || invalidMarket || wallets.size < 2 || wallets.size !== traders.length ||
-                  group.sameSide !== traders.length || invalidTrader;
+                  !Number.isFinite(Number(group.sameSide)) || Number(group.sameSide) < traders.length || invalidTrader;
               });
               if (invalidGroups.length) {
                 throw new Error(`${file} contains ${invalidGroups.length} consensus groups without at least two distinct, unique wallets`);
