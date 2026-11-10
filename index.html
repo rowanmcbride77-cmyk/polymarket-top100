@@ -1075,7 +1075,7 @@ async function loadComboPositions() {
         console.warn("Combo lookup failed for " + wallet + ": " + error.message);
       }
       completed++;
-      if (completed % 10 === 0 || completed === candidates.length) {
+      if (completed % 50 === 0 || completed === candidates.length) {
         comboRecordSummaryCache = null;
         $("comboList").innerHTML = '<div class="loading">Checked ' + completed + ' of ' + candidates.length +
           ' traders · ' + comboRows.length + ' combo records found…</div>';
@@ -1084,7 +1084,8 @@ async function loadComboPositions() {
       }
     }
   };
-  await Promise.all(Array.from({length:8}, () => worker()));
+  // Keep the full 1,000-wallet coverage, but limit concurrent API traffic so the dashboard stays responsive.
+  await Promise.all(Array.from({length:4}, () => worker()));
   // De-duplicate overlapping held/resolved responses by wallet + position ID.
   const uniqueRows = new Map();
   for (const combo of comboRows) {
@@ -1690,7 +1691,6 @@ async function loadForwardTest() {
   }
 }
 loadData();
-loadConsensusData();
 loadForwardTest();
 renderFavoriteFeed();
 setInterval(renderFavoriteFeed, 60000);
