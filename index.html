@@ -1292,7 +1292,14 @@ function openProfile(wallet) {
   const pnl = num(trader.pnl ?? trader.profit);
   const volume = num(trader.volume ?? trader.vol);
   const positions = activePositions(trader);
-  const record = recordOf(trader);
+  const record = recordOf(trader); // Rolling 30-day consensus qualification record.
+  const selectedPeriodRecord = trader.periodRecordComplete === true &&
+    num(trader.periodWins) !== null && num(trader.periodLosses) !== null &&
+    num(trader.periodResolvedMarkets) === num(trader.periodWins) + num(trader.periodLosses) &&
+    num(trader.periodResolvedMarkets) > 0
+      ? {wins:num(trader.periodWins), losses:num(trader.periodLosses), total:num(trader.periodResolvedMarkets), rate:num(trader.periodWinRate)}
+      : null;
+  const selectedPeriodLabel = period === "week" ? "7-day" : "30-day";
   const recentTrades = Array.isArray(data?.traderActiveTrades?.[traderWallet])
     ? data.traderActiveTrades[traderWallet]
     : [];
@@ -1301,13 +1308,14 @@ function openProfile(wallet) {
     <div class="profile-top">${avatar(trader)}<div><h2>${esc(nameOf(trader))} ${favoriteButton(traderWallet)}</h2><div class="subtitle">Trader profile</div></div></div>
     <div class="profile-grid">
       <div class="profile-stat"><small>Leaderboard rank</small><strong>${trader.rank ?? trader.displayRank ? "#" + esc(trader.rank ?? trader.displayRank) : "Not ranked in loaded data"}</strong></div>
-      <div class="profile-stat"><small>Profitable / unprofitable closes</small><strong>${record ? recordText(trader) : "N/A"}</strong></div>
-      <div class="profile-stat"><small>Profitable-close rate</small><strong>${record?.rate == null ? "N/A" : record.rate.toFixed(1) + "%"}</strong></div>
+      <div class="profile-stat"><small>${selectedPeriodLabel} profitable / unprofitable closes</small><strong>${selectedPeriodRecord ? `${selectedPeriodRecord.wins}–${selectedPeriodRecord.losses}` : "N/A · period record unavailable"}</strong></div>
+      <div class="profile-stat"><small>${selectedPeriodLabel} profitable-close rate</small><strong>${selectedPeriodRecord?.rate == null ? "N/A" : selectedPeriodRecord.rate.toFixed(1) + "%"}</strong></div>
+      ${period === "week" ? `<div class="profile-stat"><small>30-day consensus qualification closes</small><strong>${record ? `${record.wins}–${record.losses}` : "N/A · 30-day record unavailable"}</strong><small class="subtitle">${record ? `${record.rate.toFixed(1)}% profitable-close rate · includes early exits` : "Not a weekly record"}</small></div>` : ""}
       <div class="profile-stat"><small>Markets with SELL activity</small><strong id="sellMarketCount">Checking…</strong><small class="subtitle">A SELL print can be a partial reduction, not necessarily a full exit.</small></div>
       <div class="profile-stat"><small>${period === "week" ? "Weekly" : "Monthly"} market P&amp;L</small><strong class="${pnl !== null && pnl < 0 ? "negative" : "positive"}">${cash(pnl)}</strong></div>
       <div class="profile-stat"><small>Volume</small><strong>${cash(volume)}</strong></div>
     </div>
-    <div class="source-note">Profile numbers are shown only when present in the selected-period leaderboard data. “Not ranked in loaded data” means this wallet was found through combos or consensus but was not in the loaded leaderboard sample; missing P&amp;L and volume are unavailable values, not zero. Market P&amp;L and combo P&amp;L are separate datasets and should not be added together.</div>
+    <div class="source-note">${period === "week" ? "The 7-day record and 7-day market P&amp;L use the selected weekly window. The separate 30-day consensus qualification record is historical context only and must not be compared directly with weekly P&amp;L." : "The selected 30-day record and 30-day market P&amp;L use the monthly window."} “Not ranked in loaded data” means this wallet was found through combos or consensus but was not in the loaded leaderboard sample; missing P&amp;L and volume are unavailable values, not zero. Profitable closes are realized close-profitability results, not verified hold-to-settlement prediction wins. Market P&amp;L and combo P&amp;L are separate datasets and should not be added together.</div>
     <div class="profile-trades"><h3>Combo results · last 7 days</h3><div id="profileComboSummary" class="empty">Loading resolved combo results…</div></div>
     <div class="profile-trades"><h3>Active combos</h3><div id="profileActiveCombos" class="empty">Loading active combos…</div></div>
     <div class="profile-trades"><h3>Recent buys</h3>
