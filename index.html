@@ -1293,6 +1293,19 @@ function openProfile(wallet) {
   const volume = num(trader.volume ?? trader.vol);
   const positions = activePositions(trader);
   const selectedPeriodLabel = period === "week" ? "7-day" : "30-day";
+  // Use the period-scoped record already published for this exact wallet.
+  // Prefer the verified market-settlement record when present; otherwise show
+  // the explicitly labelled realized-close proxy rather than inventing accuracy.
+  const closeRecord = recordOf(trader);
+  const settlementComplete = trader.settlementRecordComplete === true &&
+    num(trader.settlementWins) !== null && num(trader.settlementLosses) !== null;
+  const periodWins = settlementComplete ? num(trader.settlementWins) : closeRecord?.wins ?? null;
+  const periodLosses = settlementComplete ? num(trader.settlementLosses) : closeRecord?.losses ?? null;
+  const periodRate = periodWins !== null && periodLosses !== null && periodWins + periodLosses > 0
+    ? periodWins / (periodWins + periodLosses) * 100 : null;
+  const periodBasis = settlementComplete ? "Verified market-settlement results" :
+    closeRecord ? "Profitable/unprofitable realized-close proxy; early exits count" :
+    "No complete period record was published for this trader";
   const recentTrades = Array.isArray(data?.traderActiveTrades?.[traderWallet])
     ? data.traderActiveTrades[traderWallet]
     : [];
@@ -1301,9 +1314,9 @@ function openProfile(wallet) {
     <div class="profile-top">${avatar(trader)}<div><h2>${esc(nameOf(trader))} ${favoriteButton(traderWallet)}</h2><div class="subtitle">Trader profile</div></div></div>
     <div class="profile-grid">
       <div class="profile-stat"><small>Leaderboard rank</small><strong>${trader.rank ?? trader.displayRank ? "#" + esc(trader.rank ?? trader.displayRank) : "Not ranked in loaded data"}</strong></div>
-      <div class="profile-stat"><small>${selectedPeriodLabel} profitable / unprofitable closes</small><strong>Unavailable · no verified period-specific settlement record</strong></div>
-      <div class="profile-stat"><small>${selectedPeriodLabel} profitable-close rate</small><strong>N/A · not verified</strong></div>
-      <div class="profile-stat"><small>30-day profitable / unprofitable closes</small><strong>Unavailable · no verified 30-day settlement record</strong><small class="subtitle">Position close profitability is not the same as prediction accuracy.</small></div>
+      <div class="profile-stat"><small>${selectedPeriodLabel} wins / losses</small><strong>${periodWins !== null && periodLosses !== null ? periodWins.toLocaleString() + "–" + periodLosses.toLocaleString() : "No complete record in published data"}</strong><small class="subtitle">${esc(periodBasis)}</small></div>
+      <div class="profile-stat"><small>${selectedPeriodLabel} win rate</small><strong>${periodRate !== null ? periodRate.toFixed(1) + "%" : "Not calculable from published data"}</strong><small class="subtitle">${settlementComplete ? "Resolved market outcomes only" : closeRecord ? "Realized-close profitability, not settlement accuracy" : "Incomplete or missing period sample"}</small></div>
+      <div class="profile-stat"><small>${period === "week" ? "30-day" : "7-day"} wins / losses</small><strong>Not loaded for this profile period</strong><small class="subtitle">The dashboard only loads the selected leaderboard period; no second period is inferred.</small></div>
       <div class="profile-stat"><small>Markets with SELL activity</small><strong id="sellMarketCount">Checking…</strong><small class="subtitle">A SELL print can be a partial reduction, not necessarily a full exit.</small></div>
       <div class="profile-stat"><small>${period === "week" ? "Weekly" : "Monthly"} market P&amp;L</small><strong class="${pnl !== null && pnl < 0 ? "negative" : "positive"}">${cash(pnl)}</strong></div>
       <div class="profile-stat"><small>Volume</small><strong>${cash(volume)}</strong></div>
