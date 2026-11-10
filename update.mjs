@@ -16,6 +16,7 @@ const MIN_CONSENSUS_WIN_RATE = 90;
 // [run-scanner] Expand candidate discovery and live-position overlap scan to 15,000 wallets.
 // [run-scanner] Prioritize sports, crypto and esports while retaining broad category coverage.
 const LEADER_COUNT = 100; // Publish the actual Top 100; keep the 1,000-wallet record sample.
+// [run-scanner] keep selected-period trader P&L isolated from shared discovery.
 // [run-scanner] publish raw holder totals alongside qualified counts.
 // [run-scanner] validate the period-record handoff and trimmed dashboard output.
 const PAGE_SIZE = 50;
@@ -1904,9 +1905,10 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
   // consensus group. This applies equally to weekly and monthly records.
   const candidates = discoveredCandidates;
   const rankingRecordCandidates = candidates.slice(0, RANKING_RECORD_LIMIT);
+  // Use the selected period's leaderboard rows for rank/P&L; the shared
+  // consensus discovery pool may contain a different period's P&L or nulls.
   const candidateByWallet = new Map(
-    (Array.isArray(consensusCandidates) ? consensusCandidates : [])
-      .map(trader => [String(trader.wallet || "").toLowerCase(), trader])
+    candidates.map(trader => [String(trader.wallet || "").toLowerCase(), trader])
   );
   const consensusWallets = new Set(
     consensusGroups.flatMap(group => (Array.isArray(group.traders) ? group.traders : [])
