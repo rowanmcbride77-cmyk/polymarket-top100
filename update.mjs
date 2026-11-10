@@ -1735,6 +1735,7 @@ async function attachPeriodVolumes(traders, period, nowMs) {
   });
 }
 
+// Verified settlement outcomes are the only source for the public leaderboard W/L record.
 async function attachSettlementStats(traders, period, nowMs) {
   return await mapLimit(traders, 4, async trader => {
     try {
