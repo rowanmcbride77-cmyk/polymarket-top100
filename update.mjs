@@ -15,7 +15,7 @@ const MIN_CONSENSUS_WIN_RATE = 90;
 // [run-scanner] Publish only multi-trader consensus where every holder passes the strict quality gate.
 // [run-scanner] Expand candidate discovery and live-position overlap scan to 15,000 wallets.
 // [run-scanner] Prioritize sports, crypto and esports while retaining broad category coverage.
-const LEADER_COUNT = 1000;
+const LEADER_COUNT = 100; // Publish the actual Top 100; keep the 1,000-wallet record sample.
 const PAGE_SIZE = 50;
 const MAX_CANDIDATES_PER_PERIOD = 20000;
 const CATEGORY_CANDIDATE_QUOTAS = { sports: 10000, crypto: 3000, esports: 2000, overall: 2000, politics: 2000, culture: 1200, mentions: 1200, weather: 1200, economics: 1200, tech: 1200, finance: 700 };
@@ -1811,7 +1811,7 @@ function makeOutput(period, ranked, sportsRanked, activePositions, tradeRows, no
     minResolvedMarketsForRecordRanking: 10,
     recordRankingEnabled: true,
     recordWarning:
-      `Leaderboard records use verified market settlement outcomes when complete; incomplete samples are withheld. Consensus qualification remains based on the selected-period profitable-close proxy and the configured 90% threshold.`,
+      `Leaderboard W/L and win rate are selected-period profitable/unprofitable realized closes, not verified settlement predictions; early exits count. Settlement verification is supplemental and shown separately when complete. Consensus qualification uses its separately labelled rolling-period record.`,
     leaders,
     // Combo discovery pool is intentionally broad: combo traders can be profitable
     // despite low win rates or small sample sizes. Rank and display their actual combo positions.
@@ -1975,28 +1975,25 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
   for (const trader of ranked) {
     const settled = settlementByWallet.get(String(trader.wallet || "").toLowerCase());
     if (!settled) continue;
-    trader.wins = settled.settlementWins;
-    trader.losses = settled.settlementLosses;
-    trader.resolvedMarkets = settled.settlementWins + settled.settlementLosses;
-    trader.winRate = trader.resolvedMarkets > 0
-      ? trader.wins / trader.resolvedMarkets
-      : null;
-    trader.recordComplete = settled.settlementRecordComplete === true;
-    trader.recordVerified = settled.settlementRecordComplete === true;
+    // Settlement verification is supplemental; never overwrite the selected-period
+    // profitable-close record used for leaderboard ranking and display.
+    trader.settlementWins = settled.settlementWins ?? null;
+    trader.settlementLosses = settled.settlementLosses ?? null;
     trader.settlementRecordComplete = settled.settlementRecordComplete === true;
-    trader.recordBasis = settled.settlementRecordBasis;
-    trader.settlementRecordCoverage = settled.settlementRecordCoverage;
-    trader.settlementPositionsChecked = settled.settlementPositionsChecked;
-    trader.settlementPositionsUnclassified = settled.settlementPositionsUnclassified;
+    trader.settlementRecordBasis = settled.settlementRecordBasis ?? null;
+    trader.settlementRecordCoverage = settled.settlementRecordCoverage ?? null;
+    trader.settlementPositionsChecked = settled.settlementPositionsChecked ?? 0;
+    trader.settlementPositionsUnclassified = settled.settlementPositionsUnclassified ?? 0;
   }
-  const leaders = ranked.filter(trader =>
-    trader.recordVerified === true &&
-    trader.recordComplete === true &&
-    Number.isFinite(trader.wins) && Number.isFinite(trader.losses) &&
-    trader.resolvedMarkets >= MIN_TRADER_RESOLVED_MARKETS &&
-    trader.winRate !== null && trader.winRate >= MIN_CONSENSUS_WIN_RATE &&
-    num(trader.pnl) !== null && num(trader.pnl) > 0
-  ).slice(0, LEADER_COUNT);
+  const leaders = ranked.filter(trader => {
+    const wins = num(trader.wins), losses = num(trader.losses);
+    const resolved = num(trader.resolvedMarkets), rate = num(trader.winRate), pnl = num(trader.pnl);
+    return trader.recordComplete === true &&
+      wins !== null && losses !== null && resolved === wins + losses &&
+      resolved >= MIN_TRADER_RESOLVED_MARKETS &&
+      rate !== null && rate >= MIN_CONSENSUS_WIN_RATE &&
+      pnl !== null && pnl > 0;
+  }).slice(0, LEADER_COUNT);
   // Detailed settlement verification is only needed for the visible Top 100.
   // Scanning 1,000 wallets across three API cohorts twice per period delayed the entire publish.
   // Keep W-L based on the selected-period closed-position scan; don't replace
