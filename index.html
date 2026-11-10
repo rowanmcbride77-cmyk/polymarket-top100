@@ -257,8 +257,9 @@ dialog::backdrop{background:#000b}
           <label>Position <select id="comboStatus" disabled><option value="held" selected>Active only</option></select></label>
           <label>Event timing <select id="comboTiming" onchange="renderCombos()"><option value="all" selected>Any timing</option><option value="upcoming">Not started yet</option><option value="unknown">Timing unknown</option><option value="started">Already started</option></select></label>
         </div>
-        <div id="comboList" class="recent-list"><div class="loading">Loading actual combo positions…</div></div>
-        <button class="link-button" id="comboMore" onclick="toggleCombos()">View more combos →</button>
+        <button class="refresh-button" id="loadCombosButton" onclick="loadComboPositions()">Load combo data (separate scan)</button>
+        <div id="comboList" class="recent-list"><div class="empty">Combo scanning is paused so the leaderboard and consensus dashboard can load first. Select “Load combo data” to scan trader wallets.</div></div>
+        <button class="link-button" id="comboMore" onclick="toggleCombos()" style="display:none">View more combos →</button>
       </section>
     </div>
   </div>
@@ -1699,7 +1700,8 @@ async function loadData(forceReload = false) {
 
     renderLeaders();
     renderSportsLeaders();
-    loadComboPositions();
+    // Combo discovery scans up to 1,000 wallets and makes many API calls.
+    // Keep it out of initial page load; users can start it from the combo panel.
     loadConsensusData();
   } catch (error) {
     data = null;
@@ -1707,6 +1709,8 @@ async function loadData(forceReload = false) {
     $("leadersBody").innerHTML = `<tr><td colspan="4" class="empty">Could not load ${esc(FILES[period])}.</td></tr>`;
     $("consensusBody").innerHTML = `<tr><td colspan="6" class="empty">Copy signal data unavailable.</td></tr>`;
     $("comboList").innerHTML = `<div class="empty">Trader data unavailable, so combos cannot be loaded.</div>`;
+    const comboButton = $("loadCombosButton");
+    if (comboButton) comboButton.disabled = true;
     $("totalPnl").textContent = "—";
     $("totalVolume").textContent = "—";
     $("avgWinRate").textContent = "N/A";
