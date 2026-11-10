@@ -177,7 +177,7 @@ function normalizeLeader(row, index) {
     pnl: num(row.pnl),
     // v2's bare volume is shares; only publish a dollar figure when the API
     // explicitly supplies a USDC-denominated field.
-    volume: num(row.volume_usdc ?? row.volumeUsdc ?? row.vol ?? null),
+    volume: num(row.volume_usdc ?? row.volumeUsdc ?? null),
     wins: null,
     losses: null,
     winRate: null,
@@ -1383,7 +1383,7 @@ async function enrichConsensusMarkets(holderGroups, nowMs) {
   return enriched;
 }
 
-function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedMarkets = MIN_CONSENSUS_CLOSED_MARKETS) {
+function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedMarkets = MIN_CONSENSUS_CLOSED_MARKETS, selectedPeriodRecords = {}, periodVolumeStats = {}, periodKey = "week") {
   const candidateMap = new Map(candidates.map(trader => [String(trader.wallet || "").toLowerCase(), trader]));
   const strongGroups = [], developingGroups = [], watchlistGroups = [];
   const diagnostics = {
@@ -1417,7 +1417,8 @@ function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedM
       const hasStrongEntry = hasVerifiedEntryPrice && entryCost >= MIN_CONSENSUS_ENTRY_VALUE &&
         currentValue !== null && currentValue >= MIN_CONSENSUS_POSITION_VALUE;
       const hasDevelopingEntry = currentValue !== null && currentValue >= MIN_CONSENSUS_DISCOVERY_VALUE;
-      const weeklyPnl = num(candidate.pnl ?? holder.pnl);
+      const periodPnl = num(candidate.pnl); // Selected-period leaderboard P&L only; do not borrow values from the mixed-period discovery pool.
+      const selectedRecord = selectedPeriodRecords[wallet] || {};
       const historicalPnl30d = num(record.realizedPnlTotal);
       const complete = record.recordComplete === true;
       const strongQualified = historicalPnl30d !== null && historicalPnl30d > 0 && complete &&
@@ -1439,9 +1440,15 @@ function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedM
       return {
         ...holder, wallet, name: holder.name || candidate.name || "Trader",
         rank: candidate.sportsRank ?? candidate.rank ?? holder.rank ?? null,
-        overallRank: candidate.rank ?? null, pnl: weeklyPnl, weeklyPnl, historicalPnl30d,
-        volume: candidate.volume ?? holder.volume ?? null, wins, losses, winRate,
-        resolvedMarkets, recordComplete: complete, qualified: strongQualified,
+        overallRank: candidate.rank ?? null, pnl: periodPnl, periodPnl, periodKey,
+        weeklyPnl: periodKey === "week" ? periodPnl : null,
+        volume: periodVolumeStats[wallet]?.volume ?? candidate.volume ?? null,
+        volumeBasis: periodVolumeStats[wallet]?.volumeBasis ?? (candidate.volume !== null && candidate.volume !== undefined ? "Polymarket leaderboard USD volume field" : "Unavailable from period user-volume endpoint"),
+        wins, losses, winRate, resolvedMarkets, recordComplete: complete,
+        periodWins: num(selectedRecord.wins), periodLosses: num(selectedRecord.losses),
+        periodResolvedMarkets: num(selectedRecord.resolvedMarkets), periodWinRate: num(selectedRecord.winRate),
+        periodRecordComplete: selectedRecord.recordComplete === true,
+        qualified: strongQualified,
         strongQualified, developingQualified, entryVerified: hasVerifiedEntryPrice,
         recordStatus: !complete ? "Incomplete / unavailable" :
           (resolvedMarkets === null || resolvedMarkets < minimumResolvedMarkets ? "Fewer than 20 closes in 30 days" :
@@ -1747,7 +1754,7 @@ async function attachSettlementStats(traders, period, nowMs) {
   });
 }
 
-function makeOutput(period, ranked, sportsRanked, activePositions, tradeRows, nowMs, consensusCandidates, records, leaderRecords, consensusGroups, settlementRecords, consensusRecords) {
+function makeOutput(period, ranked, sportsRanked, activePositions, tradeRows, nowMs, consensusCandidates, records, leaderRecords, consensusGroups, settlementRecords, consensusRecords, consensusPeriodRecords, consensusVolumeStats) {
   // Preserve the exact period-scoped record used to rank this list.
   // Full-history enrichment must never overwrite weekly/monthly wins, losses,
   // win rate, or resolved-market count, otherwise the displayed numbers no
@@ -1817,7 +1824,7 @@ function makeOutput(period, ranked, sportsRanked, activePositions, tradeRows, no
     })),
     traderActiveTrades: Object.fromEntries(tradeRows.filter(Boolean)),
     traderActivePositions: leaderPositions,
-    consensus: buildConsensus(consensusGroups, consensusCandidates || ranked, consensusRecords || {}, MIN_CONSENSUS_CLOSED_MARKETS)
+    consensus: buildConsensus(consensusGroups, consensusCandidates || ranked, consensusRecords || {}, MIN_CONSENSUS_CLOSED_MARKETS, consensusPeriodRecords || {}, consensusVolumeStats || {}, period.key)
   };
 }
 
@@ -1927,7 +1934,13 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     CLOSED_POSITION_SCAN_LIMIT,
     fullRecordCache
   );
-  console.log(period.key + ": scanned up to " + CLOSED_POSITION_SCAN_LIMIT + " closed positions per consensus holder in the rolling 7-day window; capped/incomplete records are withheld.");
+  // Keep selected-period records separate from the rolling 30-day qualification record.
+  const consensusPeriodRecords = period.key === "week"
+    ? await attachRecords(consensusRecordCandidates, period, nowMs, CLOSED_POSITION_SCAN_LIMIT, fullRecordCache)
+    : consensusRecords;
+  // USD volume comes from the dedicated user-volume endpoint, never share volume.
+  const consensusVolumeStats = await attachPeriodVolumes(consensusRecordCandidates, period, nowMs);
+  console.log(period.key + ": scanned up to " + CLOSED_POSITION_SCAN_LIMIT + " closed positions per consensus holder for selected-period and 30-day records; capped/incomplete records are withheld.");
   console.log(`${period.key}: verifying settlement outcomes for the top ${rankingRecordCandidates.length} wallets...`);
   const ranked = rankCandidates(candidates, records);
   const sportsRanked = rankSportsCandidates(candidates, records);
@@ -1972,7 +1985,9 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     leaderRecords,
     consensusGroups,
     settlementRecords,
-    consensusRecords
+    consensusRecords,
+    consensusPeriodRecords,
+    consensusVolumeStats
   );
 
   // Count every discovered weekly wallet, not only Top 100 traders or shared-market holders.
