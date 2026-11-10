@@ -1492,7 +1492,7 @@ function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedM
     const capitalScore = Math.min(Math.log10(Math.max(1, totalEntry || 0) + 1) / Math.log10(10001), 1) * 25;
     const qualityScore = knownRates.length ? avgRate / 100 * 10 : 0;
     const result = {
-      ...group, traders: displayTraders, sameSide: displayTraders.length,
+      ...group, traders: displayTraders, sameSide: group.sameSide ?? displayTraders.length, displayedTraders: displayTraders.length,
       qualifiedTraders: strongHolders.length, developingTraders: developingHolders.length,
       strongHolderCount: strongHolders.length, signalTier: tier, tierReason,
       consensusScore: Math.round(breadthScore + capitalScore + qualityScore),
