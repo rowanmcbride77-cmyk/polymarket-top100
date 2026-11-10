@@ -1687,10 +1687,8 @@ async function loadData(forceReload = false) {
       filename + "?t=" + Date.now() + (forceReload ? "&reload=1" : ""),
       "https://raw.githubusercontent.com/rowanmcbride77-cmyk/polymarket-top100/main/" + filename + "?t=" + Date.now()
     ];
-    let result = null;
     let lastError = null;
-
-    for (const url of candidates) {
+    const loaded = await Promise.all(candidates.map(async url => {
       try {
         const response = await fetch(url, {cache:"no-store"});
         if (!response.ok) throw new Error(`${url.split("?")[0]} returned HTTP ${response.status}`);
@@ -1698,12 +1696,18 @@ async function loadData(forceReload = false) {
         if (!parsed || typeof parsed !== "object" || !Array.isArray(parsed.leaders)) {
           throw new Error("The data file loaded but does not contain a leaders array.");
         }
-        result = parsed;
-        break;
+        return parsed;
       } catch (error) {
         lastError = error;
+        return null;
       }
-    }
+    }));
+    const valid = loaded.filter(Boolean);
+    valid.sort((a, b) =>
+      (Date.parse(b.generatedAt || b.updatedAt || b.lastUpdated || "") || 0) -
+      (Date.parse(a.generatedAt || a.updatedAt || a.lastUpdated || "") || 0)
+    );
+    const result = valid[0] || null;
 
     if (!result) throw lastError || new Error("Could not load dashboard data from GitHub Pages or GitHub.");
 
