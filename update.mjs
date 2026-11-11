@@ -1390,6 +1390,7 @@ async function enrichConsensusMarkets(holderGroups, nowMs) {
 function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedMarkets = MIN_CONSENSUS_CLOSED_MARKETS, selectedPeriodRecords = {}, periodVolumeStats = {}, periodKey = "week") {
   const candidateMap = new Map(candidates.map(trader => [String(trader.wallet || "").toLowerCase(), trader]));
   const strongGroups = [], developingGroups = [], watchlistGroups = [];
+  const strongQualifiedSidesByCondition = new Map();
   const diagnostics = {
     rawGroupsWithTwoHolders: 0, holdersEvaluated: 0, incompleteRecord: 0,
     fewerThanMinimumCloses: 0, belowMinimumWinRate: 0, nonPositive30dPnl: 0,
@@ -1469,6 +1470,11 @@ function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedM
     });
 
     const strongHolders = holders.filter(holder => holder.strongQualified);
+    const conditionKey = String(group.conditionId || "").trim().toLowerCase();
+    if (conditionKey && strongHolders.length > 0) {
+      if (!strongQualifiedSidesByCondition.has(conditionKey)) strongQualifiedSidesByCondition.set(conditionKey, new Set());
+      strongQualifiedSidesByCondition.get(conditionKey).add(String(group.side || "").trim().toLowerCase());
+    }
     const developingHolders = holders.filter(holder => holder.developingQualified);
     let tier, displayTraders, tierReason;
     if (strongHolders.length >= 2) {
@@ -1543,20 +1549,13 @@ function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedM
   // Groups are initially built separately for each outcome (YES/NO). If even
   // one Strong-qualified trader is on the opposing outcome, suppress the
   // entire condition: it is not a 100% YES or 100% NO consensus.
-  const qualifiedSidesByCondition = new Map();
-  for (const group of strongGroups) {
-    const condition = String(group.conditionId || "").trim().toLowerCase();
-    if (!condition) continue;
-    if (!qualifiedSidesByCondition.has(condition)) qualifiedSidesByCondition.set(condition, new Set());
-    qualifiedSidesByCondition.get(condition).add(String(group.side || "").trim().toLowerCase());
-  }
   const unanimousResult = result.filter(group => {
     const condition = String(group.conditionId || "").trim().toLowerCase();
-    const sides = qualifiedSidesByCondition.get(condition);
+    const sides = strongQualifiedSidesByCondition.get(condition);
     return sides && sides.size === 1 && group.sameSide >= 2;
   });
   console.log("Unanimous consensus filter:", JSON.stringify({
-    conditionsWithStrongQualifiedHolders: qualifiedSidesByCondition.size,
+    conditionsWithStrongQualifiedHolders: strongQualifiedSidesByCondition.size,
     publishedUnanimousMarkets: unanimousResult.length,
     suppressedSplitOrUnknownMarkets: result.length - unanimousResult.length,
     rule: "2+ Strong-qualified traders on exactly one outcome side; zero Strong-qualified traders on the opposing side"
