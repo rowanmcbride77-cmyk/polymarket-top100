@@ -1539,10 +1539,29 @@ function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedM
     discoveryPositionValue: MIN_CONSENSUS_DISCOVERY_VALUE,
     preferredSameSideTraders: 10
   }));
-  // Same-side outcomes are grouped independently. If both outcomes have
-  // 2+ holders, publish both rows explicitly rather than suppressing a
-  // market with real, separate directional camps.
-  return result;
+  // Publish only unanimous qualified consensus per Polymarket condition.
+  // Groups are initially built separately for each outcome (YES/NO). If even
+  // one Strong-qualified trader is on the opposing outcome, suppress the
+  // entire condition: it is not a 100% YES or 100% NO consensus.
+  const qualifiedSidesByCondition = new Map();
+  for (const group of strongGroups) {
+    const condition = String(group.conditionId || "").trim().toLowerCase();
+    if (!condition) continue;
+    if (!qualifiedSidesByCondition.has(condition)) qualifiedSidesByCondition.set(condition, new Set());
+    qualifiedSidesByCondition.get(condition).add(String(group.side || "").trim().toLowerCase());
+  }
+  const unanimousResult = result.filter(group => {
+    const condition = String(group.conditionId || "").trim().toLowerCase();
+    const sides = qualifiedSidesByCondition.get(condition);
+    return sides && sides.size === 1 && group.sameSide >= 2;
+  });
+  console.log("Unanimous consensus filter:", JSON.stringify({
+    conditionsWithStrongQualifiedHolders: qualifiedSidesByCondition.size,
+    publishedUnanimousMarkets: unanimousResult.length,
+    suppressedSplitOrUnknownMarkets: result.length - unanimousResult.length,
+    rule: "2+ Strong-qualified traders on exactly one outcome side; zero Strong-qualified traders on the opposing side"
+  }));
+  return unanimousResult;
 }
 // [run-scanner] Conflict suppression and $3 holder discovery are part of this build.
 function parseArrayField(value) {
