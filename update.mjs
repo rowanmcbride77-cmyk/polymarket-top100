@@ -1474,7 +1474,7 @@ function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedM
     if (strongHolders.length >= 2) {
       tier = "Strong Signals";
       displayTraders = strongHolders;
-      tierReason = "Every listed trader independently passes a complete rolling 30-day record, 20+ resolved markets, 90%+ profitable-close rate, positive 30-day realized P&L, and verified $10+ entry/current value.";
+      tierReason = "Every listed trader independently passes a complete rolling 30-day audited prediction record: official settlements plus early exits only when actual SELL fills were at least $0.90, 20+ qualifying outcomes, 90%+ success rate, positive 30-day realized P&L, and verified $10+ entry/current value.";
     } else if (developingHolders.length >= 2) {
       // Preserve the strict Strong gate, but publish the already-calculated
       // Developing tier instead of silently dropping those same-side holders.
@@ -2194,7 +2194,7 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     qualificationWindowDays: 30,
     minimumWinRate: MIN_CONSENSUS_WIN_RATE,
     minimumResolvedMarkets: MIN_CONSENSUS_CLOSED_MARKETS,
-    qualificationBasis: "Signals are grouped by exact Polymarket condition and outcome, including individual player props. Strong Signals require each holder to have a complete rolling 30-day profitable-close proxy, 20+ resolved markets, 90%+ rate, positive 30-day realized P&L, and verified $10+ entry/current value. Seven-day leaderboard P&L is displayed separately as recent performance; it is not substituted for the 30-day historical record.",
+    qualificationBasis: "Signals are grouped by exact Polymarket condition and outcome, including individual player props. Strong Signals require each holder to have a complete rolling 30-day audited prediction record: settled outcomes plus early exits only when actual SELL fills were at least $0.90; 20+ qualifying outcomes; 90%+ success rate; positive 30-day realized P&L; and verified $10+ entry/current value. Seven-day leaderboard P&L is displayed separately as recent performance.",
     minimumSameSideTraders: 2,
     candidateCount: ranked.length,
     discoveredCandidateCount: discoveredCandidates.length,
@@ -2204,7 +2204,7 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     scanDiagnostics: lastConsensusDiagnostics,
     candidatePoolBasis: "Up to 20,000 unique wallets selected from public Data API v2 leaderboard discovery across sports, crypto, esports, politics, culture, mentions, weather, economics, tech, finance, and overall categories. The public API does not expose a literal all-wallet directory. The scan checks up to 300 open positions for sports-category wallets and 100 for other wallets. Discovery includes active positions worth $3+; the Strong Signals tier keeps its separate $10+ entry/current-value requirement.",
     resolutionWindowHours: CONSENSUS_WINDOW_HOURS,
-    recordBasis: "Strong Signals: every listed trader independently passes the complete rolling 30-day profitable-close proxy with at least 20 closes, 90%+ rate, positive 30-day realized P&L, and verified $10+ entry/current value. Seven-day leaderboard P&L is shown separately. Player props are grouped by exact market and outcome. This is a research signal, not a proven profitable strategy.",
+    recordBasis: "Strong Signals: every listed trader independently passes a complete rolling 30-day audited prediction record using official settlements plus early exits only when actual SELL fills were at least $0.90; at least 20 qualifying outcomes; 90%+ success rate; positive 30-day realized P&L; and verified $10+ entry/current value. Seven-day leaderboard P&L is shown separately. Player props are grouped by exact market and outcome. This is a research signal, not a proven profitable strategy.",
     qualificationCount,
     consensus: consensusRows
   });
