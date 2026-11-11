@@ -29,9 +29,10 @@ const RANKING_RECORD_LIMIT = 1000;
 // Bound closed-position history requests. Records that hit this cap are marked
 // incomplete and withheld rather than presented as complete win/loss stats.
 const CLOSED_POSITION_SCAN_LIMIT = 1000;
-// Scan the full 20,000-wallet balanced candidate pool for live-position overlap.
-// Keep discovery and overlap coverage broad; optimize request efficiency separately.
-const CONSENSUS_WALLET_LIMIT = 20000;
+// Keep the full 20,000-wallet leaderboard discovery pool, but use the
+// previously proven balanced 6,000-wallet live-overlap sample. This is the
+// deliberate runtime boundary; market-first expansion adds holders outside it.
+const CONSENSUS_WALLET_LIMIT = 6000;
 const MAX_CONSENSUS_POSITION_PAGES_PER_WALLET = 2;
 const MAX_SPORTS_CONSENSUS_POSITION_PAGES_PER_WALLET = 5;
 const LEADER_RECORD_LIMIT = RANKING_RECORD_LIMIT;
@@ -1201,21 +1202,20 @@ async function enrichConsensusMarkets(holderGroups, nowMs) {
   // whether the trader happened to add to the position in the last hour.
   const scan = holderGroups;
   console.log("Consensus enrichment: checking " + scan.length + " shared open-position groups.");
-  // Look markets up by outcome token ID first. Position rows expose the
-  // token as `asset`; this avoids empty condition-ID lookups when the
-  // position endpoint uses a different condition identifier representation.
-  const tokenIds = [...new Set(scan.flatMap(group => Array.isArray(group.clobTokenIds) ? group.clobTokenIds : []).map(String).filter(Boolean))];
+  // Gamma markets are keyed by condition ID, so query each unique condition
+  // once. The old code queried both every outcome token and every condition ID
+  // in 40-item batches (1,192 HTTP calls in the last scan) even though the
+  // response was only indexed by condition ID. Condition-only batches of 100
+  // preserve the same metadata coverage with roughly one-sixth the requests.
   const conditionIds = [...new Set(scan.map(group => String(group.conditionId || "").toLowerCase()).filter(Boolean))];
-  const lookupItems = [
-    ...tokenIds.map(id => ({key: "clob_token_ids", id})),
-    ...conditionIds.map(id => ({key: "condition_ids", id}))
-  ];
   const chunks = [];
-  for (let i = 0; i < lookupItems.length; i += 40) chunks.push(lookupItems.slice(i, i + 40));
+  for (let i = 0; i < conditionIds.length; i += 100) {
+    chunks.push(conditionIds.slice(i, i + 100));
+  }
 
-  const pages = await mapLimit(chunks, CONCURRENCY, async items => {
+  const pages = await mapLimit(chunks, CONCURRENCY, async ids => {
     const params = new URLSearchParams();
-    for (const item of items) params.append(item.key, item.id);
+    for (const id of ids) params.append("condition_ids", id);
     try {
       return {rows: asArray(await getJson(`${GAMMA_API}/markets?${params}`)), ok: true};
     } catch (error) {
@@ -1406,7 +1406,7 @@ async function enrichConsensusMarkets(holderGroups, nowMs) {
     scannedGroups: scan.length,
     categoryCounts,
     conditionIds: conditionIds.length,
-    tokenIds: tokenIds.length,
+    conditionIdsRequested: conditionIds.length,
     metadataPages: pages.length,
     metadataReturned: marketByCondition.size,
     closedRemoved,
