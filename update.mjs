@@ -1646,6 +1646,12 @@ async function getSettlementStats(wallet, period, nowMs, limit = 250) {
   let settlementWins = 0, settlementLosses = 0, earlyExitMarkets = 0;
   let classified = 0, earlyExitPositions = 0, unclassified = 0;
   const earlyKeys = new Set();
+  const earlyExitDetails = new Map();
+  const addEarlyExit = (condition, index, position, closeTime) => {
+    const key = condition + "|" + String(index);
+    earlyKeys.add(key);
+    earlyExitDetails.set(key, {asset:String(position.token_id ?? position.tokenId ?? position.asset ?? ""),closeTime});
+  };
   for (const position of positions) {
     const condition = String(position.condition_id ?? position.conditionId ?? "").toLowerCase();
     const market = markets.get(condition);
@@ -1661,7 +1667,7 @@ async function getSettlementStats(wallet, period, nowMs, limit = 250) {
         classified++;
         earlyExitPositions++;
         const rawIndex = position.outcome_index ?? position.outcomeIndex ?? position.outcome;
-        earlyKeys.add(condition + "|" + String(rawIndex ?? "unknown"));
+        addEarlyExit(condition, rawIndex ?? "unknown", position, lastEventAt);
       }
       continue;
     }
@@ -1687,7 +1693,7 @@ async function getSettlementStats(wallet, period, nowMs, limit = 250) {
     if (scanStatus === "CLOSED" && lastEventAt !== null && lastEventAt < resolvedAt) {
       classified++;
       earlyExitPositions++;
-      earlyKeys.add(condition + "|" + positionIndex);
+      addEarlyExit(condition, positionIndex, position, lastEventAt);
       continue;
     }
     if (scanStatus === "CLOSED" && lastEventAt === null) { unclassified++; continue; }
@@ -1697,19 +1703,47 @@ async function getSettlementStats(wallet, period, nowMs, limit = 250) {
     else settlementLosses++;
   }
 
+  let highConfidenceExitWins = 0;
+  let lowConfidenceExitMarkets = 0;
+  let unverifiedEarlyExitMarkets = 0;
+  let exitTradeHistoryComplete = true;
+  if (earlyExitDetails.size) {
+    try {
+      const params = new URLSearchParams({user:wallet,start:String(Math.floor(periodCutoffMs/1000)),end:String(Math.floor(nowMs/1000)),limit:"10000",offset:"0",takerOnly:"false"});
+      const trades = asArray(await getJson(API + "/trades?" + params.toString()));
+      if (trades.length >= 10000) exitTradeHistoryComplete = false;
+      for (const exit of earlyExitDetails.values()) {
+        if (!exit.asset || !exit.closeTime) { unverifiedEarlyExitMarkets++; continue; }
+        const matching = trades.filter(trade => {
+          const asset = String(trade.asset ?? trade.token_id ?? trade.tokenId ?? "");
+          const side = String(trade.side ?? "").toUpperCase();
+          const timestamp = timeMs(trade.timestamp ?? trade.match_time ?? trade.matchTime);
+          return asset === exit.asset && side === "SELL" && timestamp !== null && Math.abs(timestamp-exit.closeTime)<=120000;
+        });
+        if (!matching.length) { unverifiedEarlyExitMarkets++; continue; }
+        const latest = Math.max(...matching.map(t=>timeMs(t.timestamp ?? t.match_time ?? t.matchTime)||0));
+        const fills = matching.filter(t=>Math.abs((timeMs(t.timestamp ?? t.match_time ?? t.matchTime)||0)-latest)<=30000);
+        const size = fills.reduce((sum,t)=>sum+(num(t.size)||0),0);
+        const price = size>0 ? fills.reduce((sum,t)=>sum+(num(t.price)||0)*(num(t.size)||0),0)/size : null;
+        if (price===null) unverifiedEarlyExitMarkets++;
+        else if (price>=0.90) highConfidenceExitWins++;
+        else lowConfidenceExitMarkets++;
+      }
+    } catch(error) {
+      console.warn("Early-exit trade-price audit failed for "+wallet+": "+error.message);
+      unverifiedEarlyExitMarkets=earlyExitDetails.size;
+      exitTradeHistoryComplete=false;
+    }
+  }
   const metadataComplete = marketPages.every(page => page.ok);
-  const settlementRecordComplete = allPagesComplete && metadataComplete && unclassified === 0;
+  const settlementRecordComplete = allPagesComplete && metadataComplete && unclassified===0 && exitTradeHistoryComplete && unverifiedEarlyExitMarkets===0;
   return {
-    settlementWins,
-    settlementLosses,
-    earlyExitMarkets: earlyKeys.size,
-    earlyExitPositions,
-    settlementRecordComplete,
-    settlementPositionsChecked: positions.length,
-    settlementPositionsClassified: classified,
-    settlementPositionsUnclassified: unclassified,
-    settlementRecordBasis: "Verified market outcome at resolution; early exits excluded from settled wins/losses",
-    settlementRecordCoverage: settlementRecordComplete ? "complete" : "partial"
+    settlementWins, settlementLosses, highConfidenceExitWins, lowConfidenceExitMarkets, unverifiedEarlyExitMarkets,
+    earlyExitMarkets:earlyKeys.size, earlyExitPositions, settlementRecordComplete,
+    settlementPositionsChecked:positions.length, settlementPositionsClassified:classified,
+    settlementPositionsUnclassified:unclassified,
+    settlementRecordBasis:"Verified settlements plus matched actual SELL fills at >= $0.90; lower-priced exits excluded; unmatched exits make record incomplete",
+    settlementRecordCoverage:settlementRecordComplete?"complete":"partial"
   };
 }
 const settlementStatsCache = new Map();
@@ -1985,10 +2019,10 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     const closeRecord = consensusCloseRecords[wallet] || {};
     const audit = settlementAuditByWallet.get(wallet);
     const complete = audit?.settlementRecordComplete === true &&
-      Number.isFinite(Number(audit.settlementWins)) &&
-      Number.isFinite(Number(audit.settlementLosses)) &&
-      Number(audit.settlementWins) + Number(audit.settlementLosses) >= MIN_CONSENSUS_CLOSED_MARKETS;
-    const wins = complete ? Number(audit.settlementWins) : null;
+      Number.isFinite(Number(audit.settlementWins)) && Number.isFinite(Number(audit.settlementLosses)) &&
+      Number.isFinite(Number(audit.highConfidenceExitWins)) &&
+      Number(audit.settlementWins)+Number(audit.settlementLosses)+Number(audit.highConfidenceExitWins)>=MIN_CONSENSUS_CLOSED_MARKETS;
+    const wins = complete ? Number(audit.settlementWins)+Number(audit.highConfidenceExitWins) : null;
     const losses = complete ? Number(audit.settlementLosses) : null;
     const resolvedMarkets = complete ? wins + losses : null;
     return [wallet, {
@@ -1998,12 +2032,14 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
       recordComplete: complete,
       recordVerified: complete,
       settlementRecordComplete: complete,
+      highConfidenceExitWins: complete ? Number(audit.highConfidenceExitWins) : null,
+      lowConfidenceExitMarkets: audit?.lowConfidenceExitMarkets ?? 0,
       settlementPositionsChecked: audit?.settlementPositionsChecked ?? 0,
       settlementPositionsClassified: audit?.settlementPositionsClassified ?? 0,
       settlementPositionsUnclassified: audit?.settlementPositionsUnclassified ?? 0,
       recordBasis: complete
-        ? "Independently audited Gamma market settlement outcomes; early exits excluded"
-        : "Settlement audit incomplete or fewer than 20 settled markets; not qualified"
+        ? "Verified settlements plus actual early SELL fills executed at >= $0.90; lower-priced early exits excluded"
+        : "Settlement/exit-price audit incomplete or fewer than 20 qualifying outcomes; not qualified"
     }];
   }));
   // Keep selected-period records separate from the rolling 30-day qualification record.
@@ -2020,15 +2056,8 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
   // Keep the period-scoped realized-close records as the single source for
   // leaderboard W/L. The separate settlement-history lookup was slow, incomplete,
   // and caused the selected-period record to be overwritten or withheld.
-  const leaders = ranked.filter(trader => {
-    const wins = num(trader.wins), losses = num(trader.losses);
-    const resolved = num(trader.resolvedMarkets), rate = num(trader.winRate), pnl = num(trader.pnl);
-    return trader.recordComplete === true &&
-      wins !== null && losses !== null && resolved === wins + losses &&
-      resolved >= MIN_TRADER_RESOLVED_MARKETS &&
-      rate !== null && rate >= MIN_CONSENSUS_WIN_RATE &&
-      pnl !== null && pnl > 0;
-  }).slice(0, LEADER_COUNT);
+  // Keep all ranked Top 100 traders visible; record completeness never hides the ranking.
+  const leaders = ranked.slice(0, LEADER_COUNT);
   // Detailed settlement verification is only needed for the visible Top 100.
   // Scanning 1,000 wallets across three API cohorts twice per period delayed the entire publish.
   // Keep W-L based on the selected-period closed-position scan; don't replace
@@ -2069,7 +2098,9 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
   const settlementVerifiedLeaders = await attachSettlementStats(output.leaders, period, nowMs);
   output.leaders = settlementVerifiedLeaders.map(trader => {
     const complete = trader.settlementRecordComplete === true;
-    const wins = complete ? num(trader.settlementWins) : null;
+    const settledWins = complete ? num(trader.settlementWins) : null;
+    const exitWins = complete ? num(trader.highConfidenceExitWins) : null;
+    const wins = settledWins !== null && exitWins !== null ? settledWins + exitWins : null;
     const losses = complete ? num(trader.settlementLosses) : null;
     const resolved = wins !== null && losses !== null ? wins + losses : null;
     return {
@@ -2077,13 +2108,16 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
       profitableCloseWins: trader.wins ?? null,
       profitableCloseLosses: trader.losses ?? null,
       profitableCloseRate: trader.winRate ?? null,
+      settlementWins: settledWins,
+      highConfidenceExitWins: exitWins,
+      lowConfidenceExitMarkets: trader.lowConfidenceExitMarkets ?? 0,
       wins,
       losses,
       resolvedMarkets: resolved,
       winRate: resolved > 0 ? wins / resolved * 100 : null,
       recordComplete: complete && resolved !== null,
       recordVerified: complete && resolved !== null,
-      recordBasis: trader.settlementRecordBasis || "Verified settlement outcome unavailable"
+      recordBasis: trader.settlementRecordBasis || "Verified settlement and >= $0.90 exit-price audit unavailable"
     };
   });
   console.log(`${period.key}: published ${output.leaders.length} ranked Top 100 traders; settlement W-L is shown only for complete verified records.`);
@@ -2143,7 +2177,7 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     pnlBasis: `Polymarket v2 leaderboard P&L for selected ${period.key} period`,
     recordBasis: trader.settlementRecordBasis || "Verified settlement outcome unavailable"
   }));
-  output.recordBasis = "Top 100 ranked by selected-period Polymarket leaderboard P&L. W-L and win rate are displayed only when the settlement-history sample is complete and verified; otherwise they are unavailable. Early exits are excluded from verified settlement records.";
+  output.recordBasis = "Top 100 ranked by selected-period Polymarket P&L. W-L counts verified settlements plus actual early SELL fills at >= $0.90; lower-priced early exits are excluded, and incomplete audits show N/A.";
 
   // Keep consensus independent of the Top 100 JSON size guard.
   const builtConsensusRows = Array.isArray(output.consensus) ? output.consensus : [];
