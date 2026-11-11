@@ -1709,9 +1709,20 @@ async function getSettlementStats(wallet, period, nowMs, limit = 250) {
   let exitTradeHistoryComplete = true;
   if (earlyExitDetails.size) {
     try {
-      const params = new URLSearchParams({user:wallet,start:String(Math.floor(periodCutoffMs/1000)),end:String(Math.floor(nowMs/1000)),limit:"10000",offset:"0",takerOnly:"false"});
-      const trades = asArray(await getJson(API + "/trades?" + params.toString()));
-      if (trades.length >= 10000) exitTradeHistoryComplete = false;
+      // Data API v1 /trades was retired on 2026-10-24. Use v2 keyset pagination.
+      // Bound this audit to one page; a full page is explicitly incomplete.
+      const params = new URLSearchParams({
+        user: wallet,
+        start: String(Math.floor(periodCutoffMs / 1000)),
+        end: String(Math.floor(nowMs / 1000)),
+        limit: "500",
+        taker_only: "false"
+      });
+      const tradeResponse = await getJson(API + "/v2/trades?" + params.toString());
+      const trades = asArray(tradeResponse);
+      if (trades.length >= 500 || tradeResponse?.pagination?.has_more === true) {
+        exitTradeHistoryComplete = false;
+      }
       for (const exit of earlyExitDetails.values()) {
         if (!exit.asset || !exit.closeTime) { unverifiedEarlyExitMarkets++; continue; }
         const matching = trades.filter(trade => {
