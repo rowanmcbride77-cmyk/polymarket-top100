@@ -116,6 +116,9 @@ async function getJson(url, attempts = 6) {
       return await response.json();
     } catch (error) {
       lastError = error;
+      // Permanent 4xx request/data errors cannot succeed on retry.
+      // Stop immediately so one invalid wallet cannot generate repeated failures.
+      if (/^HTTP 4\d\d:/.test(String(error?.message || error))) break;
       if (attempt < attempts - 1) {
         const backoffMs = Math.min(30000, 750 * (2 ** attempt));
         await sleep(backoffMs);
@@ -190,10 +193,22 @@ function normalizeLeader(row, index) {
   };
 }
 
+const invalidTraderWallets = new Set([
+  // Polymarket API explicitly rejected these as protocol contract addresses
+  // in the failed scan screenshot; they are not trader accounts.
+  "0xa5ef39c3d3e10d0b270233af41cac69796b12966",
+  "0x1000008dd9001b968442c1000017eae6e0da00ba"
+]);
+
 function isTraderWallet(value) {
   const wallet = String(value || "").trim().toLowerCase();
   return /^0x[a-f0-9]{40}$/.test(wallet) &&
     wallet !== "0x0000000000000000000000000000000000000000";
+}
+
+function isUsableTraderWallet(value) {
+  const wallet = String(value || "").trim().toLowerCase();
+  return isTraderWallet(wallet) && !invalidTraderWallets.has(wallet);
 }
 
 async function getResolvedRecord(wallet, period, nowMs, maxPositions = RANKING_RECORD_LIMIT) {
@@ -311,7 +326,7 @@ async function getResolvedRecord(wallet, period, nowMs, maxPositions = RANKING_R
   };
 }
 async function attachRecords(traders, period, nowMs, maxPositions = RANKING_RECORD_LIMIT, cache = null) {
-  const eligibleTraders = traders.filter(trader => isTraderWallet(trader?.wallet));
+  const eligibleTraders = traders.filter(trader => isUsableTraderWallet(trader?.wallet));
   const skippedWallets = traders.length - eligibleTraders.length;
   if (skippedWallets) console.warn(`Skipped ${skippedWallets} rows without a valid EVM trader wallet during record lookup.`);
   const rows = await mapLimit(eligibleTraders, CONCURRENCY, async trader => {
@@ -331,7 +346,9 @@ async function attachRecords(traders, period, nowMs, maxPositions = RANKING_RECO
       // Polymarket explicitly rejects protocol contract addresses as user wallets.
       // These are not trader-history failures and must not flood the scan logs.
       if (/protocol contract address|invalid_request.*parameter.*user/i.test(message)) {
-        console.warn(`Skipped non-trader/protocol wallet during record lookup: ${String(trader.wallet || "missing wallet")}`);
+        const rejectedWallet = String(trader.wallet || "").trim().toLowerCase();
+        if (isTraderWallet(rejectedWallet)) invalidTraderWallets.add(rejectedWallet);
+        console.warn(`Skipped protocol/invalid user wallet during record lookup: ${rejectedWallet || "missing wallet"}`);
       } else {
         console.error(`Record lookup failed for ${String(trader.name || trader.wallet || "unknown trader")}: ${message}`);
       }
@@ -1853,7 +1870,14 @@ async function attachSettlementStats(traders, period, nowMs) {
       const stats = await pending;
       return {...trader, ...stats};
     } catch (error) {
-      console.warn("Settlement record unavailable for " + trader.wallet + ":", error.message);
+      const message = String(error?.message || error);
+      if (/protocol contract address|invalid_request.*parameter.*user/i.test(message)) {
+        const rejectedWallet = String(trader.wallet || "").trim().toLowerCase();
+        if (isTraderWallet(rejectedWallet)) invalidTraderWallets.add(rejectedWallet);
+        console.warn("Skipped protocol/invalid user wallet during settlement audit: " + (rejectedWallet || "missing wallet"));
+      } else {
+        console.warn("Settlement record unavailable for " + trader.wallet + ":", message);
+      }
       return {...trader, settlementWins: null, settlementLosses: null, earlyExitMarkets: null, earlyExitPositions: null, settlementRecordComplete: false, settlementPositionsChecked: 0};
     }
   });
@@ -2035,8 +2059,13 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
   // Build both ranking arrays from the selected period's own candidate and
   // realized-close records. These declarations must exist before leaderboard
   // filtering and makeOutput; without them buildPeriod crashes at publication.
-  const ranked = rankCandidates(candidates, records);
-  const sportsRanked = rankSportsCandidates(candidates, records);
+  const usableLeaderboardCandidates = candidates.filter(trader => isUsableTraderWallet(trader.wallet));
+  const rejectedLeaderboardWallets = candidates.length - usableLeaderboardCandidates.length;
+  if (rejectedLeaderboardWallets) {
+    console.warn(`Excluded ${rejectedLeaderboardWallets} malformed/protocol wallets from leaderboard ranking.`);
+  }
+  const ranked = rankCandidates(usableLeaderboardCandidates, records);
+  const sportsRanked = rankSportsCandidates(usableLeaderboardCandidates, records);
   console.log(`${period.key}: ranked ${ranked.length} candidates; ${sportsRanked.length} sports-qualified candidates.`);
   // Consensus holder records are scanned across the complete rolling 7-day window; leaderboard records remain separately capped.
   const consensusRecordCandidates = consensusRecordWallets.map(wallet =>
