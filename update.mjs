@@ -1494,16 +1494,19 @@ function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedM
     const breadthScore = Math.min(displayTraders.length, 20) / 20 * 55;
     const capitalScore = Math.min(Math.log10(Math.max(1, totalEntry || 0) + 1) / Math.log10(10001), 1) * 25;
     const qualityScore = knownRates.length ? avgRate / 100 * 10 : 0;
+    // Published consensus is STRICTLY qualified consensus: only Strong Signals
+    // count. Developing/watchlist holders are discovery context, never members.
+    if (strongHolders.length < 2) continue;
     const result = {
-      ...group, traders: displayTraders, sameSide: group.sameSide ?? displayTraders.length, displayedTraders: displayTraders.length,
+      ...group, traders: strongHolders, sameSide: strongHolders.length,
+      displayedTraders: strongHolders.length,
       qualifiedTraders: strongHolders.length, developingTraders: developingHolders.length,
-      strongHolderCount: strongHolders.length, signalTier: tier, tierReason,
+      strongHolderCount: strongHolders.length, signalTier: "Strong Signals",
+      tierReason: "Every listed trader independently passes the complete rolling 30-day qualification gate.",
       consensusScore: Math.round(breadthScore + capitalScore + qualityScore),
       totalValue, totalEntry
     };
-    if (tier === "Strong Signals") strongGroups.push(result);
-    else if (tier === "Developing Signals") developingGroups.push(result);
-    else watchlistGroups.push(result);
+    strongGroups.push(result);
   }
 
   const sortGroups = (a, b) =>
@@ -1516,22 +1519,18 @@ function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedM
   watchlistGroups.sort(sortGroups);
 
   const perTierLimit = 1500;
-  const result = [
-    ...strongGroups.slice(0, perTierLimit),
-    ...developingGroups.slice(0, perTierLimit),
-    ...watchlistGroups.slice(0, perTierLimit)
-  ];
+  const result = strongGroups.slice(0, perTierLimit);
   console.log("Consensus tier diagnostics:", JSON.stringify({
     ...diagnostics,
     strongMarkets: strongGroups.length, developingMarkets: developingGroups.length,
     watchlistMarkets: watchlistGroups.length,
     publishedStrong: Math.min(strongGroups.length, perTierLimit),
-    publishedDeveloping: Math.min(developingGroups.length, perTierLimit),
-    publishedWatchlist: Math.min(watchlistGroups.length, perTierLimit),
+    publishedDeveloping: 0,
+    publishedWatchlist: 0,
     minimumStrongWinRate: MIN_CONSENSUS_WIN_RATE,
     minimumStrongResolvedMarkets: minimumResolvedMarkets,
     strongQualificationWindowDays: 30,
-    developingWinRate: 75, developingMinimumResolvedMarkets: 10,
+    consensusPublicationRule: "2+ Strong Signals qualified traders only; developing and watchlist excluded",
     discoveryPositionValue: MIN_CONSENSUS_DISCOVERY_VALUE,
     preferredSameSideTraders: 10
   }));
