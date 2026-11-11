@@ -2149,7 +2149,7 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     String(trader.wallet || "").toLowerCase(),
     {volume: trader.volume ?? null, volumeBasis: trader.volumeBasis || "Unavailable from period user-volume endpoint"}
   ]));
-  console.log(period.key + ": independently audited " + settlementAuditCandidates.length + " consensus wallets; only complete settlement-outcome records can qualify. Magic vs. Kings holders audited: " + magicKingsWallets.size + ".");
+  console.log(period.key + ": independently audited " + settlementAuditCandidates.length + " of " + consensusRecordCandidates.length + " eligible consensus wallets; only complete settlement-outcome records can qualify.");
   // Keep the period-scoped realized-close records as the single source for
   // leaderboard W/L. The separate settlement-history lookup was slow, incomplete,
   // and caused the selected-period record to be overwritten or withheld.
