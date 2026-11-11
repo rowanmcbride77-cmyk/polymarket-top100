@@ -501,7 +501,7 @@ function consensus() {
 async function loadConsensusData() {
   const pool = $("consensusPool").value;
   $("consensusBody").innerHTML = `<tr><td colspan="7" class="loading">Loading ${esc(pool)} consensus markets…</td></tr>`;
-  $("consensusPeriod").textContent = "20K-wallet discovery · 48h sports / 24h other · Strong 90%+ over 30 days · 20+ closes";
+  $("consensusPeriod").textContent = "20K-wallet discovery · Strong Signals use a 30-day profitable-close proxy (not verified settlement accuracy) · 20+ closes";
   const filename = CONSENSUS_FILES[pool];
   try {
     const urls = [
@@ -525,7 +525,7 @@ async function loadConsensusData() {
     if (!loaded) throw lastError || new Error(filename + " is not available yet.");
     consensusData = loaded;
     renderConsensus();
-    $("consensusPeriod").textContent = `Strong 90%+ over ${Number(consensusData?.qualificationWindowDays) || 7} days · ${Number(consensusData?.minimumResolvedMarkets) || 10}+ closes`;
+    $("consensusPeriod").textContent = `Strong Signals: 90%+ 30-day profitable-close proxy (not settlement win rate) · ${Number(consensusData?.minimumResolvedMarkets) || 10}+ closes`;
   } catch (error) {
     consensusData = {consensus:[]};
     $("consensusBody").innerHTML = `<tr><td colspan="7" class="empty">${esc(error.message)}</td></tr>`;
