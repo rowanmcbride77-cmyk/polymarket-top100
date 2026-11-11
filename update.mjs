@@ -1520,6 +1520,19 @@ function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedM
     strongGroups.push(result);
   }
 
+  // Publish only unanimous qualified consensus per exact market condition.
+  // If qualified traders pass the Strong gate on both outcomes, suppress BOTH
+  // sides. Unqualified holders never enter strongQualifiedSidesByCondition.
+  const unanimousStrongGroups = strongGroups.filter(group => {
+    const conditionKey = String(group.conditionId || "").trim().toLowerCase();
+    if (!conditionKey) return false;
+    const qualifiedSides = strongQualifiedSidesByCondition.get(conditionKey);
+    return qualifiedSides && qualifiedSides.size === 1;
+  });
+  const splitQualifiedGroupsRemoved = strongGroups.length - unanimousStrongGroups.length;
+  strongGroups.splice(0, strongGroups.length, ...unanimousStrongGroups);
+  diagnostics.splitQualifiedGroupsRemoved = splitQualifiedGroupsRemoved;
+
   const sortGroups = (a, b) =>
     (b.consensusScore ?? 0) - (a.consensusScore ?? 0) ||
     b.sameSide - a.sameSide ||
