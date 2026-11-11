@@ -199,7 +199,10 @@ jobs:
           import { execFileSync } from "node:child_process";
 
           const generated = JSON.parse(await fs.readFile("/tmp/scanner-consensus-week.json", "utf8"));
-          const publishedText = execFileSync("git", ["show", "origin/main:consensus-week.json"], {encoding: "utf8"});
+          const publishedText = execFileSync("git", ["show", "origin/main:consensus-week.json"], {
+            encoding: "utf8",
+            maxBuffer: 64 * 1024 * 1024
+          });
           const published = JSON.parse(publishedText);
           const generatedAt = Date.parse(generated.generatedAt || "");
           const publishedAt = Date.parse(published.generatedAt || "");
