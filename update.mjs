@@ -190,6 +190,12 @@ function normalizeLeader(row, index) {
   };
 }
 
+function isTraderWallet(value) {
+  const wallet = String(value || "").trim().toLowerCase();
+  return /^0x[a-f0-9]{40}$/.test(wallet) &&
+    wallet !== "0x0000000000000000000000000000000000000000";
+}
+
 async function getResolvedRecord(wallet, period, nowMs, maxPositions = RANKING_RECORD_LIMIT) {
   if (!wallet) return null;
 
@@ -305,7 +311,10 @@ async function getResolvedRecord(wallet, period, nowMs, maxPositions = RANKING_R
   };
 }
 async function attachRecords(traders, period, nowMs, maxPositions = RANKING_RECORD_LIMIT, cache = null) {
-  const rows = await mapLimit(traders, CONCURRENCY, async trader => {
+  const eligibleTraders = traders.filter(trader => isTraderWallet(trader?.wallet));
+  const skippedWallets = traders.length - eligibleTraders.length;
+  if (skippedWallets) console.warn(`Skipped ${skippedWallets} rows without a valid EVM trader wallet during record lookup.`);
+  const rows = await mapLimit(eligibleTraders, CONCURRENCY, async trader => {
     try {
       let recordPromise;
       const cacheKey = String(period?.key || period?.api || period || "week") + "|" + String(maxPositions ?? "unbounded") + "|" + String(trader.wallet || "").toLowerCase();
@@ -318,7 +327,14 @@ async function attachRecords(traders, period, nowMs, maxPositions = RANKING_RECO
       const record = await recordPromise;
       return record ? [trader.wallet, record] : null;
     } catch (error) {
-      console.error(`Record lookup failed for ${trader.name}: ${error.message}`);
+      const message = String(error?.message || error);
+      // Polymarket explicitly rejects protocol contract addresses as user wallets.
+      // These are not trader-history failures and must not flood the scan logs.
+      if (/protocol contract address|invalid_request.*parameter.*user/i.test(message)) {
+        console.warn(`Skipped non-trader/protocol wallet during record lookup: ${String(trader.wallet || "missing wallet")}`);
+      } else {
+        console.error(`Record lookup failed for ${String(trader.name || trader.wallet || "unknown trader")}: ${message}`);
+      }
       return null;
     }
   });
@@ -1821,7 +1837,11 @@ async function attachPeriodVolumes(traders, period, nowMs) {
 
 // Verified settlement outcomes are the only source for the public leaderboard W/L record.
 async function attachSettlementStats(traders, period, nowMs) {
-  return await mapLimit(traders, 4, async trader => {
+  const eligibleTraders = traders.filter(trader => isTraderWallet(trader?.wallet));
+  if (eligibleTraders.length !== traders.length) {
+    console.warn(`Skipped ${traders.length - eligibleTraders.length} rows without a valid EVM trader wallet during settlement audit.`);
+  }
+  return await mapLimit(eligibleTraders, 4, async trader => {
     try {
       const wallet = String(trader.wallet || "").toLowerCase();
       const cacheKey = String(period?.key || period?.api || period || "week") + "|" + wallet;
