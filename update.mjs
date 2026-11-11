@@ -1594,11 +1594,11 @@ async function getSettlementStats(wallet, period, nowMs, limit = 250) {
     return {rows, complete};
   }
 
-  // CLOSED can be much larger than a wallet's currently held book, so it gets
-  // the existing five-page cap. Held winner/loss cohorts usually fit in one
-  // page; if they do not, the record is explicitly marked incomplete.
+  // Scan a wider closed-position history for settlement verification.
+  // If a cohort is truncated or a market cannot be classified, the record
+  // remains incomplete and is never presented as a verified W-L.
   const cohorts = await Promise.all([
-    fetchPositionCohort("CLOSED", 2),
+    fetchPositionCohort("CLOSED", 10),
     fetchPositionCohort("OPEN", 1),
     fetchPositionCohort("REDEEMABLE_LOST", 1)
   ]);
@@ -2011,6 +2011,35 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     consensusPeriodRecords,
     consensusVolumeStats
   );
+
+  // Only verified Gamma settlement outcomes count as leaderboard wins/losses.
+  // Keep profitable-close proxy fields separately for diagnostics.
+  const settlementVerifiedLeaders = await attachSettlementStats(output.leaders, period, nowMs);
+  output.leaders = settlementVerifiedLeaders.map(trader => {
+    const complete = trader.settlementRecordComplete === true;
+    const wins = complete ? num(trader.settlementWins) : null;
+    const losses = complete ? num(trader.settlementLosses) : null;
+    const resolved = wins !== null && losses !== null ? wins + losses : null;
+    return {
+      ...trader,
+      profitableCloseWins: trader.wins ?? null,
+      profitableCloseLosses: trader.losses ?? null,
+      profitableCloseRate: trader.winRate ?? null,
+      wins,
+      losses,
+      resolvedMarkets: resolved,
+      winRate: resolved > 0 ? wins / resolved * 100 : null,
+      recordComplete: complete && resolved !== null,
+      recordVerified: complete && resolved !== null,
+      recordBasis: trader.settlementRecordBasis || "Verified settlement outcome unavailable"
+    };
+  }).filter(trader =>
+    trader.recordComplete === true &&
+    Number(trader.resolvedMarkets) >= MIN_TRADER_RESOLVED_MARKETS &&
+    Number(trader.winRate) >= MIN_CONSENSUS_WIN_RATE &&
+    Number(trader.pnl) > 0
+  ).slice(0, LEADER_COUNT);
+  console.log(`${period.key}: ${output.leaders.length} leaders have complete settlement-verified 90%+ records; early exits excluded.`);
 
   // Count every discovered weekly wallet, not only Top 100 traders or shared-market holders.
   // Reuse cached records so each wallet is queried only once in this period.
