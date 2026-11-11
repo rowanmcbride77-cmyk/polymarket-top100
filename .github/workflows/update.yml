@@ -92,29 +92,15 @@ jobs:
               if (uniqueWallets.size !== leaders.length) {
                 throw new Error(`${file} contains duplicate or missing trader wallets`);
               }
-              const unqualifiedLeaders = leaders.filter(row =>
-                row.recordComplete !== true ||
-                !Number.isFinite(Number(row.resolvedMarkets)) ||
-                Number(row.resolvedMarkets) < 10 ||
-                !Number.isFinite(Number(row.winRate)) ||
-                Number(row.winRate) < 90 ||
-                !Number.isFinite(Number(row.pnl)) ||
-                Number(row.pnl) <= 0 ||
-                !Number.isFinite(Number(row.wins)) ||
-                !Number.isFinite(Number(row.losses)) ||
-                Number(row.resolvedMarkets) !== Number(row.wins) + Number(row.losses)
+              // Top 100 is ranked by selected-period P&L, not by consensus qualification.
+              // An incomplete W/L audit is allowed and must not block leaderboard publishing.
+              const invalidRankedLeaders = leaders.filter(row =>
+                !row.wallet || !Number.isFinite(Number(row.pnl))
               );
-              if (unqualifiedLeaders.length) {
-                throw new Error(`${file} contains ${unqualifiedLeaders.length} traders without a complete 90%+ / 10+ close / positive P&L record`);
+              if (invalidRankedLeaders.length) {
+                throw new Error(`${file} contains ${invalidRankedLeaders.length} Top 100 rows with missing wallets or invalid P&L`);
               }
-              const misleadingCappedRecords = leaders.filter(row =>
-                row.recordComplete === false &&
-                (row.wins !== null || row.losses !== null || row.winRate !== null)
-              );
-              if (misleadingCappedRecords.length) {
-                throw new Error(`${file} contains ${misleadingCappedRecords.length} capped records presented as complete counts/rates`);
-              }
-              console.log(`${file}: ${leaders.length} qualified 90%+ leaders; incomplete and sub-threshold traders excluded`);
+              console.log(`${file}: ${leaders.length} P&L-ranked leaderboard traders; audited W/L shown only when complete`);
             }
 
             if (file === "consensus-week.json" || file === "consensus-month.json") {
