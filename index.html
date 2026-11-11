@@ -290,6 +290,7 @@ const expandedCombos = new Set();
 const comboActivityCache = new Map();
 const traderAliases = new Map();
 let loading = false;
+let loadSequence = 0;
 const expandedMarkets = new Set();
 const consensusMemberCache = new Map();
 const closedPositionState = new Map();
@@ -504,22 +505,25 @@ async function loadConsensusData() {
   const filename = CONSENSUS_FILES[pool];
   try {
     const urls = [
-      filename + "?t=" + Date.now(),
-      "https://raw.githubusercontent.com/rowanmcbride77-cmyk/polymarket-top100/main/" + filename + "?t=" + Date.now()
+      "https://raw.githubusercontent.com/rowanmcbride77-cmyk/polymarket-top100/main/" + filename + "?t=" + Date.now(),
+      filename + "?t=" + Date.now()
     ];
-    // Read both Pages and the GitHub source, then use the newest generated file.
-    // A successful but stale Pages response must not hide newer scanner output.
-    const candidates = (await Promise.all(urls.map(async url => {
+    // The raw repository file is authoritative. Pages is requested only if raw fails.
+    let loaded = null;
+    let lastError = null;
+    for (const url of urls) {
       try {
-        const response = await fetch(url, {cache:"no-store"});
-        if (!response.ok) return null;
+        const response = await fetch(url, {cache:"no-store", signal:AbortSignal.timeout(20000)});
+        if (!response.ok) throw new Error("HTTP " + response.status);
         const parsed = await response.json();
-        return parsed && Array.isArray(parsed.consensus) ? parsed : null;
-      } catch (_) { return null; }
-    }))).filter(Boolean);
-    if (!candidates.length) throw new Error(filename + " is not available yet. Run the repository updater after the new generator is deployed.");
-    candidates.sort((a, b) => (Date.parse(b.generatedAt || "") || 0) - (Date.parse(a.generatedAt || "") || 0));
-    consensusData = candidates[0];
+        if (parsed && Array.isArray(parsed.consensus) && Number.isFinite(Date.parse(parsed.generatedAt || ""))) {
+          loaded = parsed;
+          break;
+        }
+      } catch (error) { lastError = error; }
+    }
+    if (!loaded) throw lastError || new Error(filename + " is not available yet.");
+    consensusData = loaded;
     renderConsensus();
     $("consensusPeriod").textContent = `Strong 90%+ over ${Number(consensusData?.qualificationWindowDays) || 7} days · ${Number(consensusData?.minimumResolvedMarkets) || 10}+ closes`;
   } catch (error) {
@@ -890,6 +894,21 @@ function renderConsensus() {
       ? `<small class="subtitle">Avg. buy: ${buyPreview}${members.length > 3 ? " · +" + (members.length - 3) + " more" : ""}</small>`
       : "";
 
+    // Some markets have hundreds of holders. Load trade detail for only five
+    // members and batch the refresh instead of rebuilding the whole table per wallet.
+    if (expanded && market.conditionId) {
+      const historyTargets = members.slice(0, 5).filter(member => walletOf(member));
+      const pendingHistory = historyTargets.map(member =>
+        loadConsensusTradeHistory(walletOf(member), market.conditionId, side)
+      );
+      if (pendingHistory.length && !market._historyRefreshQueued) {
+        market._historyRefreshQueued = true;
+        Promise.all(pendingHistory).then(() => {
+          market._historyRefreshQueued = false;
+          renderConsensus();
+        }).catch(() => { market._historyRefreshQueued = false; });
+      }
+    }
     const sectionHeader = market._sectionHeader ? `<tr class="signal-section"><td colspan="6"><strong>${esc(market._sectionHeader)}</strong><small>${esc(market._sectionNote)}</small></td></tr>` : "";
     const row = `<tr class="click-row" onclick="toggleMarket('${esc(key)}')">
       <td>${index + 1}</td>
@@ -902,15 +921,12 @@ function renderConsensus() {
 
     const detail = expanded ? `<tr class="expand-row"><td colspan="6">
       <div class="expand-title">Current open holdings · ${count}</div>
-      ${members.length ? `<div class="member-list">${members.map(member => {
+      ${members.length ? `<div class="member-list">${members.slice(0, 25).map(member => {
         const memberName = member.name || member.username || member.userName || "Trader";
         const wallet = walletOf(member);
         if (wallet) consensusMemberCache.set(wallet, member);
         const key = [String(wallet || "").toLowerCase(), String(market.conditionId || "").toLowerCase(), String(side).toLowerCase()].join("|");
         const events = consensusTradeCache.get(key);
-        if (expanded && wallet && market.conditionId && !consensusTradeCache.has(key)) {
-          loadConsensusTradeHistory(wallet, market.conditionId, side).then(() => renderConsensus());
-        }
         const matchedEvents = (events || []).filter(t => !t.outcome || String(t.outcome).trim().toLowerCase() === String(side).trim().toLowerCase());
         const buy = matchedEvents.find(t => String(t.side || "").toUpperCase() === "BUY");
         const sell = matchedEvents.find(t => String(t.side || "").toUpperCase() === "SELL" && (!buy || (timestamp(t.timestamp)||0) > (timestamp(buy.timestamp)||0)));
@@ -935,7 +951,7 @@ function renderConsensus() {
           '<div><strong>' + (buyPrice === null ? "N/A" : tokenPrice(buyPrice)) + '</strong><small>' + (hasObservedBuy ? "Observed BUY price" : (reportedAvgPrice !== null ? "Average buy price from open position" : "Average buy price unavailable")) + '</small><small>' + (bought === null || bought === undefined ? (memberEntry !== null ? "Reported position entry value "+consensusCash(memberEntry)+" · exact trade cost unavailable" : "Entry cost unavailable; no matching BUY trade found") : (hasObservedBuy ? "Observed BUY / position entry "+consensusCash(bought) : "Reported position entry "+consensusCash(bought))+(shares !== null ? " · "+shares.toFixed(1)+" shares" : "")) + '</small>' + (bought !== null && memberValue !== null ? '<small>' + (buy ? "Approx. unrealized change: " : "Approx. change vs estimated entry: ") + (memberValue-bought>0?"+":"") + consensusCash(memberValue-bought) + " (" + (bought>0?((memberValue-bought)/bought*100).toFixed(1):"N/A") + "%)" + '</small>' : "") + '</div>' +
           '<div><strong>' + (sell && sell._price !== null ? (sell._price*100).toFixed(1)+"¢" : "—") + '</strong><small>Observed sell price</small><small>' + (sell ? "SELL transaction "+(sellCost === null ? "amount unavailable" : cash(sellCost)) : (!events ? "Loading transaction history" : "No matching SELL found")) + '</small><small>' + (memberValue !== null ? "Position value reported "+consensusCash(memberValue) : "Current held value unavailable") + '</small></div>' +
         '</div>';
-      }).join("")}</div>` : `<div class="empty">No trader-level position details were supplied for this market.</div>`}
+      }).join("")}</div>${members.length > 25 ? '<div class="source-note">Showing the first 25 of ' + members.length.toLocaleString() + ' holders to keep the dashboard responsive.</div>' : ''}` : `<div class="empty">No trader-level position details were supplied for this market.</div>`}
     </td></tr>` : "";
 
     return sectionHeader + row + detail;
@@ -1272,7 +1288,7 @@ function toggleMarket(key) {
 }
 
 function selectPeriod(nextPeriod) {
-  if (loading || nextPeriod === period) return;
+  if (nextPeriod === period) return;
   period = nextPeriod;
   $("weekTab").classList.toggle("active", period === "week");
   $("monthTab").classList.toggle("active", period === "month");
@@ -1362,7 +1378,7 @@ async function loadSellMarketCount(wallet) {
   const target = $("sellMarketCount");
   if (!target) return;
   try {
-    const response = await fetch("https://data-api.polymarket.com/trades?user=" + encodeURIComponent(wallet) + "&side=SELL&limit=1000", {cache:"no-store"});
+    const response = await fetch("https://data-api.polymarket.com/trades?user=" + encodeURIComponent(wallet) + "&side=SELL&limit=100", {cache:"no-store"});
     if (!response.ok) throw new Error("HTTP " + response.status);
     const json = await response.json();
     const trades = Array.isArray(json?.data) ? json.data : Array.isArray(json) ? json : [];
@@ -1387,7 +1403,7 @@ async function loadTraderCombos(wallet) {
   activeBox.textContent = "Loading all available combo positions…";
   closedBox.textContent = "Loading all resolved combos and payouts…";
 
-  async function fetchAllPages(url, maxPages = 100) {
+  async function fetchAllPages(url, maxPages = 2) {
     const output = [], seen = new Set();
     let cursor = null;
     for (let page = 0; page < maxPages; page++) {
@@ -1593,7 +1609,7 @@ function toggleClosedMarkets(wallet) {
 }
 
 async function fetchClosedPositionsPage(wallet, cursor) {
-  const params = new URLSearchParams({user:wallet, limit:"1000", status:"CLOSED", sort_by:"TIMESTAMP", sort_direction:"DESC"});
+  const params = new URLSearchParams({user:wallet, limit:"250", status:"CLOSED", sort_by:"TIMESTAMP", sort_direction:"DESC"});
   if (cursor) params.set("cursor", cursor);
   let lastError;
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -1675,6 +1691,7 @@ async function loadMoreClosedPositionHistory(wallet) {
 }
 
 async function loadData(forceReload = false) {
+  const requestId = ++loadSequence;
   loading = true;
   $("errorBox").innerHTML = "";
   $("leadersBody").innerHTML = `<tr><td colspan="6" class="loading">Loading traders…</td></tr>`;
@@ -1683,33 +1700,27 @@ async function loadData(forceReload = false) {
 
   try {
     const filename = FILES[period];
-    const candidates = [
-      filename + "?t=" + Date.now() + (forceReload ? "&reload=1" : ""),
-      "https://raw.githubusercontent.com/rowanmcbride77-cmyk/polymarket-top100/main/" + filename + "?t=" + Date.now()
-    ];
+    const rawUrl = "https://raw.githubusercontent.com/rowanmcbride77-cmyk/polymarket-top100/main/" + filename + "?t=" + Date.now();
+    const pagesUrl = filename + "?t=" + Date.now() + (forceReload ? "&reload=1" : "");
+    let result = null;
     let lastError = null;
-    const loaded = await Promise.all(candidates.map(async url => {
+    // Read the authoritative raw file first. Only fetch Pages as a fallback;
+    // parsing both copies on every load doubled startup work.
+    for (const url of [rawUrl, pagesUrl]) {
       try {
-        const response = await fetch(url, {cache:"no-store"});
+        const response = await fetch(url, {cache:"no-store", signal:AbortSignal.timeout(20000)});
         if (!response.ok) throw new Error(`${url.split("?")[0]} returned HTTP ${response.status}`);
         const parsed = await response.json();
-        if (!parsed || typeof parsed !== "object" || !Array.isArray(parsed.leaders)) {
-          throw new Error("The data file loaded but does not contain a leaders array.");
+        if (!parsed || typeof parsed !== "object" || !Array.isArray(parsed.leaders) ||
+            !Number.isFinite(Date.parse(parsed.generatedAt || parsed.updatedAt || parsed.lastUpdated || ""))) {
+          throw new Error("The data file is invalid or missing its generated timestamp.");
         }
-        return parsed;
-      } catch (error) {
-        lastError = error;
-        return null;
-      }
-    }));
-    const valid = loaded.filter(Boolean);
-    valid.sort((a, b) =>
-      (Date.parse(b.generatedAt || b.updatedAt || b.lastUpdated || "") || 0) -
-      (Date.parse(a.generatedAt || a.updatedAt || a.lastUpdated || "") || 0)
-    );
-    const result = valid[0] || null;
-
-    if (!result) throw lastError || new Error("Could not load dashboard data from GitHub Pages or GitHub.");
+        result = parsed;
+        break;
+      } catch (error) { lastError = error; }
+    }
+    if (requestId !== loadSequence) return;
+    if (!result) throw lastError || new Error("Could not load dashboard data from GitHub.");
 
 
     data = result;
@@ -1734,7 +1745,7 @@ async function loadData(forceReload = false) {
     $("avgWinRate").textContent = "N/A";
     $("errorBox").innerHTML = `<div class="error"><strong>Could not load dashboard data.</strong><br>${esc(error.message)}<br>Make sure the GitHub Pages site contains ${esc(FILES[period])} at the same folder level as index.html.</div>`;
   } finally {
-    loading = false;
+    if (requestId === loadSequence) loading = false;
   }
 }
 
