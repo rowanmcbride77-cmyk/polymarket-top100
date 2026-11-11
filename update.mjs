@@ -2088,12 +2088,14 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
   output.leaders = await attachPeriodVolumes(output.leaders, period, nowMs);
   output.leaders = output.leaders.map(trader => ({
     ...trader,
-    recordVerified: false,
+    recordVerified: trader.settlementRecordComplete === true &&
+      Number.isFinite(Number(trader.wins)) &&
+      Number.isFinite(Number(trader.losses)) &&
+      Number(trader.resolvedMarkets) === Number(trader.wins) + Number(trader.losses),
     pnlBasis: `Polymarket v2 leaderboard P&L for selected ${period.key} period`,
-    recordBasis: trader.recordComplete === true
-      ? `Complete selected-period closed-position scan; one profitable/unprofitable result per market using net realized P&L. This is a close-profitability statistic, not verified market-settlement W-L; early exits count.`
-      : `Incomplete selected-period closed-position scan; profitable/unprofitable counts and rate withheld.`
+    recordBasis: trader.settlementRecordBasis || "Verified settlement outcome unavailable"
   }));
+  output.recordBasis = "Leaderboard wins/losses and win rate use verified Gamma market settlement outcomes; early exits are excluded. Consensus qualification separately displays profitable-close history.";
 
   // Keep consensus independent of the Top 100 JSON size guard.
   const builtConsensusRows = Array.isArray(output.consensus) ? output.consensus : [];
