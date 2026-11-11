@@ -1766,15 +1766,10 @@ function makeOutput(period, ranked, sportsRanked, activePositions, tradeRows, no
   // Keep the general leaderboard populated; the public data cannot prove
   // that traders never exit early, so don't use a 100% profitable-close
   // filter as if it were a verified hold-to-settlement guarantee.
-  const leaders = ranked.filter(trader => {
-    const wins = num(trader.wins), losses = num(trader.losses);
-    const resolved = num(trader.resolvedMarkets), rate = num(trader.winRate), pnl = num(trader.pnl);
-    return trader.recordComplete === true &&
-      wins !== null && losses !== null && resolved !== null &&
-      resolved === wins + losses && resolved >= MIN_TRADER_RESOLVED_MARKETS &&
-      rate !== null && rate >= MIN_CONSENSUS_WIN_RATE &&
-      pnl !== null && pnl > 0;
-  }).slice(0, LEADER_COUNT).map(trader => {
+  // The Top 100 is the actual selected-period P&L ranking, not a filtered list
+  // of traders whose separate settlement-history lookup happened to be complete.
+  // Settlement W-L is attached afterward and shown only when independently verified.
+  const leaders = ranked.slice(0, LEADER_COUNT).map(trader => {
     const lifetime = leaderRecords[trader.wallet] || {};
     return {
       ...lifetime,
@@ -2032,13 +2027,8 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
       recordVerified: complete && resolved !== null,
       recordBasis: trader.settlementRecordBasis || "Verified settlement outcome unavailable"
     };
-  }).filter(trader =>
-    trader.recordComplete === true &&
-    Number(trader.resolvedMarkets) >= MIN_TRADER_RESOLVED_MARKETS &&
-    Number(trader.winRate) >= MIN_CONSENSUS_WIN_RATE &&
-    Number(trader.pnl) > 0
-  ).slice(0, LEADER_COUNT);
-  console.log(`${period.key}: ${output.leaders.length} leaders have complete settlement-verified 90%+ records; early exits excluded.`);
+  });
+  console.log(`${period.key}: published ${output.leaders.length} ranked Top 100 traders; settlement W-L is shown only for complete verified records.`);
 
   // Count every discovered weekly wallet, not only Top 100 traders or shared-market holders.
   // Reuse cached records so each wallet is queried only once in this period.
@@ -2088,13 +2078,14 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
   output.leaders = output.leaders.map(trader => ({
     ...trader,
     recordVerified: trader.settlementRecordComplete === true &&
-      Number.isFinite(Number(trader.wins)) &&
-      Number.isFinite(Number(trader.losses)) &&
-      Number(trader.resolvedMarkets) === Number(trader.wins) + Number(trader.losses),
+      num(trader.wins) !== null &&
+      num(trader.losses) !== null &&
+      num(trader.resolvedMarkets) !== null &&
+      num(trader.resolvedMarkets) === num(trader.wins) + num(trader.losses),
     pnlBasis: `Polymarket v2 leaderboard P&L for selected ${period.key} period`,
     recordBasis: trader.settlementRecordBasis || "Verified settlement outcome unavailable"
   }));
-  output.recordBasis = "Leaderboard wins/losses and win rate use verified Gamma market settlement outcomes; early exits are excluded. Consensus qualification separately displays profitable-close history.";
+  output.recordBasis = "Top 100 ranked by selected-period Polymarket leaderboard P&L. W-L and win rate are displayed only when the settlement-history sample is complete and verified; otherwise they are unavailable. Early exits are excluded from verified settlement records.";
 
   // Keep consensus independent of the Top 100 JSON size guard.
   const builtConsensusRows = Array.isArray(output.consensus) ? output.consensus : [];
