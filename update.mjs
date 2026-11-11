@@ -1424,7 +1424,7 @@ function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedM
       const periodPnl = num(candidate.pnl); // Selected-period leaderboard P&L only; do not borrow values from the mixed-period discovery pool.
       const selectedRecord = selectedPeriodRecords[wallet] || {};
       const historicalPnl30d = num(record.realizedPnlTotal);
-      const complete = record.recordComplete === true;
+      const complete = record.recordComplete === true && record.recordVerified === true;
       const strongQualified = historicalPnl30d !== null && historicalPnl30d > 0 && complete &&
         resolvedMarkets !== null && resolvedMarkets >= minimumResolvedMarkets &&
         winRate !== null && winRate >= MIN_CONSENSUS_WIN_RATE && hasStrongEntry;
@@ -1458,8 +1458,13 @@ function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedM
           (resolvedMarkets === null || resolvedMarkets < minimumResolvedMarkets ? "Fewer than 20 closes in 30 days" :
             (winRate !== null && winRate < MIN_CONSENSUS_WIN_RATE ? "Below 90% 30-day threshold" : "Meets 30-day historical threshold")),
         recordBasis: complete
-          ? "Rolling 30-day realized profitable-close proxy; early exits count and this is not verified settlement accuracy"
-          : "Rolling 30-day record incomplete or unavailable"
+          ? "Independently audited rolling 30-day Gamma settlement outcomes; early exits excluded"
+          : "Settlement outcome audit incomplete or unavailable; not eligible as a verified 90%+ signal",
+        settlementRecordComplete: complete,
+        settlementWins: complete ? wins : null,
+        settlementLosses: complete ? losses : null,
+        settlementPositionsChecked: record.settlementPositionsChecked ?? 0,
+        settlementPositionsUnclassified: record.settlementPositionsUnclassified ?? 0
       };
     });
 
@@ -1598,8 +1603,8 @@ async function getSettlementStats(wallet, period, nowMs, limit = 250) {
   // remains incomplete and is never presented as a verified W-L.
   const cohorts = await Promise.all([
     fetchPositionCohort("CLOSED", 10),
-    fetchPositionCohort("OPEN", 1),
-    fetchPositionCohort("REDEEMABLE_LOST", 1)
+    fetchPositionCohort("OPEN", 10),
+    fetchPositionCohort("REDEEMABLE_LOST", 10)
   ]);
   const allPagesComplete = cohorts.every(cohort => cohort.complete);
   const uniqueRows = new Map();
@@ -1941,13 +1946,66 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
   const consensusRecordCandidates = consensusRecordWallets.map(wallet =>
     candidateByWallet.get(wallet) || {wallet}
   );
-  const consensusRecords = await attachRecords(
+  // Preserve profitable-close P&L as a separate qualification input, but
+  // never use its win/loss counts as prediction accuracy. Independently audit
+  // settlement outcomes for the highest-capital consensus wallets and every
+  // holder in the Magic vs. Kings example market.
+  const consensusCloseRecords = await attachRecords(
     consensusRecordCandidates,
     CONSENSUS_RECORD_PERIOD,
     nowMs,
     CLOSED_POSITION_SCAN_LIMIT,
     fullRecordCache
   );
+  const magicKingsWallets = new Set(
+    consensusGroups
+      .filter(group => /magic/i.test(String(group.title || "")) && /kings/i.test(String(group.title || "")))
+      .flatMap(group => (Array.isArray(group.traders) ? group.traders : [])
+        .map(holder => String(holder.wallet || "").toLowerCase()).filter(Boolean))
+  );
+  const auditWallets = new Set([
+    ...consensusRecordCandidates.slice(0, 100).map(row => String(row.wallet || "").toLowerCase()),
+    ...magicKingsWallets
+  ]);
+  const settlementAuditCandidates = consensusRecordCandidates.filter(row =>
+    auditWallets.has(String(row.wallet || "").toLowerCase())
+  );
+  console.log("Independent settlement audit starting: " + settlementAuditCandidates.length +
+    " consensus wallets, including " + magicKingsWallets.size + " Magic vs. Kings holders.");
+  const settlementAuditRows = await attachSettlementStats(
+    settlementAuditCandidates,
+    CONSENSUS_RECORD_PERIOD,
+    nowMs
+  );
+  const settlementAuditByWallet = new Map(settlementAuditRows.map(row =>
+    [String(row.wallet || "").toLowerCase(), row]
+  ));
+  const consensusRecords = Object.fromEntries(consensusRecordCandidates.map(row => {
+    const wallet = String(row.wallet || "").toLowerCase();
+    const closeRecord = consensusCloseRecords[wallet] || {};
+    const audit = settlementAuditByWallet.get(wallet);
+    const complete = audit?.settlementRecordComplete === true &&
+      Number.isFinite(Number(audit.settlementWins)) &&
+      Number.isFinite(Number(audit.settlementLosses)) &&
+      Number(audit.settlementWins) + Number(audit.settlementLosses) >= MIN_CONSENSUS_CLOSED_MARKETS;
+    const wins = complete ? Number(audit.settlementWins) : null;
+    const losses = complete ? Number(audit.settlementLosses) : null;
+    const resolvedMarkets = complete ? wins + losses : null;
+    return [wallet, {
+      ...closeRecord,
+      wins, losses, resolvedMarkets,
+      winRate: complete && resolvedMarkets > 0 ? wins / resolvedMarkets * 100 : null,
+      recordComplete: complete,
+      recordVerified: complete,
+      settlementRecordComplete: complete,
+      settlementPositionsChecked: audit?.settlementPositionsChecked ?? 0,
+      settlementPositionsClassified: audit?.settlementPositionsClassified ?? 0,
+      settlementPositionsUnclassified: audit?.settlementPositionsUnclassified ?? 0,
+      recordBasis: complete
+        ? "Independently audited Gamma market settlement outcomes; early exits excluded"
+        : "Settlement audit incomplete or fewer than 20 settled markets; not qualified"
+    }];
+  }));
   // Keep selected-period records separate from the rolling 30-day qualification record.
   const consensusPeriodRecords = period.key === "week"
     ? await attachRecords(consensusRecordCandidates, period, nowMs, CLOSED_POSITION_SCAN_LIMIT, fullRecordCache)
@@ -1958,7 +2016,7 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     String(trader.wallet || "").toLowerCase(),
     {volume: trader.volume ?? null, volumeBasis: trader.volumeBasis || "Unavailable from period user-volume endpoint"}
   ]));
-  console.log(period.key + ": scanned up to " + CLOSED_POSITION_SCAN_LIMIT + " closed positions per consensus holder for selected-period and 30-day records; capped/incomplete records are withheld.");
+  console.log(period.key + ": independently audited " + settlementAuditCandidates.length + " consensus wallets; only complete settlement-outcome records can qualify. Magic vs. Kings holders audited: " + magicKingsWallets.size + ".");
   // Keep the period-scoped realized-close records as the single source for
   // leaderboard W/L. The separate settlement-history lookup was slow, incomplete,
   // and caused the selected-period record to be overwritten or withheld.
