@@ -843,7 +843,7 @@ function renderConsensus() {
   const nowSeconds = Date.now() / 1000;
   const windowHours = 48; // Sports markets may remain visible for 48 hours; non-sports are filtered to 24 hours below.
   const cutoffSeconds = nowSeconds + windowHours * 60 * 60;
-  const filtered = consensus().map((market, index) => {
+  const filteredSides = consensus().map((market, index) => {
       const endSeconds = marketEndTimestamp(market);
       return {...market, _index:index, _endSeconds:endSeconds};
     })
@@ -860,6 +860,48 @@ function renderConsensus() {
       traderCount(b) - traderCount(a) ||
       (marketAmount(b) ?? -1) - (marketAmount(a) ?? -1) ||
       a._endSeconds - b._endSeconds);
+
+  // A Polymarket condition is one market, even when separate groups have
+  // consensus on opposite outcomes. Merge those outcome rows into one display
+  // row; keep each side's qualified count and trader history distinct.
+  const marketGroups = new Map();
+  for (const market of filteredSides) {
+    const id = String(market.conditionId || market.marketId || market.slug || market._index);
+    if (!marketGroups.has(id)) marketGroups.set(id, []);
+    marketGroups.get(id).push(market);
+  }
+  const filtered = [...marketGroups.values()].map(group => {
+    const primary = group[0];
+    const sideSignals = group.map(item => ({
+      side: String(marketSide(item)),
+      count: traderCount(item),
+      entry: marketAmount(item),
+      tier: item.signalTier
+    }));
+    const members = [];
+    const seen = new Set();
+    for (const item of group) {
+      for (const trader of (Array.isArray(item.traders) ? item.traders : [])) {
+        const wallet = walletOf(trader);
+        const sideKey = String(trader.side || marketSide(item)).toLowerCase();
+        const key = (wallet || JSON.stringify(trader)) + "|" + sideKey;
+        if (!seen.has(key)) {
+          seen.add(key);
+          members.push({...trader, side:trader.side || marketSide(item)});
+        }
+      }
+    }
+    return {
+      ...primary,
+      sideSignals,
+      traders:members,
+      sameSide:members.length,
+      totalValue:group.reduce((sum,item)=>sum+(num(item.totalValue)??0),0),
+      totalEntry:group.reduce((sum,item)=>sum+(num(item.totalEntry)??0),0),
+      signalTier:group.some(item=>item.signalTier==="Strong Signals")?"Strong Signals":primary.signalTier,
+      _index:primary._index
+    };
+  }).filter(market => market.sideSignals.reduce((sum,side)=>sum+side.count,0) >= minCount);
 
   const tierSections = [
     {title:"Strong Signals", note:`Every listed trader meets the complete ${qualificationDays}-day, ${qualificationCloses}+ close, 90%+ profitable-close and $10+ position requirements.`, rows:filtered.filter(m => m.signalTier === "Strong Signals")},
@@ -878,7 +920,12 @@ function renderConsensus() {
   $("consensusBody").innerHTML = visible.length ? visible.map((market, index) => {
     const key = marketKey(market, market._index);
     const side = String(marketSide(market));
-    const sideClass = side.toLowerCase() === "no" ? "side-tag no" : "side-tag";
+    const sideSignals = Array.isArray(market.sideSignals) ? market.sideSignals : [{side,count:traderCount(market)}];
+    const sideMarkup = sideSignals.map(signal => {
+      const cls = String(signal.side).toLowerCase() === "no" ? "side-tag no" : "side-tag";
+      return `<span class="${cls}">${esc(signal.side)} · ${signal.count}</span>`;
+    }).join(" ");
+
     const members = (Array.isArray(market.traders) ? market.traders :
       Array.isArray(market.members) ? market.members : []);
     const expanded = expandedMarkets.has(key);
@@ -902,7 +949,7 @@ function renderConsensus() {
         return wallet && !consensusTradeCache.has(cacheKey) && !consensusTradePending.has(cacheKey);
       });
       const pendingHistory = historyTargets.map(member =>
-        loadConsensusTradeHistory(walletOf(member), market.conditionId, side)
+        loadConsensusTradeHistory(walletOf(member), market.conditionId, member.side || side)
       );
       if (pendingHistory.length && !market._historyRefreshQueued) {
         market._historyRefreshQueued = true;
@@ -916,8 +963,8 @@ function renderConsensus() {
     const row = `<tr class="click-row" onclick="toggleMarket('${esc(key)}')">
       <td>${index + 1}</td>
       <td><div class="market-name"><span class="market-symbol">◈</span><span class="market-title">${esc(marketTitle(market))}</span></div>${buyPreviewHtml}</td>
-      <td><span class="${sideClass}">${esc(side)}</span></td>
-      <td><strong>${count} qualified traders</strong></td>
+      <td>${sideMarkup}</td>
+      <td><strong>${sideSignals.map(signal => `${esc(signal.side)}: ${signal.count}`).join(" · ")} qualified</strong></td>
       <td class="money">${consensusCash(amount)}${num(amount) !== null && amount > 0 && amount < 1 ? '<small class="subtitle">Under $1 total entry</small>' : ''}</td>
       <td title="${esc(market.endTimeBasis === "estimated_game_finish" ? "Estimated game finish: four hours after kickoff" : (market._endSeconds ? new Date(market._endSeconds * 1000).toLocaleString() : "Unavailable"))}">${esc(timeUntil(market._endSeconds))}${market.endTimeBasis === "estimated_game_finish" ? '<small class="subtitle">Estimated game finish</small>' : ''}</td>
     </tr>`;
@@ -928,9 +975,10 @@ function renderConsensus() {
         const memberName = member.name || member.username || member.userName || "Trader";
         const wallet = walletOf(member);
         if (wallet) consensusMemberCache.set(wallet, member);
-        const key = [String(wallet || "").toLowerCase(), String(market.conditionId || "").toLowerCase(), String(side).toLowerCase()].join("|");
+        const memberSide = String(member.side || side);
+        const key = [String(wallet || "").toLowerCase(), String(market.conditionId || "").toLowerCase(), memberSide.toLowerCase()].join("|");
         const events = consensusTradeCache.get(key);
-        const matchedEvents = (events || []).filter(t => !t.outcome || String(t.outcome).trim().toLowerCase() === String(side).trim().toLowerCase());
+        const matchedEvents = (events || []).filter(t => !t.outcome || String(t.outcome).trim().toLowerCase() === memberSide.trim().toLowerCase());
         const buy = matchedEvents.find(t => String(t.side || "").toUpperCase() === "BUY");
         const sell = matchedEvents.find(t => String(t.side || "").toUpperCase() === "SELL" && (!buy || (timestamp(t.timestamp)||0) > (timestamp(buy.timestamp)||0)));
         // The consensus scan is built from live position records. Keep those
