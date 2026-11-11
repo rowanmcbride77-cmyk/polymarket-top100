@@ -1841,7 +1841,11 @@ async function getPeriodVolume(wallet, period, nowMs) {
 }
 
 async function attachPeriodVolumes(traders, period, nowMs) {
-  return await mapLimit(traders, CONCURRENCY, async trader => {
+  const eligibleTraders = traders.filter(trader => isUsableTraderWallet(trader?.wallet));
+  if (eligibleTraders.length !== traders.length) {
+    console.warn(`Skipped ${traders.length - eligibleTraders.length} protocol/malformed wallets before period-volume lookup.`);
+  }
+  return await mapLimit(eligibleTraders, CONCURRENCY, async trader => {
     try {
       const stats = await getPeriodVolume(String(trader.wallet || "").toLowerCase(), period, nowMs);
       return { ...trader, ...stats };
@@ -2082,21 +2086,23 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     CLOSED_POSITION_SCAN_LIMIT,
     fullRecordCache
   );
-  const magicKingsWallets = new Set(
-    consensusGroups
-      .filter(group => /magic/i.test(String(group.title || "")) && /kings/i.test(String(group.title || "")))
-      .flatMap(group => (Array.isArray(group.traders) ? group.traders : [])
-        .map(holder => String(holder.wallet || "").toLowerCase()).filter(Boolean))
-  );
-  const auditWallets = new Set([
-    ...consensusRecordCandidates.slice(0, 100).map(row => String(row.wallet || "").toLowerCase()),
-    ...magicKingsWallets
-  ]);
-  const settlementAuditCandidates = consensusRecordCandidates.filter(row =>
-    auditWallets.has(String(row.wallet || "").toLowerCase())
-  );
+  // Audit every consensus holder who can actually pass the non-settlement
+  // prerequisites. The previous fixed top-100 audit left the other ~2,300
+  // holders permanently incomplete, which guaranteed zero qualified markets.
+  // This prefilter is only a workload reduction; final qualification still
+  // requires the independent settlement + >=$0.90 actual SELL-fill audit.
+  const settlementAuditCandidates = consensusRecordCandidates.filter(row => {
+    const wallet = String(row.wallet || "").toLowerCase();
+    const closeRecord = consensusCloseRecords[wallet];
+    return isUsableTraderWallet(wallet) &&
+      closeRecord?.recordComplete === true &&
+      Number(closeRecord.resolvedMarkets) >= MIN_CONSENSUS_CLOSED_MARKETS &&
+      Number(closeRecord.winRate) >= MIN_CONSENSUS_WIN_RATE &&
+      Number(closeRecord.realizedPnlTotal) > 0;
+  });
   console.log("Independent settlement audit starting: " + settlementAuditCandidates.length +
-    " consensus wallets, including " + magicKingsWallets.size + " Magic vs. Kings holders.");
+    " of " + consensusRecordCandidates.length +
+    " consensus wallets passed the preliminary 30-day activity/record/P&L screen. Final qualification uses audited settlements and actual >=$0.90 SELL fills.");
   const settlementAuditRows = await attachSettlementStats(
     settlementAuditCandidates,
     CONSENSUS_RECORD_PERIOD,
