@@ -29,10 +29,11 @@ const RANKING_RECORD_LIMIT = 1000;
 // Bound closed-position history requests. Records that hit this cap are marked
 // incomplete and withheld rather than presented as complete win/loss stats.
 const CLOSED_POSITION_SCAN_LIMIT = 1000;
-// Scan the full balanced 20,000-wallet candidate pool. Bound per-wallet pages
-// to keep the global API request budget within the 20–30 minute runtime target;
-// market-first expansion adds holders outside the sampled wallet pool.
-const CONSENSUS_WALLET_LIMIT = 20000;
+// Keep the live-overlap scan at the previously stable 6,000-wallet budget.
+// Each wallet requires an individual positions request and a rolling-30-day
+// closed-position record request. 20,000 wallets multiplies those API calls
+// enough to push the workflow beyond an hour. Top-100 discovery remains broad.
+const CONSENSUS_WALLET_LIMIT = 6000;
 const MAX_CONSENSUS_POSITION_PAGES_PER_WALLET = 1;
 const MAX_SPORTS_CONSENSUS_POSITION_PAGES_PER_WALLET = 2;
 const LEADER_RECORD_LIMIT = RANKING_RECORD_LIMIT;
@@ -1080,7 +1081,7 @@ async function getBroadConsensusMarkets(knownTraders, nowMs, activePositions) {
     sportsWalletsScanned,
     sportsPositionPagesFetched,
     sportsPageCapPerWallet: MAX_SPORTS_CONSENSUS_POSITION_PAGES_PER_WALLET,
-    note: `Consensus discovery scans up to ${MAX_CONSENSUS_POSITION_PAGES_PER_WALLET * 100} positions for each general wallet and up to ${MAX_SPORTS_CONSENSUS_POSITION_PAGES_PER_WALLET * 100} for sports-category wallets, across up to 20,000 selected wallets. Active holdings worth $3+ are discovered; Strong Signals retain the $10 verified entry/current-value gate. Exact market condition and outcome are grouped separately. Sports may remain eligible for 48 hours; other categories use 24 hours.`
+    note: `Consensus discovery scans up to ${MAX_CONSENSUS_POSITION_PAGES_PER_WALLET * 100} positions for each general wallet and up to ${MAX_SPORTS_CONSENSUS_POSITION_PAGES_PER_WALLET * 100} for sports-category wallets, across up to ${CONSENSUS_WALLET_LIMIT.toLocaleString()} selected wallets. Active holdings worth $3+ are discovered; Strong Signals retain the $10 verified entry/current-value gate. Exact market condition and outcome are grouped separately. Sports may remain eligible for 48 hours; other categories use 24 hours.`
   };
   console.log("Consensus scan diagnostics: " + JSON.stringify(lastConsensusDiagnostics));
   const activePositionsByWallet = Object.fromEntries(consensusPositions.map(([wallet, positions]) => [wallet, positions]));
@@ -2325,7 +2326,7 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     consensusHolderRecordCandidateCount: consensusWallets.size,
     totalRecordCandidateCount: recordCandidates.length,
     scanDiagnostics: lastConsensusDiagnostics,
-    candidatePoolBasis: "Up to 20,000 unique wallets selected from public Data API v2 leaderboard discovery across sports, crypto, esports, politics, culture, mentions, weather, economics, tech, finance, and overall categories. The public API does not expose a literal all-wallet directory. The scan checks up to 200 open positions for sports-category wallets and 100 for other wallets. Discovery includes active positions worth $3+; the Strong Signals tier keeps its separate $10+ entry/current-value requirement.",
+    candidatePoolBasis: `Up to ${CONSENSUS_WALLET_LIMIT.toLocaleString()} unique wallets selected from public Data API v2 leaderboard discovery across sports, crypto, esports, politics, culture, mentions, weather, economics, tech, finance, and overall categories. The public API does not expose a literal all-wallet directory. The scan checks up to 200 open positions for sports-category wallets and 100 for other wallets. Discovery includes active positions worth $3+; the Strong Signals tier keeps its separate $10+ entry/current-value requirement.`,
     resolutionWindowHours: CONSENSUS_WINDOW_HOURS,
     recordBasis: "Strong Signals: every listed trader independently passes a complete rolling 30-day audited prediction record using official settlements plus early exits only when actual SELL fills were at least $0.90; at least 20 qualifying outcomes; 90%+ success rate; positive 30-day realized P&L; and verified $10+ entry/current value. Seven-day leaderboard P&L is shown separately. Player props are grouped by exact market and outcome. This is a research signal, not a proven profitable strategy.",
     qualificationCount,
