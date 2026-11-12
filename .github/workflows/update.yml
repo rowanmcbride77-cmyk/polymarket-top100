@@ -120,7 +120,7 @@ jobs:
                   // Watchlist intentionally preserves smaller positive positions for visibility.
                   if (tier !== "Watchlist" && currentValue < 3) return true;
                   if (!isStrong) return false;
-                  // Only Strong Signals are held to the complete 90% / 10+ close / $10 entry gate.
+                  // Only Strong Signals are held to the complete 90% / 20+ outcome / $10 entry gate.
                   const wins = Number(row.wins);
                   const losses = Number(row.losses);
                   const resolved = Number(row.resolvedMarkets);
@@ -128,7 +128,7 @@ jobs:
                   return row.qualified !== true ||
                     row.recordComplete !== true ||
                     !Number.isFinite(wins) || !Number.isFinite(losses) ||
-                    !Number.isFinite(resolved) || resolved !== wins + losses || resolved < 10 ||
+                    !Number.isFinite(resolved) || resolved !== wins + losses || resolved < 20 ||
                     !Number.isFinite(rate) || rate < 90 ||
                     !Number.isFinite(Number(row.avgPrice)) ||
                     Number(row.avgPrice) <= 0 ||
@@ -159,7 +159,7 @@ jobs:
               if (invalidGroups.length) {
                 throw new Error(`${file} contains ${invalidGroups.length} consensus groups without at least two distinct, unique wallets`);
               }
-              console.log(`${file}: ${groups.length} consensus groups across Strong/Developing/Watchlist tiers; Strong members pass the 90%+/10+ close/$10 gate; all groups have 2+ distinct active holders and verified open-market metadata`);
+              console.log(`${file}: ${groups.length} consensus groups across Strong/Developing/Watchlist tiers; Strong members pass the 90%+/20+ outcome/$10 gate; all groups have 2+ distinct active holders and verified open-market metadata`);
             }
 
             console.log(`${file}: ${(stat.size / 1024 / 1024).toFixed(2)} MB; valid JSON`);
