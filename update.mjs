@@ -292,9 +292,15 @@ async function getResolvedRecord(wallet, period, nowMs, maxPositions = RANKING_R
       recordComplete = pagination.has_more !== true;
       break;
     }
-    cursor = pagination.next_cursor || null;
-    if (pagination.has_more !== true || !cursor) {
+    if (pagination.has_more !== true) {
       recordComplete = true;
+      break;
+    }
+    cursor = pagination.next_cursor || null;
+    if (!cursor) {
+      // The API says another page exists but supplied no cursor. Do not
+      // silently label this truncated history as a complete W/L record.
+      recordComplete = false;
       break;
     }
   }
@@ -306,7 +312,7 @@ async function getResolvedRecord(wallet, period, nowMs, maxPositions = RANKING_R
   const resolvedMarkets = wins + losses;
   // A capped sample is not a complete record. Never publish its partial
   // counts or 100% rate as if they were a trader's true record.
-  const publishableRecord = recordComplete && resolvedMarkets > 0;
+  const publishableRecord = recordComplete;
   return {
     wins: publishableRecord ? wins : null,
     losses: publishableRecord ? losses : null,
@@ -315,7 +321,7 @@ async function getResolvedRecord(wallet, period, nowMs, maxPositions = RANKING_R
     sportsLosses: recordComplete ? sportsLosses : null,
     sportsResolvedMarkets: recordComplete ? sportsWins + sportsLosses : null,
     sportsWinRate: recordComplete && (sportsWins + sportsLosses) ? (sportsWins / (sportsWins + sportsLosses)) * 100 : null,
-    winRate: publishableRecord ? (wins / resolvedMarkets) * 100 : null,
+    winRate: publishableRecord && resolvedMarkets > 0 ? (wins / resolvedMarkets) * 100 : null,
     resolvedMarkets: publishableRecord ? resolvedMarkets : null,
     recordVerified: publishableRecord,
     scannedPositions,
