@@ -32,7 +32,7 @@ const CLOSED_POSITION_SCAN_LIMIT = 1000;
 // Keep the full 20,000-wallet leaderboard discovery pool, but use the
 // previously proven balanced 6,000-wallet live-overlap sample. This is the
 // deliberate runtime boundary; market-first expansion adds holders outside it.
-const CONSENSUS_WALLET_LIMIT = 6000;
+const CONSENSUS_WALLET_LIMIT = 20000;
 const MAX_CONSENSUS_POSITION_PAGES_PER_WALLET = 2;
 const MAX_SPORTS_CONSENSUS_POSITION_PAGES_PER_WALLET = 5;
 const LEADER_RECORD_LIMIT = RANKING_RECORD_LIMIT;
@@ -1639,6 +1639,8 @@ async function getSettlementStats(wallet, period, nowMs, limit = 250) {
         user: wallet,
         limit: String(limit),
         status,
+        start: String(Math.floor(periodCutoffMs / 1000)),
+        end: String(Math.floor(nowMs / 1000)),
         sort_by: "TIMESTAMP",
         sort_direction: "DESC"
       });
@@ -2164,7 +2166,7 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
   // it with a second, lifetime-shaped settlement cohort scan.
   const settlementRecords = {};
   const consensusMinimumResolved = MIN_CONSENSUS_CLOSED_MARKETS;
-  console.log(`${period.key}: Strong Signals require 2+ same-side holders each with a complete 7-day record, 10+ closes, >=90% profitable-close rate, positive weekly P&L, and verified $10+ entry/current value. Developing and Watchlist tiers preserve broader 2+ holder overlap.`);
+  console.log(`${period.key}: Strong Signals require 2+ same-side holders, each with a complete rolling 30-day audited record, 20+ qualifying outcomes, >=90% success, positive 30-day realized P&L, and verified $10+ entry/current value. Developing and Watchlist tiers remain separate and do not count as qualified traders.`);
   // Reuse the period-scoped record sample used for ranking; avoid a second history scan.
   const leaderRecords = records;
   const tradeRows = await mapLimit(
