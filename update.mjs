@@ -2054,7 +2054,11 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
   // verify every wallet that actually appears in a live, time-qualified
   // consensus group. This applies equally to weekly and monthly records.
   const candidates = discoveredCandidates;
-  const rankingRecordCandidates = candidates.slice(0, RANKING_RECORD_LIMIT);
+  const usableLeaderboardCandidates = candidates.filter(trader => isUsableTraderWallet(trader.wallet));
+  // Select the actual period-P&L Top 100 first, then fully paginate their
+  // selected-period CLOSED-position history. Never spend the record budget
+  // on the first 1,000 discovery-order wallets and leave the displayed leaders unaudited.
+  const rankingRecordCandidates = rankCandidates(usableLeaderboardCandidates, {}).slice(0, LEADER_COUNT);
   // Use the selected period's leaderboard rows for rank/P&L; the shared
   // consensus discovery pool may contain a different period's P&L or nulls.
   const candidateByWallet = new Map(
@@ -2090,16 +2094,12 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
   const consensusRecordWallets = [...walletCapital.keys()]
     .sort((a,b) => (walletCapital.get(b) || 0) - (walletCapital.get(a) || 0))
     .slice(0, CONSENSUS_WALLET_LIMIT);
-  // Keep the selected-period ranking record scan at its fixed 1,000-wallet
-  // budget. Consensus-specific historical context is fetched separately below.
+  // Fully paginate the exact selected-period close history for each visible
+  // Top 100 wallet. maxPositions=null means continue until the API confirms
+  // there are no more pages or the period cutoff is reached.
   const recordCandidates = rankingRecordCandidates;
-  console.log(`Discovered ${discoveredCandidates.length} ${period.key} candidates; scanning active positions across ${candidates.length} wallets, leaderboard records for ${rankingRecordCandidates.length}, and consensus-holder records for ${consensusWallets.size} (unique record scan: ${recordCandidates.length}).`);
-  const records = await attachRecords(recordCandidates, period, nowMs, CLOSED_POSITION_SCAN_LIMIT, fullRecordCache);
-
-  // Build both ranking arrays from the selected period's own candidate and
-  // realized-close records. These declarations must exist before leaderboard
-  // filtering and makeOutput; without them buildPeriod crashes at publication.
-  const usableLeaderboardCandidates = candidates.filter(trader => isUsableTraderWallet(trader.wallet));
+  console.log(`Discovered ${discoveredCandidates.length} ${period.key} candidates; scanning active positions across ${candidates.length} wallets and fully auditing selected-period closed-market records for the Top ${recordCandidates.length}; consensus discovery remains separate.`);
+  const records = await attachRecords(recordCandidates, period, nowMs, null, fullRecordCache);
   const rejectedLeaderboardWallets = candidates.length - usableLeaderboardCandidates.length;
   if (rejectedLeaderboardWallets) {
     console.warn(`Excluded ${rejectedLeaderboardWallets} malformed/protocol wallets from leaderboard ranking.`);
@@ -2232,32 +2232,22 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
 
   // Only verified Gamma settlement outcomes count as leaderboard wins/losses.
   // Keep profitable-close proxy fields separately for diagnostics.
-  const settlementVerifiedLeaders = await attachSettlementStats(output.leaders, period, nowMs);
-  output.leaders = settlementVerifiedLeaders.map(trader => {
-    const complete = trader.settlementRecordComplete === true;
-    const settledWins = complete ? num(trader.settlementWins) : null;
-    const exitWins = complete ? num(trader.highConfidenceExitWins) : null;
-    const wins = settledWins !== null && exitWins !== null ? settledWins + exitWins : null;
-    const losses = complete ? num(trader.settlementLosses) : null;
-    const resolved = wins !== null && losses !== null ? wins + losses : null;
-    return {
-      ...trader,
-      profitableCloseWins: trader.wins ?? null,
-      profitableCloseLosses: trader.losses ?? null,
-      profitableCloseRate: trader.winRate ?? null,
-      settlementWins: settledWins,
-      highConfidenceExitWins: exitWins,
-      lowConfidenceExitMarkets: trader.lowConfidenceExitMarkets ?? 0,
-      wins,
-      losses,
-      resolvedMarkets: resolved,
-      winRate: resolved > 0 ? wins / resolved * 100 : null,
-      recordComplete: complete && resolved !== null,
-      recordVerified: complete && resolved !== null,
-      recordBasis: trader.settlementRecordBasis || "Verified settlement and >= $0.90 exit-price audit unavailable"
-    };
-  });
-  console.log(`${period.key}: published ${output.leaders.length} ranked Top 100 traders; settlement W-L is shown only for complete verified records.`);
+  // Keep the fully paginated period-specific W/L values for the Top 100.
+  // These are profitable/unprofitable CLOSED-market outcomes by realized P&L;
+  // early exits count. Do not overwrite them with the separate settlement audit,
+  // which is incomplete for many wallets and is not the leaderboard metric.
+  output.leaders = output.leaders.map(trader => ({
+    ...trader,
+    profitableCloseWins: trader.wins ?? null,
+    profitableCloseLosses: trader.losses ?? null,
+    profitableCloseRate: trader.winRate ?? null,
+    recordComplete: trader.recordComplete === true,
+    recordVerified: trader.recordComplete === true,
+    recordBasis: trader.recordComplete === true
+      ? `Complete selected-period closed-market realized-P&L record; one net result per market; early exits count. This is not settlement-only accuracy.`
+      : `Selected-period closed-market history incomplete; W/L withheld.`
+  }));
+  console.log(`${period.key}: published ${output.leaders.length} ranked Top 100 traders with fully paginated selected-period close records.`);
 
   // Count every discovered weekly wallet, not only Top 100 traders or shared-market holders.
   // Reuse cached records so each wallet is queried only once in this period.
@@ -2306,15 +2296,15 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
   output.leaders = await attachPeriodVolumes(output.leaders, period, nowMs);
   output.leaders = output.leaders.map(trader => ({
     ...trader,
-    recordVerified: trader.settlementRecordComplete === true &&
+    recordVerified: trader.recordComplete === true &&
       num(trader.wins) !== null &&
       num(trader.losses) !== null &&
       num(trader.resolvedMarkets) !== null &&
       num(trader.resolvedMarkets) === num(trader.wins) + num(trader.losses),
     pnlBasis: `Polymarket v2 leaderboard P&L for selected ${period.key} period`,
-    recordBasis: trader.settlementRecordBasis || "Verified settlement outcome unavailable"
+    recordBasis: trader.recordBasis || "Selected-period closed-market record unavailable"
   }));
-  output.recordBasis = "Top 100 ranked by selected-period Polymarket P&L. W-L counts verified settlements plus actual early SELL fills at >= $0.90; lower-priced early exits are excluded, and incomplete audits show N/A.";
+  output.recordBasis = "Top 100 ranked by selected-period Polymarket P&L. W-L and win rate are fully paginated selected-period profitable/unprofitable closed-market outcomes by net realized P&L; early exits count. This is not settlement-only accuracy.";
 
   // Keep consensus independent of the Top 100 JSON size guard.
   const builtConsensusRows = Array.isArray(output.consensus) ? output.consensus : [];
