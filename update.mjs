@@ -1725,7 +1725,14 @@ async function getSettlementStats(wallet, period, nowMs, limit = 250) {
     const market = markets.get(condition);
     const scanStatus = String(position._scanStatus || position.status || "").toUpperCase();
     const lastEventAt = timeMs(position.last_event_at ?? position.lastEventAt ?? position.timestamp ?? position.updated_at ?? position.updatedAt);
-    if (!market) { unclassified++; continue; }
+    if (!market) {
+      // OPEN-cohort rows include ordinary live holdings, which are not yet
+      // outcomes and must not invalidate an otherwise complete 30-day audit.
+      // Missing metadata for a CLOSED/REDEEMABLE_LOST row remains a hard
+      // completeness failure because that row may represent a past result.
+      if (scanStatus !== "OPEN") unclassified++;
+      continue;
+    }
 
     // An active-market holding is neither a win nor a loss. A closed position
     // on a market that is still open is an early exit and must not count as a win.
@@ -1744,7 +1751,10 @@ async function getSettlementStats(wallet, period, nowMs, limit = 250) {
     const prices = parseArrayField(market.outcomePrices).map(num);
     const winnerIndex = prices.findIndex(price => price !== null && price >= 0.999);
     const resolvedAt = timeMs(market.closedTime ?? market.closed_time ?? market.resolvedAt ?? market.resolved_at);
-    if (winnerIndex < 0 || resolvedAt === null) { unclassified++; continue; }
+    // A closed market without a terminal outcome is not a settled prediction.
+    // Ignore it rather than poisoning the trader's record; only terminal,
+    // in-window outcomes contribute to the verified win/loss denominator.
+    if (winnerIndex < 0 || resolvedAt === null) continue;
     if (resolvedAt < periodCutoffMs || resolvedAt > nowMs) continue;
 
     const rawIndex = position.outcome_index ?? position.outcomeIndex;
