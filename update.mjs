@@ -2065,17 +2065,29 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
       .map(holder => String(holder.wallet || "").toLowerCase())
       .filter(Boolean))
   );
-  // Historical records enrich signals but no longer gate publication. Bound
-  // this optional enrichment so broad overlap discovery does not time out.
+  // Only audit wallets that can possibly pass the final Strong Signal
+  // entry gate. The published consensus deliberately excludes Developing and
+  // Watchlist groups, so auditing holders with <$10 verified entry cost or
+  // <$10 current value can never change a published Strong Signal result.
+  // Keep the complete 20,000-wallet position-discovery pool unchanged.
   const walletCapital = new Map();
   for (const group of consensusGroups) {
     for (const holder of (Array.isArray(group.traders) ? group.traders : [])) {
       const wallet = String(holder.wallet || "").toLowerCase();
       if (!wallet) continue;
-      walletCapital.set(wallet, (walletCapital.get(wallet) || 0) + (num(holder.entryValue) ?? 0));
+      const entryPrice = num(holder.avgPrice);
+      const entryShares = num(holder.size ?? holder.shares);
+      const entryCost = num(holder.entryValue);
+      const currentValue = num(holder.currentValue);
+      const hasVerifiedStrongEntry = entryPrice !== null && entryPrice > 0 && entryPrice <= 1 &&
+        entryShares !== null && entryShares > 0 && entryCost !== null &&
+        entryCost >= MIN_CONSENSUS_ENTRY_VALUE &&
+        currentValue !== null && currentValue >= MIN_CONSENSUS_POSITION_VALUE;
+      if (!hasVerifiedStrongEntry) continue;
+      walletCapital.set(wallet, (walletCapital.get(wallet) || 0) + entryCost);
     }
   }
-  const consensusRecordWallets = [...consensusWallets]
+  const consensusRecordWallets = [...walletCapital.keys()]
     .sort((a,b) => (walletCapital.get(b) || 0) - (walletCapital.get(a) || 0))
     .slice(0, CONSENSUS_WALLET_LIMIT);
   // Keep the selected-period ranking record scan at its fixed 1,000-wallet
