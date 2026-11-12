@@ -33,8 +33,8 @@ const CLOSED_POSITION_SCAN_LIMIT = 1000;
 // previously proven balanced 6,000-wallet live-overlap sample. This is the
 // deliberate runtime boundary; market-first expansion adds holders outside it.
 const CONSENSUS_WALLET_LIMIT = 20000;
-const MAX_CONSENSUS_POSITION_PAGES_PER_WALLET = 2;
-const MAX_SPORTS_CONSENSUS_POSITION_PAGES_PER_WALLET = 5;
+const MAX_CONSENSUS_POSITION_PAGES_PER_WALLET = 1;
+const MAX_SPORTS_CONSENSUS_POSITION_PAGES_PER_WALLET = 2;
 const LEADER_RECORD_LIMIT = RANKING_RECORD_LIMIT;
 // Keep upcoming markets in the data so the UI can filter 24h / 3d / 7d accurately.
 const CONSENSUS_WINDOW_HOURS = 48; // Sports markets may remain eligible through the estimated finish of games starting within 48 hours.
@@ -1675,7 +1675,7 @@ async function getSettlementStats(wallet, period, nowMs, limit = 250) {
   ]);
   const allPagesComplete = cohorts.every(cohort => cohort.complete);
   const uniqueRows = new Map();
-  const priority = status => status === "CLOSED" ? 0 : 1;
+  const priority = status => status === "CLOSED" ? 2 : status === "REDEEMABLE_LOST" ? 1 : 0;
   for (const cohort of cohorts) {
     for (const row of cohort.rows) {
       const condition = String(row.condition_id ?? row.conditionId ?? "").toLowerCase();
@@ -1693,7 +1693,7 @@ async function getSettlementStats(wallet, period, nowMs, limit = 250) {
     .map(row => String(row.condition_id ?? row.conditionId ?? "").toLowerCase())
     .filter(Boolean))];
   const conditionChunks = [];
-  for (let i = 0; i < conditions.length; i += 40) conditionChunks.push(conditions.slice(i, i + 40));
+  for (let i = 0; i < conditions.length; i += 100) conditionChunks.push(conditions.slice(i, i + 100));
   const marketPages = await mapLimit(conditionChunks, CONCURRENCY, async ids => {
     const q = new URLSearchParams();
     q.set("limit", "1000");
@@ -1877,7 +1877,7 @@ async function attachSettlementStats(traders, period, nowMs) {
   if (eligibleTraders.length !== traders.length) {
     console.warn(`Skipped ${traders.length - eligibleTraders.length} rows without a valid EVM trader wallet during settlement audit.`);
   }
-  return await mapLimit(eligibleTraders, 4, async trader => {
+  return await mapLimit(eligibleTraders, 8, async trader => {
     try {
       const wallet = String(trader.wallet || "").toLowerCase();
       const cacheKey = String(period?.key || period?.api || period || "week") + "|" + wallet;
@@ -2159,7 +2159,9 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     ? await attachRecords(consensusRecordCandidates, period, nowMs, CLOSED_POSITION_SCAN_LIMIT, fullRecordCache)
     : consensusRecords;
   // USD volume comes from the dedicated user-volume endpoint, never share volume.
-  const consensusVolumeRows = await attachPeriodVolumes(consensusRecordCandidates, period, nowMs);
+  // Consensus-card volume is optional; avoid one API request per holder per period.
+  // Visible Top 100 volume lookups remain below.
+  const consensusVolumeRows = [];
   const consensusVolumeStats = Object.fromEntries(consensusVolumeRows.map(trader => [
     String(trader.wallet || "").toLowerCase(),
     {volume: trader.volume ?? null, volumeBasis: trader.volumeBasis || "Unavailable from period user-volume endpoint"}
