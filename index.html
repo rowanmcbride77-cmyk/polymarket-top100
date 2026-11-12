@@ -160,11 +160,11 @@ dialog::backdrop{background:#000b}
         <div id="leaderModeNote" style="display:none"></div>
         <div class="table-wrap">
           <table>
-            <thead><tr id="leaderHeader"><th>#</th><th>Trader</th><th>Qualified wins / losses</th><th>Prediction success rate</th><th>Period P&amp;L</th><th>Volume</th></tr></thead>
+            <thead><tr id="leaderHeader"><th>#</th><th>Trader</th><th>Profitable / unprofitable closes</th><th>Period close rate</th><th>Period P&amp;L</th><th>Volume</th></tr></thead>
             <tbody id="leadersBody"><tr><td colspan="6" class="loading">Loading traders…</td></tr></tbody>
           </table>
         </div>
-        <div class="source-note">Top 100 traders are ranked by selected-period P&L. Prediction records count official settled wins/losses plus early exits only when the trader's actual weighted SELL execution price was at least 90%. Lower-priced early exits are excluded; incomplete audits show N/A.</div>
+        <div class="source-note">Top 100 traders are ranked by selected-period P&L. Win/loss records are fully paginated selected-period closed-market outcomes grouped once per market by net realized P&L; early exits count. This is a profitable-close record, not settlement-only prediction accuracy. Incomplete history is shown as N/A.</div>
         <button class="link-button" id="leadersMore" onclick="toggleLeaders()">View all traders →</button>
       </section>
 
@@ -352,10 +352,8 @@ function walletOf(trader) {
 }
 
 function recordOf(trader) {
-  // The leaderboard is period-scoped. Lifetime settlement totals must never
-  // replace the selected week's or month's record beside period P&L.
-  // Do not label profitable exits as prediction wins. The current public
-  // position-history scan is not a verified market-settlement ledger.
+  // The leaderboard record is the fully paginated selected-period
+  // profitable/unprofitable closed-market result, not a settlement-only ledger.
   if (trader?.recordComplete !== true || trader?.recordVerified !== true) return null;
   const wins = num(trader?.wins);
   const losses = num(trader?.losses);
@@ -363,13 +361,12 @@ function recordOf(trader) {
   if (wins === null || losses === null || wins < 0 || losses < 0) return null;
   const total = wins + losses;
   if (total <= 0 || (resolved !== null && resolved !== total)) return null;
-  return {wins, losses, total, rate:wins / total * 100, verified:true, basis:"settlement-outcomes"};
+  return {wins, losses, total, rate:wins / total * 100, verified:true, basis:"period-profitable-closes"};
 }
 
 function recordText(trader) {
   const record = recordOf(trader);
-  const suffix = trader?.settlementRecordComplete === false ? "+" : "";
-  return record ? `${record.wins}${suffix}–${record.losses}${suffix}` : "N/A";
+  return record ? `${record.wins}–${record.losses}` : "N/A";
 }
 
 function avatar(trader) {
