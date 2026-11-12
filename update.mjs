@@ -1080,7 +1080,7 @@ async function getBroadConsensusMarkets(knownTraders, nowMs, activePositions) {
     sportsWalletsScanned,
     sportsPositionPagesFetched,
     sportsPageCapPerWallet: MAX_SPORTS_CONSENSUS_POSITION_PAGES_PER_WALLET,
-    note: `Consensus discovery scans up to ${MAX_CONSENSUS_POSITION_PAGES_PER_WALLET * 100} positions for every selected wallet and up to ${MAX_SPORTS_CONSENSUS_POSITION_PAGES_PER_WALLET * 100} for sports-category wallets, across the 20,000-wallet candidate pool. This deliberately scans beyond the first 100 highest-value positions for non-sports wallets so player props held by cross-category traders are not missed. Active holdings worth $3+ are eligible for Developing/Watchlist; Strong Signals retain the $10 entry/current-value gate. Exact market condition and outcome are grouped separately. Sports may remain eligible for 48 hours; other categories use 24 hours.`
+    note: `Consensus discovery scans up to ${MAX_CONSENSUS_POSITION_PAGES_PER_WALLET * 100} positions for each general wallet and up to ${MAX_SPORTS_CONSENSUS_POSITION_PAGES_PER_WALLET * 100} for sports-category wallets, across up to 20,000 selected wallets. Active holdings worth $3+ are discovered; Strong Signals retain the $10 verified entry/current-value gate. Exact market condition and outcome are grouped separately. Sports may remain eligible for 48 hours; other categories use 24 hours.`
   };
   console.log("Consensus scan diagnostics: " + JSON.stringify(lastConsensusDiagnostics));
   const activePositionsByWallet = Object.fromEntries(consensusPositions.map(([wallet, positions]) => [wallet, positions]));
@@ -1673,10 +1673,16 @@ async function getSettlementStats(wallet, period, nowMs, limit = 250) {
     fetchPositionCohort("OPEN", 10),
     fetchPositionCohort("REDEEMABLE_LOST", 10)
   ]);
-  const allPagesComplete = cohorts.every(cohort => cohort.complete);
+  // OPEN positions include ordinary live holdings. They are useful only when
+  // the entire OPEN cohort was fetched; a truncated OPEN page must never make
+  // the settled-record audit incomplete or contribute a partial set of wins.
+  // The auditable closed/redeemable cohorts remain mandatory and fully paged.
+  const allPagesComplete = cohorts[0].complete && cohorts[2].complete;
   const uniqueRows = new Map();
   const priority = status => status === "CLOSED" ? 2 : status === "REDEEMABLE_LOST" ? 1 : 0;
-  for (const cohort of cohorts) {
+  for (let cohortIndex = 0; cohortIndex < cohorts.length; cohortIndex++) {
+    const cohort = cohorts[cohortIndex];
+    if (cohortIndex === 1 && !cohort.complete) continue;
     for (const row of cohort.rows) {
       const condition = String(row.condition_id ?? row.conditionId ?? "").toLowerCase();
       const rawIndex = row.outcome_index ?? row.outcomeIndex;
@@ -1825,14 +1831,17 @@ async function getSettlementStats(wallet, period, nowMs, limit = 250) {
     }
   }
   const metadataComplete = marketPages.every(page => page.ok);
-  // Unverified early exits are excluded from wins/losses; they do not invalidate independently classified settled outcomes. A truncated trade-history page only prevents those exits from being counted as >=$0.90 wins.
+  // A partial OPEN cohort is discarded wholesale above because it can contain
+  // unredeemed winners mixed with live positions. Completeness depends on the
+  // fully paged CLOSED and REDEEMABLE_LOST cohorts plus complete market metadata.
+  // Unverified early exits are excluded from wins; they are never inferred from P&L.
   const settlementRecordComplete = allPagesComplete && metadataComplete && unclassified===0;
   return {
     settlementWins, settlementLosses, highConfidenceExitWins, lowConfidenceExitMarkets, unverifiedEarlyExitMarkets,
     earlyExitMarkets:earlyKeys.size, earlyExitPositions, settlementRecordComplete,
     settlementPositionsChecked:positions.length, settlementPositionsClassified:classified,
     settlementPositionsUnclassified:unclassified,
-    settlementRecordBasis:"Verified settlements plus matched actual SELL fills at >= $0.90; lower-priced exits excluded; unmatched exits make record incomplete",
+    settlementRecordBasis:"Fully paged CLOSED and REDEEMABLE_LOST positions, plus OPEN positions only when that entire cohort is paged; verified settlements plus matched actual SELL fills at >= $0.90; lower-priced exits excluded",
     settlementRecordCoverage:settlementRecordComplete?"complete":"partial"
   };
 }
