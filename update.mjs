@@ -2165,9 +2165,11 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     }];
   }));
   // Keep selected-period records separate from the rolling 30-day qualification record.
-  const consensusPeriodRecords = period.key === "week"
-    ? await attachRecords(consensusRecordCandidates, period, nowMs, CLOSED_POSITION_SCAN_LIMIT, fullRecordCache)
-    : consensusRecords;
+  // Weekly period detail is optional display context, not a qualification
+  // input. Reuse the existing 1,000-wallet weekly leaderboard record scan
+  // instead of issuing another 6,000 per-wallet API requests for the same data.
+  // The 30-day consensus qualification remains independently audited above.
+  const consensusPeriodRecords = period.key === "week" ? records : consensusRecords;
   // USD volume comes from the dedicated user-volume endpoint, never share volume.
   // Consensus-card volume is optional; avoid one API request per holder per period.
   // Visible Top 100 volume lookups remain below.
