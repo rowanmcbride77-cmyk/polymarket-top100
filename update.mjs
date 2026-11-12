@@ -1215,6 +1215,7 @@ async function enrichConsensusMarkets(holderGroups, nowMs) {
 
   const pages = await mapLimit(chunks, CONCURRENCY, async ids => {
     const params = new URLSearchParams();
+    params.set("limit", "1000");
     for (const id of ids) params.append("condition_ids", id);
     try {
       return {rows: asArray(await getJson(`${GAMMA_API}/markets?${params}`)), ok: true};
@@ -1693,6 +1694,7 @@ async function getSettlementStats(wallet, period, nowMs, limit = 250) {
   for (let i = 0; i < conditions.length; i += 40) conditionChunks.push(conditions.slice(i, i + 40));
   const marketPages = await mapLimit(conditionChunks, CONCURRENCY, async ids => {
     const q = new URLSearchParams();
+    q.set("limit", "1000");
     for (const id of ids) q.append("condition_ids", id);
     try {
       return {rows:asArray(await getJson(`${GAMMA_API}/markets?${q.toString()}`)), ok:true};
@@ -1811,7 +1813,8 @@ async function getSettlementStats(wallet, period, nowMs, limit = 250) {
     }
   }
   const metadataComplete = marketPages.every(page => page.ok);
-  const settlementRecordComplete = allPagesComplete && metadataComplete && unclassified===0 && exitTradeHistoryComplete && unverifiedEarlyExitMarkets===0;
+  // Unverified early exits are excluded from wins/losses; they do not invalidate independently classified settled outcomes. A truncated trade-history page only prevents those exits from being counted as >=$0.90 wins.
+  const settlementRecordComplete = allPagesComplete && metadataComplete && unclassified===0;
   return {
     settlementWins, settlementLosses, highConfidenceExitWins, lowConfidenceExitMarkets, unverifiedEarlyExitMarkets,
     earlyExitMarkets:earlyKeys.size, earlyExitPositions, settlementRecordComplete,
