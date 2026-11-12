@@ -29,11 +29,10 @@ const RANKING_RECORD_LIMIT = 1000;
 // Bound closed-position history requests. Records that hit this cap are marked
 // incomplete and withheld rather than presented as complete win/loss stats.
 const CLOSED_POSITION_SCAN_LIMIT = 1000;
-// Keep the live-overlap scan at the previously stable 6,000-wallet budget.
-// Each wallet requires an individual positions request and a rolling-30-day
-// closed-position record request. 20,000 wallets multiplies those API calls
-// enough to push the workflow beyond an hour. Top-100 discovery remains broad.
-const CONSENSUS_WALLET_LIMIT = 6000;
+// Restore the full 20,000-wallet consensus discovery pool. Keep the original
+// 30-day qualification and settlement audit; optimize duplicate history work
+// separately rather than reducing the wallet discovery target.
+const CONSENSUS_WALLET_LIMIT = 20000;
 const MAX_CONSENSUS_POSITION_PAGES_PER_WALLET = 1;
 const MAX_SPORTS_CONSENSUS_POSITION_PAGES_PER_WALLET = 2;
 const LEADER_RECORD_LIMIT = RANKING_RECORD_LIMIT;
