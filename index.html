@@ -215,7 +215,8 @@ dialog::backdrop{background:#000b}
         <div class="filters">
           <label>Trader pool
             <select id="consensusPool" onchange="loadConsensusData()">
-              <option value="week" selected>7-day trader records</option>
+              <option value="month" selected>30-day trader records</option>
+              <option value="week">7-day trader records</option>
             </select>
           </label>
           <label>Min. traders
@@ -334,7 +335,7 @@ function tokenPrice(value) {
 }
 
 function nameOf(trader) {
-  const raw = String(trader?.name || trader?.username || trader?.userName || "").trim();
+  const raw = String(trader?.name || trader?.username || trader?.userName || trader?.pseudonym || "").trim();
   if (!raw) return "Unknown Trader";
   // Only replace wallet/code-like IDs; preserve normal usernames.
   const compact = raw.replace(/^@/, "").replace(/[^a-z0-9]/gi, "");
@@ -525,7 +526,7 @@ async function loadConsensusData() {
     if (!loaded) throw lastError || new Error(filename + " is not available yet.");
     consensusData = loaded;
     renderConsensus();
-    $("consensusPeriod").textContent = `Strong Signals: 90%+ 30-day profitable-close proxy (not settlement win rate) · ${Number(consensusData?.minimumResolvedMarkets) || 10}+ closes`;
+    $("consensusPeriod").textContent = `Strong Signals: 90%+ verified 30-day outcomes · ${Number(consensusData?.minimumResolvedMarkets) || 20}+ qualifying outcomes`;
   } catch (error) {
     consensusData = {consensus:[]};
     $("consensusBody").innerHTML = `<tr><td colspan="7" class="empty">${esc(error.message)}</td></tr>`;
@@ -838,8 +839,8 @@ async function loadConsensusTradeHistory(wallet, conditionId, outcome) {
 
 function renderConsensus() {
   const minCount = Number($("minTraders").value || 2);
-  const qualificationDays = Number(consensusData?.qualificationWindowDays) || 7;
-  const qualificationCloses = Number(consensusData?.minimumResolvedMarkets) || 10;
+  const qualificationDays = Number(consensusData?.qualificationWindowDays) || 30;
+  const qualificationCloses = Number(consensusData?.minimumResolvedMarkets) || 20;
   const nowSeconds = Date.now() / 1000;
   const windowHours = 48; // Sports markets may remain visible for 48 hours; non-sports are filtered to 24 hours below.
   const cutoffSeconds = nowSeconds + windowHours * 60 * 60;
@@ -905,7 +906,7 @@ function renderConsensus() {
 
   const tierSections = [
     {title:"Strong Signals", note:`Every listed trader meets the complete ${qualificationDays}-day, ${qualificationCloses}+ close, 90%+ profitable-close and $10+ position requirements.`, rows:filtered.filter(m => m.signalTier === "Strong Signals")},
-    {title:"Developing Signals", note:`At least one holder has a complete ${qualificationDays}-day record, 10+ closes and 75%+ profitable-close rate; remaining holders may not meet the strict threshold.`, rows:filtered.filter(m => m.signalTier === "Developing Signals")},
+    {title:"Developing Signals", note:`Developing only: at least one holder has a complete ${qualificationDays}-day record, 10+ closes and 75%+ verified outcome rate; these traders do not meet the Strong Signal threshold.`, rows:filtered.filter(m => m.signalTier === "Developing Signals")},
     {title:"Watchlist", note:"2+ distinct wallets hold the same outcome, but historical qualification is incomplete or below the Developing threshold.", rows:filtered.filter(m => m.signalTier === "Watchlist")}
   ];
   const visible = tierSections.flatMap(section =>
