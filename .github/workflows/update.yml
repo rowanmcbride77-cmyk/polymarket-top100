@@ -25,9 +25,10 @@ permissions:
   contents: write
 
 concurrency:
-  # Scans can take 30+ minutes. Queue newer runs; never kill an active scan.
+  # Keep only the newest scanner code/data run. A wedged older scan must not
+  # block a corrected run for an hour or more.
   group: polymarket-scanner-update-v6
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   update:
