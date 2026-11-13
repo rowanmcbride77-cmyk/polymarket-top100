@@ -2170,14 +2170,25 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     String(trader.wallet || "").toLowerCase(),
     {volume: trader.volume ?? null, volumeBasis: trader.volumeBasis || "Unavailable from period user-volume endpoint"}
   ]));
-  console.log(period.key + ": independently audited " + settlementAuditCandidates.length + " of " + consensusRecordCandidates.length + " eligible consensus wallets; only complete settlement-outcome records can qualify.");
+  console.log(period.key + ": independently audited " + consensusRecordCandidates.length + " shared-market holders for consensus; Top 100 audit covers the full " + discoveredCandidates.length + "-wallet leaderboard candidate pool.");
   // Preserve the rolling 30-day audited close record used for qualification.
   // The selected-period P&L remains a separate ranking field; never overwrite
   // the 30-day wins, losses, win rate, or realized P&L with weekly/monthly values.
-  const qualifiedLeaderRows = consensusRecordCandidates
+  // The Top 100 must be selected from the FULL discovered leaderboard candidate
+  // pool, not only wallets that happen to share an active market with another
+  // trader. Reuse the same unbounded 30-day audit cache as consensus so overlapping
+  // wallets are fetched once, while single-market/non-overlap traders remain eligible.
+  const leaderAuditRecords = await attachRecords(
+    discoveredCandidates,
+    CONSENSUS_RECORD_PERIOD,
+    nowMs,
+    null,
+    fullRecordCache
+  );
+  const qualifiedLeaderRows = discoveredCandidates
     .map(candidate => {
       const wallet = String(candidate.wallet || "").toLowerCase();
-      const record = consensusRecords[wallet] || {};
+      const record = leaderAuditRecords[wallet] || {};
       return {...candidate, ...record, wallet};
     })
     .filter(trader => trader.recordComplete === true &&
@@ -2256,7 +2267,7 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     requirePositiveRealizedPnl: true,
     minimumEntryValue: MIN_CONSENSUS_ENTRY_VALUE,
     minimumCurrentPositionValue: MIN_CONSENSUS_POSITION_VALUE,
-    eligibleCandidatesAudited: consensusRecordCandidates.length,
+    eligibleCandidatesAudited: discoveredCandidates.length,
     qualifiedCandidates: qualifiedRanked.length,
     publishedLeaders: output.leaders.length,
     basis: "Only complete rolling 30-day audited records passing every published threshold are included."
