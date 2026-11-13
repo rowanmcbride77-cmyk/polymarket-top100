@@ -2146,7 +2146,7 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     return [wallet, {
       ...closeRecord,
       recordComplete: complete,
-      recordVerified: complete,
+      recordVerified: false,
       recordBasis: complete
         ? "Complete rolling 30-day closed-market net realized-P&L record; one result per market; early exits count. Not settlement-only accuracy."
         : "Rolling 30-day closed-market record incomplete; not qualified"
