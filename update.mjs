@@ -791,7 +791,6 @@ async function getMarketConsensus(market, knownNames) {
 
   const qualifyingGroups = [...grouped.values()]
     .filter(group => group.sameSide >= 2);
-  if (qualifyingGroups.length === 0) console.log("No same-side group had 2+ active holders for market " + conditionId);
   return qualifyingGroups
     .map(({ walletsSeen, ...group }) => ({ ...group, totalEntry: group.entryValueKnownCount === group.sameSide ? group.totalEntry : null, traders: group.traders.map(trader => ({ ...trader, isStillHolding: true, positionStatus: "OPEN" })) }));
 }
@@ -1340,6 +1339,10 @@ async function enrichConsensusMarkets(holderGroups, nowMs) {
       }
     }
   );
+  // A market with no same-side overlap is normal discovery output, not a
+  // per-market warning. Aggregate these counts to keep scanner logs readable.
+  const marketsWithoutSameSideOverlap = marketHolderRows.filter(rows => !rows || rows.length === 0).length;
+  const marketSideGroupsFound = marketHolderRows.reduce((sum, rows) => sum + (Array.isArray(rows) ? rows.length : 0), 0);
   const expandedGroups = new Map(
     enriched.map(group => [String(group.conditionId || "").toLowerCase() + "|" + String(group.side || "").toLowerCase(), group])
   );
@@ -1404,6 +1407,8 @@ async function enrichConsensusMarkets(holderGroups, nowMs) {
     eligibleMarkets: marketLookup.size,
     holderLookups: marketHolderRows.length,
     expandedSameSideGroups: allExpanded.length - enriched.length,
+    marketSideGroupsFound,
+    marketsWithoutSameSideOverlap,
     directSportsGroups: directSportsGroups.length
   }));
   enriched.splice(0, enriched.length, ...allExpanded);
@@ -2121,11 +2126,9 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
   const consensusRecordCandidates = consensusRecordWallets.map(wallet =>
     candidateByWallet.get(wallet) || {wallet}
   );
-  // Preserve profitable-close P&L as a separate qualification input, but
-  // never use its win/loss counts as prediction accuracy. Independently audit
-  // settlement outcomes for the highest-capital consensus wallets and every
-  // holder in the Magic vs. Kings example market.
-  // Consensus eligibility requires a complete rolling 30-day record.
+  // Use the complete rolling 30-day closed-position record for consensus
+  // accuracy and positive realized P&L. Consensus eligibility requires
+  // complete history; partial/truncated samples are never qualified.
   // A fixed 1,000-position cap marked active, high-volume traders incomplete
   // even when the API could provide the remaining pages. Follow pagination
   // through the 30-day cutoff / final page; never qualify a truncated sample.
@@ -2141,61 +2144,18 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
   // prediction history: it only fetched recent position cohorts and a single
   // trade page, which made almost every legitimate holder appear incomplete.
   // We explicitly label this as net realized close profitability, not settlement accuracy.
-  // Realized close P&L is only a prescreen. Final Strong qualification
-  // uses verified market settlements and matched actual SELL fills >= $0.90.
-  const preliminaryConsensusCandidates = consensusRecordCandidates.filter(row => {
-    const wallet = String(row.wallet || "").toLowerCase();
-    const record = consensusCloseRecords[wallet] || {};
-    // Only positive realized P&L is safe for prescreening. Do not use
-    // the close-profitability rate or close count here: the authoritative
-    // denominator is settled markets plus verified >=$0.90 SELL exits.
-    return record.recordComplete === true &&
-      Number(record.realizedPnlTotal) > 0;
-  });
-  console.log(`${period.key}: ${preliminaryConsensusCandidates.length} consensus wallets passed the close-P&L prescreen; verifying official settlements and >=$0.90 SELL exits.`);
-  const settlementAuditedConsensus = await attachSettlementStats(
-    preliminaryConsensusCandidates,
-    CONSENSUS_RECORD_PERIOD,
-    nowMs
-  );
-  const settlementAuditByWallet = new Map(settlementAuditedConsensus.map(row => [
-    String(row.wallet || "").toLowerCase(), row
-  ]));
-  const consensusRecords = Object.fromEntries(consensusRecordCandidates.map(row => {
-    const wallet = String(row.wallet || "").toLowerCase();
-    const closeRecord = consensusCloseRecords[wallet] || {};
-    const settlement = settlementAuditByWallet.get(wallet) || {};
-    const wins = Number(settlement.settlementWins || 0) + Number(settlement.highConfidenceExitWins || 0);
-    const losses = Number(settlement.settlementLosses || 0);
-    const resolvedMarkets = wins + losses;
-    const complete = settlement.settlementRecordComplete === true &&
-      settlement.exitTradeHistoryComplete !== false &&
-      Number(settlement.unverifiedEarlyExitMarkets || 0) === 0 &&
-      Number.isFinite(wins) && Number.isFinite(losses);
-    return [wallet, {
-      ...closeRecord,
-      wins: complete ? wins : null,
-      losses: complete ? losses : null,
-      resolvedMarkets: complete ? resolvedMarkets : null,
-      winRate: complete && resolvedMarkets > 0 ? wins / resolvedMarkets * 100 : null,
-      realizedPnlTotal: closeRecord.realizedPnlTotal ?? null,
-      recordComplete: complete,
-      recordVerified: complete,
-      settlementWins: settlement.settlementWins ?? null,
-      settlementLosses: settlement.settlementLosses ?? null,
-      highConfidenceExitWins: settlement.highConfidenceExitWins ?? null,
-      lowConfidenceExitMarkets: settlement.lowConfidenceExitMarkets ?? null,
-      unverifiedEarlyExitMarkets: settlement.unverifiedEarlyExitMarkets ?? null,
-      recordBasis: complete
-        ? "Complete rolling 30-day official settlement record plus matched actual SELL fills >= $0.90; lower-priced exits excluded; positive net realized P&L checked separately."
-        : "Rolling 30-day settlement / SELL-fill audit incomplete or unavailable; not qualified"
-    }];
-  }));
+  // The close-history win rate and net realized P&L are both sourced from
+  // the same complete rolling 30-day market-level record.
+  // Use the complete rolling 30-day closed-position history as the consensus
+  // accuracy record, matching the scanner's established profitable-close
+  // methodology. It counts one net result per market, includes early closes,
+  // and withholds any truncated/incomplete history. Avoid a second settlement
+  // and trade-feed audit for thousands of the same wallets: that redundant
+  // pass caused the scanner to hit its 55-minute job limit before publishing.
+  const consensusRecords = consensusCloseRecords;
+  console.log(`${period.key}: ${Object.keys(consensusRecords).length} consensus holder records loaded from the complete rolling 30-day closed-position history.`);
   // Keep selected-period records separate from the rolling 30-day qualification record.
-  // Weekly period detail is optional display context, not a qualification
-  // input. Reuse the existing 1,000-wallet weekly leaderboard record scan
-  // instead of issuing another 6,000 per-wallet API requests for the same data.
-  // The 30-day consensus qualification remains independently audited above.
+  // Weekly period detail is optional display context, not a qualification input.
   const consensusPeriodRecords = period.key === "week" ? records : consensusRecords;
   // USD volume comes from the dedicated user-volume endpoint, never share volume.
   // Consensus-card volume is optional; avoid one API request per holder per period.
@@ -2399,7 +2359,7 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     qualificationWindowDays: 30,
     minimumWinRate: MIN_CONSENSUS_WIN_RATE,
     minimumResolvedMarkets: MIN_CONSENSUS_CLOSED_MARKETS,
-    qualificationBasis: "Signals are grouped by exact Polymarket condition and outcome, including individual player props. Strong Signals require each holder to have a complete rolling 30-day audited prediction record: settled outcomes plus early exits only when actual SELL fills were at least $0.90; 20+ qualifying outcomes; 90%+ success rate; positive 30-day realized P&L; and verified $10+ entry/current value. Seven-day leaderboard P&L is displayed separately as recent performance.",
+    qualificationBasis: "Signals are grouped by exact Polymarket condition and outcome, including individual player props. Strong Signals require each holder to have a complete rolling 30-day closed-position record, with one net realized-P&L result per market and early closes included; 20+ resolved markets; 90%+ profitable-close rate; positive 30-day realized P&L; and verified $10+ entry/current value. Seven-day leaderboard P&L is displayed separately as recent performance.",
     minimumSameSideTraders: 2,
     candidateCount: ranked.length,
     discoveredCandidateCount: discoveredCandidates.length,
@@ -2409,7 +2369,7 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     scanDiagnostics: lastConsensusDiagnostics,
     candidatePoolBasis: `Up to ${CONSENSUS_WALLET_LIMIT.toLocaleString()} unique wallets selected from public Data API v2 leaderboard discovery across sports, crypto, esports, politics, culture, mentions, weather, economics, tech, finance, and overall categories. The public API does not expose a literal all-wallet directory. The scan checks up to 200 open positions for sports-category wallets and 100 for other wallets. Discovery includes active positions worth $3+; the Strong Signals tier keeps its separate $10+ entry/current-value requirement.`,
     resolutionWindowHours: CONSENSUS_WINDOW_HOURS,
-    recordBasis: "Strong Signals: every listed trader independently passes a complete rolling 30-day audited prediction record using official settlements plus early exits only when actual SELL fills were at least $0.90; at least 20 qualifying outcomes; 90%+ success rate; positive 30-day realized P&L; and verified $10+ entry/current value. Seven-day leaderboard P&L is shown separately. Player props are grouped by exact market and outcome. This is a research signal, not a proven profitable strategy.",
+    recordBasis: "Strong Signals: every listed trader independently passes a complete rolling 30-day closed-position record, counted once per market by net realized P&L, including early closes; at least 20 resolved markets; 90%+ profitable-close rate; positive 30-day realized P&L; and verified $10+ entry/current value. Seven-day leaderboard P&L is shown separately. Player props are grouped by exact market and outcome. This is a research signal, not a proven profitable strategy.",
     qualificationCount,
     consensus: consensusRows
   });
