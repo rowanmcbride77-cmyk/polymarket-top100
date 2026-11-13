@@ -1499,11 +1499,11 @@ function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedM
           (resolvedMarkets === null || resolvedMarkets < minimumResolvedMarkets ? "Fewer than 20 closes in 30 days" :
             (winRate !== null && winRate < MIN_CONSENSUS_WIN_RATE ? "Below 90% 30-day threshold" : "Meets 30-day historical threshold")),
         recordBasis: complete
-          ? "Independently audited rolling 30-day Gamma settlement outcomes; early exits excluded"
-          : "Settlement outcome audit incomplete or unavailable; not eligible as a verified 90%+ signal",
-        settlementRecordComplete: complete,
-        settlementWins: complete ? wins : null,
-        settlementLosses: complete ? losses : null,
+          ? "Complete rolling 30-day closed-market net realized-P&L record; one result per market; early exits count. Not settlement-only accuracy."
+          : "Rolling 30-day closed-market record incomplete; not eligible as a 90%+ signal",
+        settlementRecordComplete: false,
+        settlementWins: null,
+        settlementLosses: null,
         settlementPositionsChecked: record.settlementPositionsChecked ?? 0,
         settlementPositionsUnclassified: record.settlementPositionsUnclassified ?? 0
       };
@@ -1520,7 +1520,7 @@ function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedM
     if (strongHolders.length >= 2) {
       tier = "Strong Signals";
       displayTraders = strongHolders;
-      tierReason = "Every listed trader independently passes a complete rolling 30-day audited prediction record: official settlements plus early exits only when actual SELL fills were at least $0.90, 20+ qualifying outcomes, 90%+ success rate, positive 30-day realized P&L, and verified $10+ entry/current value.";
+      tierReason = "Every listed trader independently passes a complete rolling 30-day closed-market net realized-P&L record, 20+ resolved markets, 90%+ profitable-close rate, positive 30-day realized P&L, and verified $10+ entry/current value. Early exits count as closes; this is not settlement-only accuracy.";
     } else if (developingHolders.length >= 2) {
       // Preserve the strict Strong gate, but publish the already-calculated
       // Developing tier instead of silently dropping those same-side holders.
@@ -1997,7 +1997,10 @@ async function writeJsonUnderLimit(filename, output) {
   const hasLeaders = Array.isArray(output?.leaders) && output.leaders.length > 0;
   const hasConsensus = Array.isArray(output?.consensus) && output.consensus.length > 0;
   const allowEmptyConsensus = String(filename).startsWith("consensus-");
-  const allowEmptyQualifiedLeaderboard = filename === "week.json" || filename === "month.json";
+  const allowEmptyQualifiedLeaderboard = false;
+  if ((filename === "week.json" || filename === "month.json") && !hasLeaders) {
+    throw new Error(`${filename}: no traders passed the strict 30-day 90% / 20+ qualification gate; refusing to replace the last valid Top 100.`);
+  }
   if (!output || (!hasLeaders && !hasConsensus && !allowEmptyConsensus && !allowEmptyQualifiedLeaderboard)) {
     throw new Error(`${filename}: refusing to write empty or missing leaderboard/consensus data`);
   }
