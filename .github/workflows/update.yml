@@ -1,14 +1,6 @@
-
 name: Update Polymarket Scanner
-# [run-scanner] Trigger a fresh validation/publish pass after record-integrity and runtime fixes.
-# [run-scanner] Keep long scans queued and allow verified markets with unknown end dates.
-# [run-scanner] Rebuild 7-day Copy Signals with corrected consensus scoring.
-# [run-scanner] Rebuild Copy Signals using live same-side holders and qualified 7-day records.
-# [run-scanner] Rebuild Copy Signals using verified same-side BUY overlap.
-# Re-run with period-matched records for every shared-market holder.
-# [run-scanner] Rebuild using all-time consensus qualification and live holdings.
-# [run-scanner] Final corrected eligibility pass with rolling 7-day records and 24-hour resolution.
-# [run-scanner] Run the post-kickoff sports timing fix against fresh live data.
+# Keep full scans running long enough to finish the 20k-wallet discovery pass.
+# Queue later updates rather than cancelling an in-progress data build.
 
 on:
   schedule:
@@ -25,16 +17,17 @@ permissions:
   contents: write
 
 concurrency:
-  # New code supersedes an older scan; cancel stale work instead of queueing
-  # duplicate full scans that compete for the Polymarket API.
-  group: polymarket-scanner-update-v8
-  cancel-in-progress: true
+  group: polymarket-scanner-update-v9
+  # A new push or scheduled trigger must not kill a scan halfway through.
+  cancel-in-progress: false
 
 jobs:
   update:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    # The previous 35-minute limit was shorter than the observed ~55-minute
+    # scan and was directly causing GitHub to cancel valid runs.
+    timeout-minutes: 120
 
     steps:
       - name: Checkout repository
@@ -71,105 +64,61 @@ jobs:
 
           for (const file of ["week.json", "month.json", "consensus-week.json", "consensus-month.json"]) {
             const stat = await fs.stat(file);
-            if (stat.size === 0) {
-              throw new Error(`${file} is empty; refusing to publish empty scanner data`);
-            }
-            if (stat.size > 20 * 1024 * 1024) {
-              throw new Error(`${file} exceeds 20 MB`);
-            }
-
+            if (stat.size === 0) throw new Error(`${file} is empty`);
+            if (stat.size > 20 * 1024 * 1024) throw new Error(`${file} exceeds 20 MB`);
             const parsed = JSON.parse(await fs.readFile(file, "utf8"));
-            if (!parsed || typeof parsed !== "object" || !parsed.generatedAt) {
-              throw new Error(`${file} is missing generatedAt metadata`);
+            if (!parsed || typeof parsed !== "object" || !parsed.generatedAt || !Number.isFinite(Date.parse(parsed.generatedAt))) {
+              throw new Error(`${file} has missing or invalid generatedAt metadata`);
             }
-            if (!Number.isFinite(Date.parse(parsed.generatedAt))) throw new Error(`${file} has invalid generatedAt metadata`);
-
             if (file === "week.json" || file === "month.json") {
               const leaders = Array.isArray(parsed.leaders) ? parsed.leaders : [];
-              if (leaders.length > 1000) {
-                throw new Error(`${file} has ${leaders.length} leaders; maximum is 1,000`);
-              }
-              const uniqueWallets = new Set(leaders.map(row => String(row.wallet || "").toLowerCase()).filter(Boolean));
-              if (uniqueWallets.size !== leaders.length) {
-                throw new Error(`${file} contains duplicate or missing trader wallets`);
-              }
-              // Every displayed Top 100 trader must pass the rolling 30-day quality gate.
-              const invalidRankedLeaders = leaders.filter(row =>
-                !row.wallet ||
-                !Number.isFinite(Number(row.pnl)) ||
+              if (leaders.length > 1000) throw new Error(`${file} exceeds 1,000 leaders`);
+              const wallets = new Set(leaders.map(row => String(row.wallet || "").toLowerCase()).filter(Boolean));
+              if (wallets.size !== leaders.length) throw new Error(`${file} has duplicate or missing wallets`);
+              const invalid = leaders.filter(row =>
+                !row.wallet || !Number.isFinite(Number(row.pnl)) ||
                 row.recordComplete !== true ||
-                !Number.isFinite(Number(row.resolvedMarkets)) ||
-                Number(row.resolvedMarkets) < 20 ||
-                !Number.isFinite(Number(row.winRate)) ||
-                Number(row.winRate) < 90 ||
-                !Number.isFinite(Number(row.realizedPnlTotal)) ||
-                Number(row.realizedPnlTotal) <= 0
+                !Number.isFinite(Number(row.resolvedMarkets)) || Number(row.resolvedMarkets) < 20 ||
+                !Number.isFinite(Number(row.winRate)) || Number(row.winRate) < 90 ||
+                !Number.isFinite(Number(row.realizedPnlTotal)) || Number(row.realizedPnlTotal) <= 0
               );
-              if (!leaders.length || invalidRankedLeaders.length) {
-                throw new Error(`${file} contains no qualified Top 100 or ${invalidRankedLeaders.length} rows that fail the complete 30-day / 20+ / 90%+ / positive-P&L gate`);
-              }
-              console.log(`${file}: ${leaders.length} qualified Top 100 traders; every row passes complete 30-day records, 20+ closes, 90%+ win rate, and positive 30-day P&L`);
+              if (!leaders.length || invalid.length) throw new Error(`${file}: ${invalid.length} rows fail the complete 30-day / 20+ / 90%+ / positive-P&L gate`);
+              console.log(`${file}: ${leaders.length} qualified leaders`);
             }
-
             if (file === "consensus-week.json" || file === "consensus-month.json") {
               const groups = Array.isArray(parsed.consensus) ? parsed.consensus : [];
-              // An empty result is valid when no market has two qualified traders.
-              // Publishing an empty, accurate panel is safer than retaining stale/unqualified rows.
-              const invalidGroups = groups.filter(group => {
+              const invalid = groups.filter(group => {
                 const traders = Array.isArray(group.traders) ? group.traders : [];
                 const wallets = new Set(traders.map(row => String(row.wallet || "").toLowerCase()).filter(Boolean));
                 const tier = String(group.signalTier || "");
-                const isStrong = tier === "Strong Signals";
+                const strong = tier === "Strong Signals";
                 const validTier = ["Strong Signals", "Developing Signals", "Watchlist"].includes(tier);
                 const invalidTrader = traders.some(row => {
-                  const currentValue = Number(row.currentValue);
-                  if (!Number.isFinite(currentValue) || currentValue <= 0) return true;
-                  // Developing requires the $3 discovery floor; Strong has a stricter $10 floor below.
-                  // Watchlist intentionally preserves smaller positive positions for visibility.
-                  if (tier !== "Watchlist" && currentValue < 3) return true;
-                  if (!isStrong) return false;
-                  // Only Strong Signals are held to the complete 90% / 20+ outcome / $10 entry gate.
-                  const wins = Number(row.wins);
-                  const losses = Number(row.losses);
-                  const resolved = Number(row.resolvedMarkets);
-                  const rate = Number(row.winRate);
-                  return row.qualified !== true ||
-                    row.recordComplete !== true ||
+                  const value = Number(row.currentValue);
+                  if (!Number.isFinite(value) || value <= 0) return true;
+                  if (tier !== "Watchlist" && value < 3) return true;
+                  if (!strong) return false;
+                  const wins = Number(row.wins), losses = Number(row.losses), resolved = Number(row.resolvedMarkets);
+                  const rate = Number(row.winRate), shares = Number(row.shares ?? row.size);
+                  return row.qualified !== true || row.recordComplete !== true ||
                     !Number.isFinite(wins) || !Number.isFinite(losses) ||
                     !Number.isFinite(resolved) || resolved !== wins + losses || resolved < 20 ||
                     !Number.isFinite(rate) || rate < 90 ||
-                    !Number.isFinite(Number(row.avgPrice)) ||
-                    Number(row.avgPrice) <= 0 ||
-                    Number(row.avgPrice) > 1 ||
-                    !Number.isFinite(Number(row.shares ?? row.size)) ||
-                    Number(row.shares ?? row.size) <= 0 ||
-                    !Number.isFinite(Number(row.entryValue)) ||
-                    Number(row.entryValue) < 10 ||
-                    Number(row.currentValue) < 10;
+                    !Number.isFinite(Number(row.avgPrice)) || Number(row.avgPrice) <= 0 || Number(row.avgPrice) > 1 ||
+                    !Number.isFinite(shares) || shares <= 0 ||
+                    !Number.isFinite(Number(row.entryValue)) || Number(row.entryValue) < 10 || value < 10;
                 });
-                const endRaw = group.endDate ?? group.end_date ?? null;
-                let endMs = endRaw ? Date.parse(String(endRaw)) : NaN;
-                if (typeof endRaw === "string" && /^\d{4}-\d{2}-\d{2}$/.test(endRaw)) endMs = Date.parse(endRaw + "T23:59:59.999Z");
-                // update.mjs applies the authoritative category-aware window after
-                // normalizing Gamma timestamps, including sports estimated-finish dates.
-                // Re-parsing and rechecking the raw date here used a different rule and
-                // rejected valid groups. Retain structural metadata checks at publish time.
-                // update.mjs deliberately retains some verified markets with unknown
-                // end dates (unknownDateKept). Do not reject those a second time here:
-                // the scanner's category-aware eligibility filter is authoritative.
-                // If a date is supplied, however, it must parse successfully.
-                const hasEndDate = endRaw !== null && endRaw !== undefined && String(endRaw).trim() !== "";
-                const invalidMarket = group.marketMetadataVerified !== true ||
-                  group.marketClosed !== false || (hasEndDate && !Number.isFinite(endMs));
-                return !validTier || invalidMarket || wallets.size < 2 || wallets.size !== traders.length ||
+                const end = group.endDate ?? group.end_date ?? null;
+                let endMs = end ? Date.parse(String(end)) : NaN;
+                if (typeof end === "string" && /^\d{4}-\d{2}-\d{2}$/.test(end)) endMs = Date.parse(end + "T23:59:59.999Z");
+                const hasEnd = end !== null && end !== undefined && String(end).trim() !== "";
+                return !validTier || group.marketMetadataVerified !== true || group.marketClosed !== false ||
+                  (hasEnd && !Number.isFinite(endMs)) || wallets.size < 2 || wallets.size !== traders.length ||
                   !Number.isFinite(Number(group.sameSide)) || Number(group.sameSide) < traders.length || invalidTrader;
               });
-              if (invalidGroups.length) {
-                throw new Error(`${file} contains ${invalidGroups.length} consensus groups without at least two distinct, unique wallets`);
-              }
-              console.log(`${file}: ${groups.length} consensus groups across Strong/Developing/Watchlist tiers; Strong members pass the 90%+/20+ outcome/$10 gate; all groups have 2+ distinct active holders and verified open-market metadata`);
+              if (invalid.length) throw new Error(`${file} contains ${invalid.length} invalid consensus groups`);
+              console.log(`${file}: ${groups.length} validated consensus groups`);
             }
-
             console.log(`${file}: ${(stat.size / 1024 / 1024).toFixed(2)} MB; valid JSON`);
           }
           NODE
@@ -178,49 +127,31 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          # Preserve this run's generated files, sync to latest main, then
-          # apply only the generated data files on top of the current branch.
           cp week.json /tmp/scanner-week.json
           cp month.json /tmp/scanner-month.json
           cp consensus-week.json /tmp/scanner-consensus-week.json
           cp consensus-month.json /tmp/scanner-consensus-month.json
           git fetch origin main
-
-          # Never let an older, slower scan overwrite a newer published result.
           FRESHNESS="$(node --input-type=module <<'NODE'
           import fs from "node:fs/promises";
           import { execFileSync } from "node:child_process";
-
           const generated = JSON.parse(await fs.readFile("/tmp/scanner-consensus-week.json", "utf8"));
-          const publishedText = execFileSync("git", ["show", "origin/main:consensus-week.json"], {
-            encoding: "utf8",
-            maxBuffer: 64 * 1024 * 1024
-          });
-          const published = JSON.parse(publishedText);
-          const generatedAt = Date.parse(generated.generatedAt || "");
-          const publishedAt = Date.parse(published.generatedAt || "");
-          if (!Number.isFinite(generatedAt) || !Number.isFinite(publishedAt)) {
-            throw new Error("Could not compare consensus publication timestamps.");
-          }
-          console.log(publishedAt >= generatedAt ? "stale" : "fresh");
+          const published = JSON.parse(execFileSync("git", ["show", "origin/main:consensus-week.json"], {encoding:"utf8", maxBuffer:64*1024*1024}));
+          const a = Date.parse(generated.generatedAt || ""), b = Date.parse(published.generatedAt || "");
+          if (!Number.isFinite(a) || !Number.isFinite(b)) throw new Error("Invalid publication timestamps");
+          console.log(b >= a ? "stale" : "fresh");
           NODE
           )"
           if [ "$FRESHNESS" = "stale" ]; then
-            echo "Skipping stale scanner data; a newer or equal consensus result is already published."
+            echo "Skipping stale scan; newer data is already published."
             exit 0
           fi
-          if [ "$FRESHNESS" != "fresh" ]; then
-            echo "Could not verify scanner data freshness." >&2
-            exit 1
-          fi
-
+          if [ "$FRESHNESS" != "fresh" ]; then exit 1; fi
           git reset --hard origin/main
           cp /tmp/scanner-week.json week.json
           cp /tmp/scanner-month.json month.json
           cp /tmp/scanner-consensus-week.json consensus-week.json
           cp /tmp/scanner-consensus-month.json consensus-month.json
-
           git add week.json month.json consensus-week.json consensus-month.json
           if ! git diff --cached --quiet; then
             git commit -m "Update Polymarket scanner data"
