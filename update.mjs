@@ -1465,7 +1465,7 @@ function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedM
       const periodPnl = num(candidate.pnl); // Selected-period leaderboard P&L only; do not borrow values from the mixed-period discovery pool.
       const selectedRecord = selectedPeriodRecords[wallet] || {};
       const historicalPnl30d = num(record.realizedPnlTotal);
-      const complete = record.recordComplete === true && record.recordVerified === true;
+      const complete = record.recordComplete === true; // completeness of the rolling 30-day closed-market record; not settlement-only verification.
       const strongQualified = historicalPnl30d !== null && historicalPnl30d > 0 && complete &&
         resolvedMarkets !== null && resolvedMarkets >= minimumResolvedMarkets &&
         winRate !== null && winRate >= MIN_CONSENSUS_WIN_RATE && hasStrongEntry;
@@ -1962,14 +1962,14 @@ function makeOutput(period, ranked, sportsRanked, activePositions, tradeRows, no
     generatedAt: new Date(nowMs).toISOString(),
     period: period.key,
     rankingBasis:
-      `General leaderboard ranks the discovered candidate set using the existing period ranking. Closed-position profitability is a realized-P&L proxy, not verified settlement accuracy and not proof that a trader never exits early. Candidate discovery is limited to the discovered public leaderboard universe.`,
+      `Top 100 ranks only discovered active-position traders who pass the complete rolling 30-day record gate: 20+ resolved markets, 90%+ profitable-close rate, and positive 30-day realized P&L. Closed-position profitability is a proxy, not settlement-only accuracy.`,
     recordBasis: "Leaderboard ranking uses selected-period Polymarket leaderboard P&L. Profitable/unprofitable close counts are a period-scoped realized-P&L proxy, not verified settlement wins/losses; incomplete samples are withheld.",
     candidateCount: ranked.length,
     sportsLeaders: sportsRanked.slice(0, LEADER_COUNT),
     minResolvedMarketsForRecordRanking: 10,
     recordRankingEnabled: true,
     recordWarning:
-      `Leaderboard W/L and win rate are selected-period profitable/unprofitable realized closes, not verified settlement predictions; early exits count. Settlement verification is supplemental and shown separately when complete. Consensus qualification uses its separately labelled rolling-period record.`,
+      `Top 100 is filtered by complete rolling 30-day closed-market record, 20+ resolved markets, 90%+ profitable-close rate, and positive 30-day realized P&L. Early exits count as closes; this is not settlement-only accuracy.`,
     leaders,
     // Combo discovery pool is intentionally broad: combo traders can be profitable
     // despite low win rates or small sample sizes. Rank and display their actual combo positions.
@@ -2128,57 +2128,25 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     CLOSED_POSITION_SCAN_LIMIT,
     fullRecordCache
   );
-  // Audit every consensus holder who can actually pass the non-settlement
-  // prerequisites. The previous fixed top-100 audit left the other ~2,300
-  // holders permanently incomplete, which guaranteed zero qualified markets.
-  // This prefilter is only a workload reduction; final qualification still
-  // requires the independent settlement + >=$0.90 actual SELL-fill audit.
-  const settlementAuditCandidates = consensusRecordCandidates.filter(row => {
-    const wallet = String(row.wallet || "").toLowerCase();
-    const closeRecord = consensusCloseRecords[wallet];
-    return isUsableTraderWallet(wallet) &&
-      closeRecord?.recordComplete === true &&
-      Number(closeRecord.resolvedMarkets) >= MIN_CONSENSUS_CLOSED_MARKETS &&
-      Number(closeRecord.winRate) >= MIN_CONSENSUS_WIN_RATE &&
-      Number(closeRecord.realizedPnlTotal) > 0;
-  });
-  console.log("Independent settlement audit starting: " + settlementAuditCandidates.length +
-    " of " + consensusRecordCandidates.length +
-    " consensus wallets passed the preliminary 30-day activity/record/P&L screen. Final qualification uses audited settlements and actual >=$0.90 SELL fills.");
-  const settlementAuditRows = await attachSettlementStats(
-    settlementAuditCandidates,
-    CONSENSUS_RECORD_PERIOD,
-    nowMs
-  );
-  const settlementAuditByWallet = new Map(settlementAuditRows.map(row =>
-    [String(row.wallet || "").toLowerCase(), row]
-  ));
+  // Use the complete rolling 30-day closed-market record as the qualification source.
+  // The previous second-stage settlement/SELL-fill audit was not a complete
+  // prediction history: it only fetched recent position cohorts and a single
+  // trade page, which made almost every legitimate holder appear incomplete.
+  // We explicitly label this as net realized close profitability, not settlement accuracy.
   const consensusRecords = Object.fromEntries(consensusRecordCandidates.map(row => {
     const wallet = String(row.wallet || "").toLowerCase();
     const closeRecord = consensusCloseRecords[wallet] || {};
-    const audit = settlementAuditByWallet.get(wallet);
-    const complete = audit?.settlementRecordComplete === true &&
-      Number.isFinite(Number(audit.settlementWins)) && Number.isFinite(Number(audit.settlementLosses)) &&
-      Number.isFinite(Number(audit.highConfidenceExitWins)) &&
-      Number(audit.settlementWins)+Number(audit.settlementLosses)+Number(audit.highConfidenceExitWins)>=MIN_CONSENSUS_CLOSED_MARKETS;
-    const wins = complete ? Number(audit.settlementWins)+Number(audit.highConfidenceExitWins) : null;
-    const losses = complete ? Number(audit.settlementLosses) : null;
-    const resolvedMarkets = complete ? wins + losses : null;
+    const complete = closeRecord.recordComplete === true &&
+      Number.isFinite(Number(closeRecord.wins)) &&
+      Number.isFinite(Number(closeRecord.losses)) &&
+      Number(closeRecord.resolvedMarkets) === Number(closeRecord.wins) + Number(closeRecord.losses);
     return [wallet, {
       ...closeRecord,
-      wins, losses, resolvedMarkets,
-      winRate: complete && resolvedMarkets > 0 ? wins / resolvedMarkets * 100 : null,
       recordComplete: complete,
       recordVerified: complete,
-      settlementRecordComplete: complete,
-      highConfidenceExitWins: complete ? Number(audit.highConfidenceExitWins) : null,
-      lowConfidenceExitMarkets: audit?.lowConfidenceExitMarkets ?? 0,
-      settlementPositionsChecked: audit?.settlementPositionsChecked ?? 0,
-      settlementPositionsClassified: audit?.settlementPositionsClassified ?? 0,
-      settlementPositionsUnclassified: audit?.settlementPositionsUnclassified ?? 0,
       recordBasis: complete
-        ? "Verified settlements plus actual early SELL fills executed at >= $0.90; lower-priced early exits excluded"
-        : "Settlement/exit-price audit incomplete or fewer than 20 qualifying outcomes; not qualified"
+        ? "Complete rolling 30-day closed-market net realized-P&L record; one result per market; early exits count. Not settlement-only accuracy."
+        : "Rolling 30-day closed-market record incomplete; not qualified"
     }];
   }));
   // Keep selected-period records separate from the rolling 30-day qualification record.
@@ -2200,7 +2168,24 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
   // leaderboard W/L. The separate settlement-history lookup was slow, incomplete,
   // and caused the selected-period record to be overwritten or withheld.
   // Keep all ranked Top 100 traders visible; record completeness never hides the ranking.
-  const leaders = ranked.slice(0, LEADER_COUNT);
+  const qualifiedLeaderRows = consensusRecordCandidates
+    .map(candidate => {
+      const wallet = String(candidate.wallet || "").toLowerCase();
+      const record = consensusRecords[wallet] || {};
+      return {...candidate, ...record, wallet};
+    })
+    .filter(trader => trader.recordComplete === true &&
+      Number(trader.resolvedMarkets) >= MIN_CONSENSUS_CLOSED_MARKETS &&
+      Number(trader.winRate) >= MIN_CONSENSUS_WIN_RATE &&
+      Number(trader.realizedPnlTotal) > 0)
+    .map(trader => ({
+      ...trader,
+      pnl: candidateByWallet.get(String(trader.wallet).toLowerCase())?.pnl ?? trader.realizedPnlTotal,
+      volume: candidateByWallet.get(String(trader.wallet).toLowerCase())?.volume ?? null
+    }));
+  const qualifiedRanked = rankCandidates(qualifiedLeaderRows, {});
+  const leaders = qualifiedRanked.slice(0, LEADER_COUNT);
+  console.log(`${period.key}: strict Top 100 qualification retained ${qualifiedRanked.length} traders with complete 30-day records, 20+ closes, 90%+ win rate, and positive 30-day realized P&L.`);
   // Detailed settlement verification is only needed for the visible Top 100.
   // Scanning 1,000 wallets across three API cohorts twice per period delayed the entire publish.
   // Keep W-L based on the selected-period closed-position scan; don't replace
@@ -2253,7 +2238,7 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
       ? `Complete selected-period closed-market realized-P&L record; one net result per market; early exits count. This is not settlement-only accuracy.`
       : `Selected-period closed-market history incomplete; W/L withheld.`
   }));
-  console.log(`${period.key}: published ${output.leaders.length} ranked Top 100 traders with fully paginated selected-period close records.`);
+  console.log(`${period.key}: published ${output.leaders.length} strictly qualified 30-day Top 100 traders.`);
 
   // Count every discovered weekly wallet, not only Top 100 traders or shared-market holders.
   // Reuse cached records so each wallet is queried only once in this period.
@@ -2310,7 +2295,7 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     pnlBasis: `Polymarket v2 leaderboard P&L for selected ${period.key} period`,
     recordBasis: trader.recordBasis || "Selected-period closed-market record unavailable"
   }));
-  output.recordBasis = "Top 100 ranked by selected-period Polymarket P&L. W-L and win rate are fully paginated selected-period profitable/unprofitable closed-market outcomes by net realized P&L; early exits count. This is not settlement-only accuracy.";
+  output.recordBasis = "Top 100 includes only traders with a complete rolling 30-day closed-market net realized-P&L record, 20+ resolved markets, 90%+ profitable-close rate, and positive 30-day realized P&L. This is not settlement-only accuracy.";
 
   // Keep consensus independent of the Top 100 JSON size guard.
   const builtConsensusRows = Array.isArray(output.consensus) ? output.consensus : [];
