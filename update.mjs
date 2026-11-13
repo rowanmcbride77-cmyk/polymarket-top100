@@ -1841,11 +1841,12 @@ async function getSettlementStats(wallet, period, nowMs, limit = 250) {
   // unredeemed winners mixed with live positions. Completeness depends on the
   // fully paged CLOSED and REDEEMABLE_LOST cohorts plus complete market metadata.
   // Unverified early exits are excluded from wins; they are never inferred from P&L.
-  const settlementRecordComplete = allPagesComplete && metadataComplete && unclassified===0;
+  const settlementRecordComplete = allPagesComplete && metadataComplete && unclassified===0 &&
+    exitTradeHistoryComplete && unverifiedEarlyExitMarkets===0;
   return {
     settlementWins, settlementLosses, highConfidenceExitWins, lowConfidenceExitMarkets, unverifiedEarlyExitMarkets,
     earlyExitMarkets:earlyKeys.size, earlyExitPositions, settlementRecordComplete,
-    settlementPositionsChecked:positions.length, settlementPositionsClassified:classified,
+    exitTradeHistoryComplete, settlementPositionsChecked:positions.length, settlementPositionsClassified:classified,
     settlementPositionsUnclassified:unclassified,
     settlementRecordBasis:"Fully paged CLOSED and REDEEMABLE_LOST positions, plus OPEN positions only when that entire cohort is paged; verified settlements plus matched actual SELL fills at >= $0.90; lower-priced exits excluded",
     settlementRecordCoverage:settlementRecordComplete?"complete":"partial"
@@ -2140,20 +2141,53 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
   // prediction history: it only fetched recent position cohorts and a single
   // trade page, which made almost every legitimate holder appear incomplete.
   // We explicitly label this as net realized close profitability, not settlement accuracy.
+  // Realized close P&L is only a prescreen. Final Strong qualification
+  // uses verified market settlements and matched actual SELL fills >= $0.90.
+  const preliminaryConsensusCandidates = consensusRecordCandidates.filter(row => {
+    const wallet = String(row.wallet || "").toLowerCase();
+    const record = consensusCloseRecords[wallet] || {};
+    return record.recordComplete === true &&
+      Number(record.resolvedMarkets) >= MIN_CONSENSUS_CLOSED_MARKETS &&
+      Number(record.winRate) >= MIN_CONSENSUS_WIN_RATE &&
+      Number(record.realizedPnlTotal) > 0;
+  });
+  console.log(`${period.key}: ${preliminaryConsensusCandidates.length} consensus wallets passed the close-P&L prescreen; verifying official settlements and >=$0.90 SELL exits.`);
+  const settlementAuditedConsensus = await attachSettlementStats(
+    preliminaryConsensusCandidates,
+    CONSENSUS_RECORD_PERIOD,
+    nowMs
+  );
+  const settlementAuditByWallet = new Map(settlementAuditedConsensus.map(row => [
+    String(row.wallet || "").toLowerCase(), row
+  ]));
   const consensusRecords = Object.fromEntries(consensusRecordCandidates.map(row => {
     const wallet = String(row.wallet || "").toLowerCase();
     const closeRecord = consensusCloseRecords[wallet] || {};
-    const complete = closeRecord.recordComplete === true &&
-      Number.isFinite(Number(closeRecord.wins)) &&
-      Number.isFinite(Number(closeRecord.losses)) &&
-      Number(closeRecord.resolvedMarkets) === Number(closeRecord.wins) + Number(closeRecord.losses);
+    const settlement = settlementAuditByWallet.get(wallet) || {};
+    const wins = Number(settlement.settlementWins || 0) + Number(settlement.highConfidenceExitWins || 0);
+    const losses = Number(settlement.settlementLosses || 0);
+    const resolvedMarkets = wins + losses;
+    const complete = settlement.settlementRecordComplete === true &&
+      settlement.exitTradeHistoryComplete !== false &&
+      Number(settlement.unverifiedEarlyExitMarkets || 0) === 0 &&
+      Number.isFinite(wins) && Number.isFinite(losses);
     return [wallet, {
       ...closeRecord,
+      wins: complete ? wins : null,
+      losses: complete ? losses : null,
+      resolvedMarkets: complete ? resolvedMarkets : null,
+      winRate: complete && resolvedMarkets > 0 ? wins / resolvedMarkets * 100 : null,
+      realizedPnlTotal: closeRecord.realizedPnlTotal ?? null,
       recordComplete: complete,
-      recordVerified: false,
+      recordVerified: complete,
+      settlementWins: settlement.settlementWins ?? null,
+      settlementLosses: settlement.settlementLosses ?? null,
+      highConfidenceExitWins: settlement.highConfidenceExitWins ?? null,
+      lowConfidenceExitMarkets: settlement.lowConfidenceExitMarkets ?? null,
+      unverifiedEarlyExitMarkets: settlement.unverifiedEarlyExitMarkets ?? null,
       recordBasis: complete
-        ? "Complete rolling 30-day closed-market net realized-P&L record; one result per market; early exits count. Not settlement-only accuracy."
-        : "Rolling 30-day closed-market record incomplete; not qualified"
+        ? "Complete rolling 30-day official settlement record plus matched actual SELL fills >= $0.90; lower-priced exits excluded; positive net realized P&L checked separately."
+        : "Rolling 30-day settlement / SELL-fill audit incomplete or unavailable; not qualified"
     }];
   }));
   // Keep selected-period records separate from the rolling 30-day qualification record.
