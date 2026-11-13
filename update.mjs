@@ -2124,11 +2124,15 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
   // never use its win/loss counts as prediction accuracy. Independently audit
   // settlement outcomes for the highest-capital consensus wallets and every
   // holder in the Magic vs. Kings example market.
+  // Consensus eligibility requires a complete rolling 30-day record.
+  // A fixed 1,000-position cap marked active, high-volume traders incomplete
+  // even when the API could provide the remaining pages. Follow pagination
+  // through the 30-day cutoff / final page; never qualify a truncated sample.
   const consensusCloseRecords = await attachRecords(
     consensusRecordCandidates,
     CONSENSUS_RECORD_PERIOD,
     nowMs,
-    CLOSED_POSITION_SCAN_LIMIT,
+    null,
     fullRecordCache
   );
   // Use the complete rolling 30-day closed-market record as the qualification source.
@@ -2224,7 +2228,42 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     consensusVolumeStats
   );
 
-  // Only verified Gamma settlement outcomes count as leaderboard wins/losses.
+  // Publish the strict 30-day-qualified ranking calculated above.
+  // Previously makeOutput received the broad P&L ranking and its first 100
+  // rows were written unchanged, bypassing qualifiedRanked entirely.
+  // These rows have already passed: complete 30-day record, 20+ outcomes,
+  // 90%+ profitable-close rate, positive 30-day realized P&L, and the
+  // verified $10+ live-entry/current-position gate.
+  output.leaders = leaders.map((trader, index) => ({
+    ...trader,
+    rank: index + 1,
+    profitableCloseWins: trader.wins ?? null,
+    profitableCloseLosses: trader.losses ?? null,
+    profitableCloseRate: trader.winRate ?? null,
+    recordComplete: true,
+    recordVerified: true,
+    qualificationWindowDays: 30,
+    qualificationMinimumResolvedMarkets: MIN_CONSENSUS_CLOSED_MARKETS,
+    qualificationMinimumWinRate: MIN_CONSENSUS_WIN_RATE,
+    qualificationPositiveRealizedPnl: true,
+    qualificationEntryValue: num(trader.entryValue),
+    qualificationCurrentValue: num(trader.currentValue),
+    recordBasis: "Complete rolling 30-day closed-market net realized-P&L record; 20+ resolved markets; 90%+ profitable-close rate; positive 30-day realized P&L. Early exits count as closes."
+  }));
+  output.leaderQualification = {
+    windowDays: 30,
+    minimumResolvedMarkets: MIN_CONSENSUS_CLOSED_MARKETS,
+    minimumWinRate: MIN_CONSENSUS_WIN_RATE,
+    requirePositiveRealizedPnl: true,
+    minimumEntryValue: MIN_CONSENSUS_ENTRY_VALUE,
+    minimumCurrentPositionValue: MIN_CONSENSUS_POSITION_VALUE,
+    eligibleCandidatesAudited: consensusRecordCandidates.length,
+    qualifiedCandidates: qualifiedRanked.length,
+    publishedLeaders: output.leaders.length,
+    basis: "Only complete rolling 30-day audited records passing every published threshold are included."
+  };
+
+  // Only verified Gamma settlement outcomes count for separate settlement fields.
   // Keep profitable-close proxy fields separately for diagnostics.
   // Keep the fully paginated period-specific W/L values for the Top 100.
   // These are profitable/unprofitable CLOSED-market outcomes by realized P&L;
