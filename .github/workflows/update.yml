@@ -93,15 +93,22 @@ jobs:
               if (uniqueWallets.size !== leaders.length) {
                 throw new Error(`${file} contains duplicate or missing trader wallets`);
               }
-              // Top 100 is ranked by selected-period P&L, not by consensus qualification.
-              // An incomplete W/L audit is allowed and must not block leaderboard publishing.
+              // Every displayed Top 100 trader must pass the rolling 30-day quality gate.
               const invalidRankedLeaders = leaders.filter(row =>
-                !row.wallet || !Number.isFinite(Number(row.pnl))
+                !row.wallet ||
+                !Number.isFinite(Number(row.pnl)) ||
+                row.recordComplete !== true ||
+                !Number.isFinite(Number(row.resolvedMarkets)) ||
+                Number(row.resolvedMarkets) < 20 ||
+                !Number.isFinite(Number(row.winRate)) ||
+                Number(row.winRate) < 90 ||
+                !Number.isFinite(Number(row.realizedPnlTotal)) ||
+                Number(row.realizedPnlTotal) <= 0
               );
-              if (invalidRankedLeaders.length) {
-                throw new Error(`${file} contains ${invalidRankedLeaders.length} Top 100 rows with missing wallets or invalid P&L`);
+              if (!leaders.length || invalidRankedLeaders.length) {
+                throw new Error(`${file} contains no qualified Top 100 or ${invalidRankedLeaders.length} rows that fail the complete 30-day / 20+ / 90%+ / positive-P&L gate`);
               }
-              console.log(`${file}: ${leaders.length} P&L-ranked leaderboard traders; audited W/L shown only when complete`);
+              console.log(`${file}: ${leaders.length} qualified Top 100 traders; every row passes complete 30-day records, 20+ closes, 90%+ win rate, and positive 30-day P&L`);
             }
 
             if (file === "consensus-week.json" || file === "consensus-month.json") {
