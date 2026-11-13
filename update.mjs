@@ -28,7 +28,7 @@ const POSITIONS_PER_TRADER = 10;
 const RANKING_RECORD_LIMIT = 1000;
 // Bound closed-position history requests. Records that hit this cap are marked
 // incomplete and withheld rather than presented as complete win/loss stats.
-const CLOSED_POSITION_SCAN_LIMIT = 1000;
+const CLOSED_POSITION_SCAN_LIMIT = null; // Fully paginate the entire rolling 30-day close history; capped samples cannot qualify.
 // Restore the full 20,000-wallet consensus discovery pool. Keep the original
 // 30-day qualification and settlement audit; optimize duplicate history work
 // separately rather than reducing the wallet discovery target.
@@ -2171,10 +2171,9 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     {volume: trader.volume ?? null, volumeBasis: trader.volumeBasis || "Unavailable from period user-volume endpoint"}
   ]));
   console.log(period.key + ": independently audited " + settlementAuditCandidates.length + " of " + consensusRecordCandidates.length + " eligible consensus wallets; only complete settlement-outcome records can qualify.");
-  // Keep the period-scoped realized-close records as the single source for
-  // leaderboard W/L. The separate settlement-history lookup was slow, incomplete,
-  // and caused the selected-period record to be overwritten or withheld.
-  // Keep all ranked Top 100 traders visible; record completeness never hides the ranking.
+  // Preserve the rolling 30-day audited close record used for qualification.
+  // The selected-period P&L remains a separate ranking field; never overwrite
+  // the 30-day wins, losses, win rate, or realized P&L with weekly/monthly values.
   const qualifiedLeaderRows = consensusRecordCandidates
     .map(candidate => {
       const wallet = String(candidate.wallet || "").toLowerCase();
