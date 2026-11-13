@@ -2146,9 +2146,10 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
   const preliminaryConsensusCandidates = consensusRecordCandidates.filter(row => {
     const wallet = String(row.wallet || "").toLowerCase();
     const record = consensusCloseRecords[wallet] || {};
+    // Only positive realized P&L is safe for prescreening. Do not use
+    // the close-profitability rate or close count here: the authoritative
+    // denominator is settled markets plus verified >=$0.90 SELL exits.
     return record.recordComplete === true &&
-      Number(record.resolvedMarkets) >= MIN_CONSENSUS_CLOSED_MARKETS &&
-      Number(record.winRate) >= MIN_CONSENSUS_WIN_RATE &&
       Number(record.realizedPnlTotal) > 0;
   });
   console.log(`${period.key}: ${preliminaryConsensusCandidates.length} consensus wallets passed the close-P&L prescreen; verifying official settlements and >=$0.90 SELL exits.`);
