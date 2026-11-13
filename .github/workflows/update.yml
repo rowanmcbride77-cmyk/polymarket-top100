@@ -25,10 +25,10 @@ permissions:
   contents: write
 
 concurrency:
-  # Keep only the newest scanner code/data run. A wedged older scan must not
-  # block a corrected run for an hour or more.
+  # New code supersedes an older scan; cancel stale work instead of queueing
+  # duplicate full scans that compete for the Polymarket API.
   group: polymarket-scanner-update-v8
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   update:
