@@ -2166,21 +2166,22 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     {volume: trader.volume ?? null, volumeBasis: trader.volumeBasis || "Unavailable from period user-volume endpoint"}
   ]));
   console.log(period.key + ": independently audited " + consensusRecordCandidates.length + " shared-market holders for consensus; Top 100 audit covers the full " + discoveredCandidates.length + "-wallet leaderboard candidate pool.");
-  // Preserve the rolling 30-day audited close record used for qualification.
-  // The selected-period P&L remains a separate ranking field; never overwrite
-  // the 30-day wins, losses, win rate, or realized P&L with weekly/monthly values.
-  // The Top 100 must be selected from the FULL discovered leaderboard candidate
-  // pool, not only wallets that happen to share an active market with another
-  // trader. Reuse the same unbounded 30-day audit cache as consensus so overlapping
-  // wallets are fetched once, while single-market/non-overlap traders remain eligible.
+  // Audit only the highest-ranked 1,000 leaderboard candidates by selected-period P&L.
+  // Auditing every discovered wallet (19k-20k) added tens of thousands of
+  // paginated API calls after consensus had already been discovered and was
+  // the main reason the scheduled run hit its hard timeout. The candidate
+  // discovery pool and 20,000-wallet consensus overlap scan remain unchanged;
+  // this is an explicit, bounded qualification sample for the Top 100.
+  const leaderAuditCandidates = rankCandidates(usableLeaderboardCandidates, {})
+    .slice(0, RANKING_RECORD_LIMIT);
   const leaderAuditRecords = await attachRecords(
-    discoveredCandidates,
+    leaderAuditCandidates,
     CONSENSUS_RECORD_PERIOD,
     nowMs,
     null,
     fullRecordCache
   );
-  const qualifiedLeaderRows = discoveredCandidates
+  const qualifiedLeaderRows = leaderAuditCandidates
     .map(candidate => {
       const wallet = String(candidate.wallet || "").toLowerCase();
       const record = leaderAuditRecords[wallet] || {};
@@ -2262,7 +2263,7 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     requirePositiveRealizedPnl: true,
     minimumEntryValue: MIN_CONSENSUS_ENTRY_VALUE,
     minimumCurrentPositionValue: MIN_CONSENSUS_POSITION_VALUE,
-    eligibleCandidatesAudited: discoveredCandidates.length,
+    eligibleCandidatesAudited: leaderAuditCandidates.length,
     qualifiedCandidates: qualifiedRanked.length,
     publishedLeaders: output.leaders.length,
     basis: "Only complete rolling 30-day audited records passing every published threshold are included."
