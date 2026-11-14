@@ -928,7 +928,14 @@ async function getBroadConsensusMarkets(knownTraders, nowMs, activePositions) {
           sort_by: "CURRENT_VALUE",
           sort_direction: "DESC"
         });
-        if (cursor) params.set("cursor", cursor);
+        // CLOSED rows are bounded by their exit event. Held positions must be
+      // fetched without activity bounds because they may have been bought
+      // before the 30-day window but still resolve inside it.
+      if (status === "CLOSED") {
+        params.set("start", String(Math.floor(periodCutoffMs / 1000)));
+        params.set("end", String(Math.floor(nowMs / 1000)));
+      }
+      if (cursor) params.set("cursor", cursor);
         const response = await getJson(API + "/v2/positions?" + params);
         const rows = asArray(response);
         const pagination = response?.pagination ?? {};
@@ -1650,8 +1657,6 @@ async function getSettlementStats(wallet, period, nowMs, limit = 250) {
         user: wallet,
         limit: String(limit),
         status,
-        start: String(Math.floor(periodCutoffMs / 1000)),
-        end: String(Math.floor(nowMs / 1000)),
         sort_by: "TIMESTAMP",
         sort_direction: "DESC"
       });
@@ -1733,6 +1738,7 @@ async function getSettlementStats(wallet, period, nowMs, limit = 250) {
 
   let settlementWins = 0, settlementLosses = 0, earlyExitMarkets = 0;
   let classified = 0, earlyExitPositions = 0, unclassified = 0;
+  const settledOutcomesByCondition = new Map();
   const earlyKeys = new Set();
   const earlyExitDetails = new Map();
   const addEarlyExit = (condition, index, position, closeTime) => {
@@ -1797,7 +1803,21 @@ async function getSettlementStats(wallet, period, nowMs, limit = 250) {
     if (scanStatus === "CLOSED" && lastEventAt === null) { unclassified++; continue; }
 
     classified++;
-    if (positionIndex === winnerIndex) settlementWins++;
+    if (!settledOutcomesByCondition.has(condition)) {
+      settledOutcomesByCondition.set(condition, {winnerIndex, outcomeIndexes:new Set()});
+    }
+    settledOutcomesByCondition.get(condition).outcomeIndexes.add(positionIndex);
+  }
+
+  // Count one directional prediction per condition. If a trader held both
+  // outcomes through settlement, treat that as a hedge, not two predictions.
+  let hedgedSettledMarkets = 0;
+  for (const {winnerIndex, outcomeIndexes} of settledOutcomesByCondition.values()) {
+    if (outcomeIndexes.size !== 1) {
+      hedgedSettledMarkets++;
+      continue;
+    }
+    if ([...outcomeIndexes][0] === winnerIndex) settlementWins++;
     else settlementLosses++;
   }
 
