@@ -1631,10 +1631,10 @@ function timeMs(value) {
 async function getSettlementStats(wallet, period, nowMs, limit = 250) {
   const periodDays = String(period?.api || period || "").toUpperCase() === "MONTH" ? 30 : 7;
   const periodCutoffMs = nowMs - periodDays * 24 * 60 * 60 * 1000;
-  // A CLOSED position means the wallet exited that position; it does not
-  // mean the market settled. Include held positions too, because the API's
-  // OPEN cohort contains settled winners that have not been redeemed and
-  // REDEEMABLE_LOST exposes settled losing positions still held by the wallet.
+  // CLOSED positions are exits, not proof of settlement. Polymarket v2 exposes
+  // unredeemed settled winners as REDEEMABLE and held settled losers as
+  // REDEEMABLE_LOST. Ordinary OPEN holdings are not part of the settlement
+  // denominator and must never be paginated as a substitute for REDEEMABLE.
   async function fetchPositionCohort(status, maxPages) {
     const rows = [];
     let cursor = null;
@@ -1681,21 +1681,19 @@ async function getSettlementStats(wallet, period, nowMs, limit = 250) {
   // remains incomplete and is never presented as a verified W-L.
   const cohorts = await Promise.all([
     fetchPositionCohort("CLOSED", 10),
-    fetchPositionCohort("OPEN", 10),
+    fetchPositionCohort("REDEEMABLE", 10),
     fetchPositionCohort("REDEEMABLE_LOST", 10)
   ]);
-  // OPEN positions include ordinary live holdings. They are useful only when
-  // the entire OPEN cohort was fetched; a truncated OPEN page must never make
-  // the settled-record audit incomplete or contribute a partial set of wins.
-  // The auditable closed/redeemable cohorts remain mandatory and fully paged.
-  // Require complete CLOSED, OPEN, and REDEEMABLE_LOST cohorts. OPEN includes
-  // unredeemed resolved winners; REDEEMABLE_LOST includes held resolved losers.
-  // A truncated cohort means settlement accuracy is unknown, so fail closed.
+  // Require complete CLOSED, REDEEMABLE, and REDEEMABLE_LOST cohorts.
+  // REDEEMABLE contains unredeemed settled winners; REDEEMABLE_LOST contains
+  // held settled losers. Ordinary OPEN positions are deliberately excluded:
+  // they are unresolved holdings, not settled predictions. A truncated
+  // settlement cohort means accuracy is unknown, so fail closed.
   const allPagesComplete = cohorts.every(cohort => cohort.complete);
   const uniqueRows = new Map();
   // Prefer a position still held at resolution over an earlier closed row
   // for the same outcome (e.g. sell, then re-enter before settlement).
-  const priority = status => status === "OPEN" ? 3 : status === "REDEEMABLE_LOST" ? 2 : 1;
+  const priority = status => status === "REDEEMABLE" ? 3 : status === "REDEEMABLE_LOST" ? 2 : 1;
   for (let cohortIndex = 0; cohortIndex < cohorts.length; cohortIndex++) {
     const cohort = cohorts[cohortIndex];
     if (cohortIndex === 1 && !cohort.complete) continue;
@@ -1749,16 +1747,15 @@ async function getSettlementStats(wallet, period, nowMs, limit = 250) {
     const scanStatus = String(position._scanStatus || position.status || "").toUpperCase();
     const lastEventAt = timeMs(position.last_event_at ?? position.lastEventAt ?? position.timestamp ?? position.updated_at ?? position.updatedAt);
     if (!market) {
-      // OPEN-cohort rows include ordinary live holdings, which are not yet
-      // outcomes and must not invalidate an otherwise complete 30-day audit.
-      // Missing metadata for a CLOSED/REDEEMABLE_LOST row remains a hard
-      // completeness failure because that row may represent a past result.
-      if (scanStatus !== "OPEN") unclassified++;
+      // Every fetched cohort here represents a settlement candidate or a
+      // closed exit. Missing metadata means the outcome cannot be verified.
+      unclassified++;
       continue;
     }
 
-    // An active-market holding is neither a win nor a loss. A closed position
-    // on a market that is still open is an early exit and must not count as a win.
+    // An active-market CLOSED row is an early exit, never a win or loss.
+    // A row from either REDEEMABLE cohort must resolve to a closed market;
+    // otherwise its settlement status cannot be verified.
     if (market.closed !== true && String(market.closed).toLowerCase() !== "true") {
       if (scanStatus === "CLOSED") {
         if (lastEventAt === null) { unclassified++; continue; }
@@ -1766,6 +1763,8 @@ async function getSettlementStats(wallet, period, nowMs, limit = 250) {
         earlyExitPositions++;
         const rawIndex = position.outcome_index ?? position.outcomeIndex ?? position.outcome;
         addEarlyExit(condition, rawIndex ?? "unknown", position, lastEventAt);
+      } else {
+        unclassified++;
       }
       continue;
     }
