@@ -37,7 +37,7 @@ const CONSENSUS_WALLET_LIMIT = 20000;
 // per-wallet 30-day settlement audit to the highest-capital 5k holders.
 // Auditing 20k wallets requires up to 60k position-history requests and was
 // the dominant source of 60-70 minute runs. No accuracy threshold is relaxed.
-const CONSENSUS_SETTLEMENT_AUDIT_LIMIT = 5000;
+const CONSENSUS_SETTLEMENT_AUDIT_LIMIT = 1000;
 const MAX_CONSENSUS_POSITION_PAGES_PER_WALLET = 1;
 const MAX_SPORTS_CONSENSUS_POSITION_PAGES_PER_WALLET = 2;
 const LEADER_RECORD_LIMIT = RANKING_RECORD_LIMIT;
