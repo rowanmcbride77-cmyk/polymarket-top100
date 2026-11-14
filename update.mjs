@@ -2274,7 +2274,8 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     requirePositiveRealizedPnl: true,
     minimumEntryValue: MIN_CONSENSUS_ENTRY_VALUE,
     minimumCurrentPositionValue: MIN_CONSENSUS_POSITION_VALUE,
-    eligibleCandidatesAudited: leaderAuditCandidates.length,
+    eligibleCandidatesAudited: settlementAuditLeaderCandidates.length,
+    prefilteredCandidates: leaderAuditCandidates.length,
     qualifiedCandidates: qualifiedRanked.length,
     publishedLeaders: output.leaders.length,
     basis: "Only complete rolling 30-day audited records passing every published threshold are included."
@@ -2319,9 +2320,9 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
       .filter(([, record]) => qualifies(record, 5))
       .map(([wallet]) => wallet.toLowerCase());
     qualificationCount = {
-      qualifiedTraderCount: qualifiedWallets.length,
-      qualifiedTraderCountAtLeastFiveTrades: qualifiedAtLeastFiveTrades.length,
-      minimumTradesForRequestedCount: 5,
+      profitableCloseTraderCount: qualifiedWallets.length,
+      profitableCloseTraderCountAtLeastFiveTrades: qualifiedAtLeastFiveTrades.length,
+      minimumTradesForCloseProfitabilityCount: 5,
       candidateWalletsScanned: recordCandidates.length,
       recordsReturned: Object.keys(allCandidateRecords).length,
       completeRecords: completeRecordRows.length,
@@ -2329,7 +2330,7 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
       minimumWinRate: MIN_CONSENSUS_WIN_RATE,
       minimumResolvedMarkets: MIN_TRADER_RESOLVED_MARKETS,
       windowDays: 7,
-      basis: "Unique wallets from the discovered public leaderboard candidate pool; complete closed-position records within the last 7 days; one net profitable/unprofitable result per market. Early exits count as closes. This is a sampled candidate-pool count, not a census of every Polymarket wallet."
+      basis: "Trading-profitability diagnostic only: unique wallets from the discovered public leaderboard candidate pool; complete closed-position records within the last 7 days; one net profitable/unprofitable result per market. Early exits count. This is not settlement accuracy and is not used to qualify Top 100 or consensus signals."
     };
     output.qualificationCount = qualificationCount;
     console.log("Weekly all-candidate qualification count: " + JSON.stringify(qualificationCount));
