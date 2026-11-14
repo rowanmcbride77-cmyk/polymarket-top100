@@ -1688,7 +1688,10 @@ async function getSettlementStats(wallet, period, nowMs, limit = 250) {
   // the entire OPEN cohort was fetched; a truncated OPEN page must never make
   // the settled-record audit incomplete or contribute a partial set of wins.
   // The auditable closed/redeemable cohorts remain mandatory and fully paged.
-  const allPagesComplete = cohorts[0].complete && cohorts[2].complete;
+  // Require complete CLOSED, OPEN, and REDEEMABLE_LOST cohorts. OPEN includes
+  // unredeemed resolved winners; REDEEMABLE_LOST includes held resolved losers.
+  // A truncated cohort means settlement accuracy is unknown, so fail closed.
+  const allPagesComplete = cohorts.every(cohort => cohort.complete);
   const uniqueRows = new Map();
   const priority = status => status === "CLOSED" ? 2 : status === "REDEEMABLE_LOST" ? 1 : 0;
   for (let cohortIndex = 0; cohortIndex < cohorts.length; cohortIndex++) {
@@ -1798,62 +1801,16 @@ async function getSettlementStats(wallet, period, nowMs, limit = 250) {
     else settlementLosses++;
   }
 
-  let highConfidenceExitWins = 0;
-  let lowConfidenceExitMarkets = 0;
-  let unverifiedEarlyExitMarkets = 0;
-  let exitTradeHistoryComplete = true;
-  if (earlyExitDetails.size) {
-    try {
-      // Data API v1 /trades was retired on 2026-10-24. Use v2 keyset pagination.
-      // Bound this audit to one page; a full page is explicitly incomplete.
-      const params = new URLSearchParams({
-        user: wallet,
-        start: String(Math.floor(periodCutoffMs / 1000)),
-        end: String(Math.floor(nowMs / 1000)),
-        limit: "500",
-        taker_only: "false"
-      });
-      const tradeResponse = await getJson(API + "/v2/trades?" + params.toString());
-      const trades = asArray(tradeResponse);
-      if (trades.length >= 500 || tradeResponse?.pagination?.has_more === true) {
-        exitTradeHistoryComplete = false;
-      }
-      for (const exit of earlyExitDetails.values()) {
-        if (!exit.asset || !exit.closeTime) { unverifiedEarlyExitMarkets++; continue; }
-        const matching = trades.filter(trade => {
-          const asset = String(trade.asset ?? trade.token_id ?? trade.tokenId ?? "");
-          const side = String(trade.side ?? "").toUpperCase();
-          const timestamp = timeMs(trade.timestamp ?? trade.match_time ?? trade.matchTime);
-          return asset === exit.asset && side === "SELL" && timestamp !== null && Math.abs(timestamp-exit.closeTime)<=120000;
-        });
-        if (!matching.length) { unverifiedEarlyExitMarkets++; continue; }
-        const latest = Math.max(...matching.map(t=>timeMs(t.timestamp ?? t.match_time ?? t.matchTime)||0));
-        const fills = matching.filter(t=>Math.abs((timeMs(t.timestamp ?? t.match_time ?? t.matchTime)||0)-latest)<=30000);
-        const size = fills.reduce((sum,t)=>sum+(num(t.size)||0),0);
-        const price = size>0 ? fills.reduce((sum,t)=>sum+(num(t.price)||0)*(num(t.size)||0),0)/size : null;
-        if (price===null) unverifiedEarlyExitMarkets++;
-        else if (price>=0.90) highConfidenceExitWins++;
-        else lowConfidenceExitMarkets++;
-      }
-    } catch(error) {
-      console.warn("Early-exit trade-price audit failed for "+wallet+": "+error.message);
-      unverifiedEarlyExitMarkets=earlyExitDetails.size;
-      exitTradeHistoryComplete=false;
-    }
-  }
   const metadataComplete = marketPages.every(page => page.ok);
-  // A partial OPEN cohort is discarded wholesale above because it can contain
-  // unredeemed winners mixed with live positions. Completeness depends on the
-  // fully paged CLOSED and REDEEMABLE_LOST cohorts plus complete market metadata.
-  // Unverified early exits are excluded from wins; they are never inferred from P&L.
-  const settlementRecordComplete = allPagesComplete && metadataComplete && unclassified===0 &&
-    exitTradeHistoryComplete && unverifiedEarlyExitMarkets===0;
+  // Early exits never count as prediction wins or losses. We do not infer
+  // accuracy from the price at which a trader sold.
+  const settlementRecordComplete = allPagesComplete && metadataComplete && unclassified===0;
   return {
-    settlementWins, settlementLosses, highConfidenceExitWins, lowConfidenceExitMarkets, unverifiedEarlyExitMarkets,
+    settlementWins, settlementLosses,
     earlyExitMarkets:earlyKeys.size, earlyExitPositions, settlementRecordComplete,
-    exitTradeHistoryComplete, settlementPositionsChecked:positions.length, settlementPositionsClassified:classified,
+    settlementPositionsChecked:positions.length, settlementPositionsClassified:classified,
     settlementPositionsUnclassified:unclassified,
-    settlementRecordBasis:"Fully paged CLOSED and REDEEMABLE_LOST positions, plus OPEN positions only when that entire cohort is paged; verified settlements plus matched actual SELL fills at >= $0.90; lower-priced exits excluded",
+    settlementRecordBasis:"Settlement-only record: verified market outcomes; positions exited before resolution excluded from wins and losses; complete CLOSED, OPEN, and REDEEMABLE_LOST cohorts plus verified market metadata required",
     settlementRecordCoverage:settlementRecordComplete?"complete":"partial"
   };
 }
@@ -2126,12 +2083,8 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
   const consensusRecordCandidates = consensusRecordWallets.map(wallet =>
     candidateByWallet.get(wallet) || {wallet}
   );
-  // Use the complete rolling 30-day closed-position record for consensus
-  // accuracy and positive realized P&L. Consensus eligibility requires
-  // complete history; partial/truncated samples are never qualified.
-  // A fixed 1,000-position cap marked active, high-volume traders incomplete
-  // even when the API could provide the remaining pages. Follow pagination
-  // through the 30-day cutoff / final page; never qualify a truncated sample.
+  // Closed-position realized P&L remains a separate profitability check.
+  // Settlement-only outcomes determine prediction accuracy and qualification.
   const consensusCloseRecords = await attachRecords(
     consensusRecordCandidates,
     CONSENSUS_RECORD_PERIOD,
@@ -2139,20 +2092,30 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     null,
     fullRecordCache
   );
-  // Use the complete rolling 30-day closed-market record as the qualification source.
-  // The previous second-stage settlement/SELL-fill audit was not a complete
-  // prediction history: it only fetched recent position cohorts and a single
-  // trade page, which made almost every legitimate holder appear incomplete.
-  // We explicitly label this as net realized close profitability, not settlement accuracy.
-  // The close-history win rate and net realized P&L are both sourced from
-  // the same complete rolling 30-day market-level record.
-  // Use the complete rolling 30-day closed-position history as the consensus
-  // accuracy record, matching the scanner's established profitable-close
-  // methodology. It counts one net result per market, includes early closes,
-  // and withholds any truncated/incomplete history. Avoid a second settlement
-  // and trade-feed audit for thousands of the same wallets: that redundant
-  // pass caused the scanner to hit its 55-minute job limit before publishing.
-  const consensusRecords = consensusCloseRecords;
+  const consensusSettlementRows = await attachSettlementStats(
+    consensusRecordCandidates,
+    CONSENSUS_RECORD_PERIOD,
+    nowMs
+  );
+  const consensusRecords = Object.fromEntries(consensusSettlementRows.map(trader => {
+    const wallet = String(trader.wallet || "").toLowerCase();
+    const closeRecord = consensusCloseRecords[wallet] || {};
+    const wins = num(trader.settlementWins);
+    const losses = num(trader.settlementLosses);
+    const resolvedMarkets = wins !== null && losses !== null ? wins + losses : null;
+    return [wallet, {
+      ...closeRecord,
+      wins, losses, resolvedMarkets,
+      winRate: resolvedMarkets > 0 ? wins / resolvedMarkets * 100 : null,
+      recordComplete: trader.settlementRecordComplete === true,
+      settlementRecordComplete: trader.settlementRecordComplete === true,
+      settlementWins: wins,
+      settlementLosses: losses,
+      earlyExitMarkets: trader.earlyExitMarkets ?? null,
+      earlyExitPositions: trader.earlyExitPositions ?? null,
+      recordBasis: trader.settlementRecordBasis || "Settlement history incomplete; excluded from prediction qualification"
+    }];
+  }));
   console.log(`${period.key}: ${Object.keys(consensusRecords).length} consensus holder records loaded from the complete rolling 30-day closed-position history.`);
   // Keep selected-period records separate from the rolling 30-day qualification record.
   // Weekly period detail is optional display context, not a qualification input.
@@ -2181,11 +2144,29 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     null,
     fullRecordCache
   );
+  const leaderSettlementRows = await attachSettlementStats(
+    leaderAuditCandidates,
+    CONSENSUS_RECORD_PERIOD,
+    nowMs
+  );
+  const leaderSettlementByWallet = Object.fromEntries(leaderSettlementRows.map(trader => {
+    const wallet = String(trader.wallet || "").toLowerCase();
+    const wins = num(trader.settlementWins);
+    const losses = num(trader.settlementLosses);
+    const resolvedMarkets = wins !== null && losses !== null ? wins + losses : null;
+    return [wallet, {
+      ...trader, wins, losses, resolvedMarkets,
+      winRate: resolvedMarkets > 0 ? wins / resolvedMarkets * 100 : null,
+      recordComplete: trader.settlementRecordComplete === true
+    }];
+  }));
   const qualifiedLeaderRows = leaderAuditCandidates
     .map(candidate => {
       const wallet = String(candidate.wallet || "").toLowerCase();
-      const record = leaderAuditRecords[wallet] || {};
-      return {...candidate, ...record, wallet};
+      const closeRecord = leaderAuditRecords[wallet] || {};
+      const settlement = leaderSettlementByWallet[wallet] || {};
+      return {...candidate, ...closeRecord, ...settlement,
+        realizedPnlTotal: closeRecord.realizedPnlTotal, wallet};
     })
     .filter(trader => trader.recordComplete === true &&
       Number(trader.resolvedMarkets) >= MIN_CONSENSUS_CLOSED_MARKETS &&
@@ -2198,12 +2179,9 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     }));
   const qualifiedRanked = rankCandidates(qualifiedLeaderRows, {});
   const leaders = qualifiedRanked.slice(0, LEADER_COUNT);
-  console.log(`${period.key}: strict Top 100 qualification retained ${qualifiedRanked.length} traders with complete 30-day records, 20+ closes, 90%+ win rate, and positive 30-day realized P&L.`);
-  // Detailed settlement verification is only needed for the visible Top 100.
-  // Scanning 1,000 wallets across three API cohorts twice per period delayed the entire publish.
-  // Keep W-L based on the selected-period closed-position scan; don't replace
-  // it with a second, lifetime-shaped settlement cohort scan.
-  const settlementRecords = {};
+  console.log(`${period.key}: strict Top 100 qualification retained ${qualifiedRanked.length} traders with complete 30-day settlement records, 20+ settled markets, 90%+ settlement accuracy, and positive realized P&L.`);
+  // Reuse the settlement-only audit already performed for this candidate sample.
+  const settlementRecords = leaderSettlementByWallet;
   const consensusMinimumResolved = MIN_CONSENSUS_CLOSED_MARKETS;
   console.log(`${period.key}: Strong Signals require 2+ same-side holders, each with a complete rolling 30-day audited record, 20+ qualifying outcomes, >=90% success, positive 30-day realized P&L, and verified $10+ entry/current value. Developing and Watchlist tiers remain separate and do not count as qualified traders.`);
   // Reuse the period-scoped record sample used for ranking; avoid a second history scan.
