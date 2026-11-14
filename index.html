@@ -160,11 +160,11 @@ dialog::backdrop{background:#000b}
         <div id="leaderModeNote" style="display:none"></div>
         <div class="table-wrap">
           <table>
-            <thead><tr id="leaderHeader"><th>#</th><th>Trader</th><th>30-day profitable / unprofitable closes</th><th>30-day close rate</th><th>Period P&amp;L</th><th>Volume</th></tr></thead>
+            <thead><tr id="leaderHeader"><th>#</th><th>Trader</th><th>30-day settled wins–losses</th><th>30-day settlement accuracy</th><th>Period P&amp;L</th><th>Volume</th></tr></thead>
             <tbody id="leadersBody"><tr><td colspan="6" class="loading">Loading traders…</td></tr></tbody>
           </table>
         </div>
-        <div class="source-note">Top 100 includes only traders with a complete rolling 30-day record, 20+ profitable/unprofitable market closes, 90%+ profitable-close rate, and positive 30-day realized P&L. Qualified traders are ranked by selected week/month P&L. Early exits count as closes; this is not settlement-only accuracy.</div>
+        <div class="source-note">Top 100 records show verified 30-day market settlements only. Early exits before resolution are excluded from wins, losses, and settlement accuracy. Qualification requires a complete settlement audit, 20+ settled markets, 90%+ settlement accuracy, and positive 30-day realized P&L.</div>
         <button class="link-button" id="leadersMore" onclick="toggleLeaders()">View all traders →</button>
       </section>
 
@@ -175,7 +175,7 @@ dialog::backdrop{background:#000b}
         <div class="overview-grid">
           <div><div class="metric-label">Total P&amp;L</div><div class="metric-value" id="totalPnl">—</div></div>
           <div><div class="metric-label">Total Volume</div><div class="metric-value" id="totalVolume">—</div></div>
-          <div><div class="metric-label">Avg. Profitable Close Rate</div><div class="metric-value" id="avgWinRate">N/A</div></div>
+          <div><div class="metric-label">Avg. Settlement Accuracy</div><div class="metric-value" id="avgWinRate">N/A</div></div>
         </div>
         </section>
       <section class="panel">
@@ -200,8 +200,8 @@ dialog::backdrop{background:#000b}
         <div class="source-note" id="paperTestNote">Tracks a hypothetical $10 entry at the first observed market price after qualifying trader activity. Unresolved signals are not counted as wins or losses; this is a research test, not verified live-trading performance.</div>
       </section>
       <details class="panel compact-details">
-        <summary>Sports Trader Rankings</summary>
-        <div class="table-wrap"><table><thead><tr><th>#</th><th>Trader</th><th>Profitable / unprofitable closes</th><th>Close rate</th><th>Sample</th></tr></thead><tbody id="sportsLeadersBody"><tr><td colspan="5" class="loading">Loading sports traders…</td></tr></tbody></table></div>
+        <summary>Sports Close-Profitability Diagnostics (Early Exits Included; Not Settlement Accuracy)</summary>
+        <div class="table-wrap"><table><thead><tr><th>#</th><th>Trader</th><th>Settled wins–losses</th><th>Settlement accuracy</th><th>Sample</th></tr></thead><tbody id="sportsLeadersBody"><tr><td colspan="5" class="loading">Loading sports traders…</td></tr></tbody></table></div>
       </details>
     </div>
 
@@ -352,8 +352,8 @@ function walletOf(trader) {
 }
 
 function recordOf(trader) {
-  // The leaderboard record is the fully paginated selected-period
-  // profitable/unprofitable closed-market result, not a settlement-only ledger.
+  // Public leaderboard wins/losses are populated from the verified settlement audit.
+  // Closed-position profitability is a separate diagnostic and is not settlement accuracy.
   if (trader?.recordComplete !== true || trader?.recordVerified !== true) return null;
   const wins = num(trader?.wins);
   const losses = num(trader?.losses);
@@ -361,7 +361,7 @@ function recordOf(trader) {
   if (wins === null || losses === null || wins < 0 || losses < 0) return null;
   const total = wins + losses;
   if (total <= 0 || (resolved !== null && resolved !== total)) return null;
-  return {wins, losses, total, rate:wins / total * 100, verified:true, basis:"period-profitable-closes"};
+  return {wins, losses, total, rate:wins / total * 100, verified:true, basis:"verified-settlements-only"};
 }
 
 function recordText(trader) {
