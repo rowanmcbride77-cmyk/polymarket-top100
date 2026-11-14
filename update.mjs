@@ -297,8 +297,7 @@ async function getResolvedRecord(wallet, period, nowMs, maxPositions = RANKING_R
       break;
     }
     cursor = pagination.next_cursor || null;
-    if (!cursor) {      // The API says another page exists but supplied no cursor. Do not
-      // silently label this truncated history as a complete W/L record.
+    if (!cursor) {      // The API says another page exists but supplied no cursor. Do not      // silently label this truncated history as a complete W/L record.
       recordComplete = false;
       break;
     }
@@ -597,8 +596,7 @@ function compactPosition(position) {
       position.end_date ??
       position.endDateIso ??
       null,    status: position.status ?? null,
-    closed: position.closed === true,
-    redeemable: position.redeemable === true,
+    closed: position.closed === true,    redeemable: position.redeemable === true,
     mergeable: position.mergeable === true
   };
 }
@@ -897,8 +895,7 @@ function hasExpiredEndDate(market, nowMs) {
 function isLiveConsensusPosition(position) {
   const size = num(position.size ?? position.current_size ?? position.currentSize);  const currentValue = num(position.current_value ?? position.currentValue);
   if (size === null || size <= 0) return false;
-  if (currentValue === null || currentValue < MIN_CONSENSUS_DISCOVERY_VALUE) return false;
-  if (position.closed === true || position.redeemable === true || position.mergeable === true) return false;
+  if (currentValue === null || currentValue < MIN_CONSENSUS_DISCOVERY_VALUE) return false;  if (position.closed === true || position.redeemable === true || position.mergeable === true) return false;
   const status = String(position.status ?? "").toUpperCase();
   return !status || status === "OPEN" || status === "ACTIVE";
 }
@@ -1197,8 +1194,7 @@ async function getDirectSportsConsensusGroups(nowMs, knownNames = new Map()) {
 async function enrichConsensusMarkets(holderGroups, nowMs) {  // Position records can carry stale/missing end dates. Resolve condition IDs
   // through Gamma before applying the strict 24-hour resolution window; keep undated active
   // markets visible rather than silently deleting the entire consensus panel.
-  // Enrich every discovered same-side group; do not cap the market list
-  // or let a popular category crowd other categories out.
+  // Enrich every discovered same-side group; do not cap the market list  // or let a popular category crowd other categories out.
   // Consensus Markets are based on positions that are currently open, not on
   // whether the trader happened to add to the position in the last hour.
   const scan = holderGroups;
@@ -1497,8 +1493,7 @@ function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedM
         strongQualified, developingQualified, entryVerified: hasVerifiedEntryPrice,
         recordStatus: !complete ? "Incomplete / unavailable" :
           (resolvedMarkets === null || resolvedMarkets < minimumResolvedMarkets ? "Fewer than 20 settled markets in 30 days" :
-            (winRate !== null && winRate < MIN_CONSENSUS_WIN_RATE ? "Below 90% settlement accuracy" : "Meets 30-day settlement threshold")),
-        recordBasis: complete
+            (winRate !== null && winRate < MIN_CONSENSUS_WIN_RATE ? "Below 90% settlement accuracy" : "Meets 30-day settlement threshold")),        recordBasis: complete
           ? "Complete rolling 30-day settlement-only record; early exits excluded from wins and losses."
           : "Settlement history incomplete; excluded from prediction qualification.",
         settlementRecordComplete: record.settlementRecordComplete === true,
@@ -1797,7 +1792,6 @@ async function getSettlementStats(wallet, period, nowMs, limit = 250) {
       continue;
     }
     if (scanStatus === "CLOSED" && lastEventAt === null) { unclassified++; continue; }
-
     classified++;
     if (!settledOutcomesByCondition.has(condition)) {
       settledOutcomesByCondition.set(condition, {winnerIndex, outcomeIndexes:new Set()});
@@ -2097,8 +2091,7 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
   const records = await attachRecords(recordCandidates, period, nowMs, null, fullRecordCache);
   const rejectedLeaderboardWallets = candidates.length - usableLeaderboardCandidates.length;
   if (rejectedLeaderboardWallets) {
-    console.warn(`Excluded ${rejectedLeaderboardWallets} malformed/protocol wallets from leaderboard ranking.`);
-  }  const ranked = rankCandidates(usableLeaderboardCandidates, records);
+    console.warn(`Excluded ${rejectedLeaderboardWallets} malformed/protocol wallets from leaderboard ranking.`);  }  const ranked = rankCandidates(usableLeaderboardCandidates, records);
   const sportsRanked = rankSportsCandidates(usableLeaderboardCandidates, records);
   console.log(`${period.key}: ranked ${ranked.length} candidates; ${sportsRanked.length} sports-qualified candidates.`);
   // Consensus holder records are scanned across the complete rolling 7-day window; leaderboard records remain separately capped.
@@ -2379,7 +2372,6 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     candidatePoolBasis: `Up to ${CONSENSUS_WALLET_LIMIT.toLocaleString()} unique wallets selected from public Data API v2 leaderboard discovery across sports, crypto, esports, politics, culture, mentions, weather, economics, tech, finance, and overall categories. The public API does not expose a literal all-wallet directory. The scan checks up to 200 open positions for sports-category wallets and 100 for other wallets. Discovery includes active positions worth $3+; the Strong Signals tier keeps its separate $10+ entry/current-value requirement.`,
     resolutionWindowHours: CONSENSUS_WINDOW_HOURS,
     recordBasis: "Strong Signals: every listed trader independently passes a complete rolling 30-day settlement-only record; at least 20 settled markets; 90%+ settlement accuracy; positive 30-day realized P&L; and verified $10+ entry/current value. Early exits are excluded from wins and losses. Seven-day leaderboard P&L is shown separately. Player props are grouped by exact market and outcome. This is a research signal, not a proven profitable strategy.",
-    qualificationCount,
     consensus: consensusRows
   });
 
@@ -2397,8 +2389,7 @@ async function main() {
 
   console.log("Loading monthly leaderboard...");
   const monthCandidates = await getCandidates(PERIODS[1]);
-  console.log(`Monthly candidates: ${monthCandidates.length}`);
-  const unique = new Map();
+  console.log(`Monthly candidates: ${monthCandidates.length}`);  const unique = new Map();
 
   // Use the full discovered pool for overlap detection; only the detailed
   // period-history scan is bounded separately.
