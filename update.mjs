@@ -2117,7 +2117,6 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
   const settlementAuditConsensusCandidates = consensusRecordCandidates.filter(candidate => {
     const record = consensusCloseRecords[String(candidate.wallet || "").toLowerCase()] || {};
     return record.recordComplete === true &&
-      Number(record.resolvedMarkets) >= MIN_CONSENSUS_CLOSED_MARKETS &&
       Number(record.realizedPnlTotal) > 0;
   });
   console.log(`Settlement-auditing ${settlementAuditConsensusCandidates.length} consensus holders who pass the independent 20+ market and positive-realized-P&L precheck.`);
@@ -2176,7 +2175,6 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
   const settlementAuditLeaderCandidates = leaderAuditCandidates.filter(candidate => {
     const record = leaderAuditRecords[String(candidate.wallet || "").toLowerCase()] || {};
     return record.recordComplete === true &&
-      Number(record.resolvedMarkets) >= MIN_CONSENSUS_CLOSED_MARKETS &&
       Number(record.realizedPnlTotal) > 0;
   });
   const leaderSettlementRows = await attachSettlementStats(
