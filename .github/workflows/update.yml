@@ -62,6 +62,7 @@ jobs:
         run: |
           node --input-type=module <<'NODE'
           import fs from "node:fs/promises";
+          const generatedAtValues = new Set();
 
           for (const file of ["week.json", "month.json", "consensus-week.json", "consensus-month.json"]) {
             const stat = await fs.stat(file);
@@ -71,29 +72,47 @@ jobs:
             if (!parsed || typeof parsed !== "object" || !parsed.generatedAt || !Number.isFinite(Date.parse(parsed.generatedAt))) {
               throw new Error(`${file} has missing or invalid generatedAt metadata`);
             }
+            generatedAtValues.add(parsed.generatedAt);
             if (file === "week.json" || file === "month.json") {
               const leaders = Array.isArray(parsed.leaders) ? parsed.leaders : [];
               if (leaders.length > 1000) throw new Error(`${file} exceeds 1,000 leaders`);
               const wallets = new Set(leaders.map(row => String(row.wallet || "").toLowerCase()).filter(Boolean));
               if (wallets.size !== leaders.length) throw new Error(`${file} has duplicate or missing wallets`);
-              const invalid = leaders.filter(row =>
-                !row.wallet || !Number.isFinite(Number(row.pnl)) ||
-                row.recordComplete !== true ||
-                !Number.isFinite(Number(row.resolvedMarkets)) || Number(row.resolvedMarkets) < 20 ||
-                !Number.isFinite(Number(row.winRate)) || Number(row.winRate) < 90 ||
-                !Number.isFinite(Number(row.realizedPnlTotal)) || Number(row.realizedPnlTotal) <= 0
-              );
+              const invalid = leaders.filter(row => {
+                const wins = Number(row.wins), losses = Number(row.losses);
+                const resolved = Number(row.resolvedMarkets), rate = Number(row.winRate);
+                return !row.wallet || !Number.isFinite(Number(row.pnl)) ||
+                  row.recordComplete !== true || row.recordVerified !== true || row.settlementRecordComplete !== true ||
+                  !Number.isFinite(wins) || wins < 0 || !Number.isFinite(losses) || losses < 0 ||
+                  !Number.isFinite(resolved) || resolved !== wins + losses || resolved < 20 ||
+                  !Number.isFinite(rate) || rate < 90 || Math.abs(rate - wins / resolved * 100) > 1e-6 ||
+                  !String(row.recordBasis || "").toLowerCase().includes("settlement-only") ||
+                  !Number.isFinite(Number(row.realizedPnlTotal)) || Number(row.realizedPnlTotal) <= 0;
+              });
               if (!leaders.length || invalid.length) throw new Error(`${file}: ${invalid.length} rows fail the complete 30-day / 20+ / 90%+ / positive-P&L gate`);
-              console.log(`${file}: ${leaders.length} qualified leaders`);
+              console.log(`${file}: ${leaders.length} settlement-verified qualified leaders`);
+              const discoveryRows = [
+                ...(Array.isArray(parsed.sportsLeaders) ? parsed.sportsLeaders : []),
+                ...(Array.isArray(parsed.comboCandidates) ? parsed.comboCandidates : [])
+              ];
+              const proxyFields = ["wins", "losses", "winRate", "resolvedMarkets", "sportsWins", "sportsLosses", "sportsWinRate", "sportsResolvedMarkets"];
+              const leaked = discoveryRows.filter(row => proxyFields.some(key => row[key] !== null && row[key] !== undefined));
+              if (leaked.length) throw new Error(`${file} exposes close-profitability proxies in sports/combo discovery W/L fields (${leaked.length} rows)`);
             }
             if (file === "consensus-week.json" || file === "consensus-month.json") {
               const groups = Array.isArray(parsed.consensus) ? parsed.consensus : [];
+              if (!groups.length) throw new Error(`${file}: no qualified consensus markets; refusing to publish an empty dataset`);
+              const seenConditions = new Set();
               const invalid = groups.filter(group => {
                 const traders = Array.isArray(group.traders) ? group.traders : [];
                 const wallets = new Set(traders.map(row => String(row.wallet || "").toLowerCase()).filter(Boolean));
                 const tier = String(group.signalTier || "");
                 const strong = tier === "Strong Signals";
-                const validTier = ["Strong Signals", "Developing Signals", "Watchlist"].includes(tier);
+                const validTier = strong;
+                const condition = String(group.conditionId || "").trim().toLowerCase();
+                const side = String(group.side || "").trim().toLowerCase();
+                const duplicateCondition = !condition || seenConditions.has(condition);
+                if (condition) seenConditions.add(condition);
                 const invalidTrader = traders.some(row => {
                   const value = Number(row.currentValue);
                   if (!Number.isFinite(value) || value <= 0) return true;
@@ -101,10 +120,12 @@ jobs:
                   if (!strong) return false;
                   const wins = Number(row.wins), losses = Number(row.losses), resolved = Number(row.resolvedMarkets);
                   const rate = Number(row.winRate), shares = Number(row.shares ?? row.size);
-                  return row.qualified !== true || row.recordComplete !== true ||
-                    !Number.isFinite(wins) || !Number.isFinite(losses) ||
+                  return row.qualified !== true || row.recordComplete !== true || row.settlementRecordComplete !== true ||
+                    !Number.isFinite(wins) || wins < 0 || !Number.isFinite(losses) || losses < 0 ||
                     !Number.isFinite(resolved) || resolved !== wins + losses || resolved < 20 ||
-                    !Number.isFinite(rate) || rate < 90 ||
+                    !Number.isFinite(rate) || rate < 90 || Math.abs(rate - wins / resolved * 100) > 1e-6 ||
+                    !String(row.recordBasis || "").toLowerCase().includes("settlement-only") ||
+                    String(row.side || "").trim().toLowerCase() !== side ||
                     !Number.isFinite(Number(row.avgPrice)) || Number(row.avgPrice) <= 0 || Number(row.avgPrice) > 1 ||
                     !Number.isFinite(shares) || shares <= 0 ||
                     !Number.isFinite(Number(row.entryValue)) || Number(row.entryValue) < 10 || value < 10;
@@ -113,15 +134,21 @@ jobs:
                 let endMs = end ? Date.parse(String(end)) : NaN;
                 if (typeof end === "string" && /^\d{4}-\d{2}-\d{2}$/.test(end)) endMs = Date.parse(end + "T23:59:59.999Z");
                 const hasEnd = end !== null && end !== undefined && String(end).trim() !== "";
-                return !validTier || group.marketMetadataVerified !== true || group.marketClosed !== false ||
-                  (hasEnd && !Number.isFinite(endMs)) || wallets.size < 2 || wallets.size !== traders.length ||
-                  !Number.isFinite(Number(group.sameSide)) || Number(group.sameSide) < traders.length || invalidTrader;
+                return duplicateCondition || !side || !validTier || group.marketMetadataVerified !== true || group.marketClosed !== false ||
+                  !hasEnd || !Number.isFinite(endMs) || wallets.size < 2 || wallets.size !== traders.length ||
+                  !Number.isFinite(Number(group.sameSide)) || Number(group.sameSide) !== traders.length || invalidTrader;
               });
               if (invalid.length) throw new Error(`${file} contains ${invalid.length} invalid consensus groups`);
               console.log(`${file}: ${groups.length} validated consensus groups`);
             }
             console.log(`${file}: ${(stat.size / 1024 / 1024).toFixed(2)} MB; valid JSON`);
           }
+          if (generatedAtValues.size !== 1) throw new Error(`The four generated JSON files have mismatched generatedAt values: ${[...generatedAtValues].join(", ")}`);
+          const generatedAtMs = Date.parse([...generatedAtValues][0]);
+          if (Date.now() - generatedAtMs > 4 * 60 * 60 * 1000 || generatedAtMs > Date.now() + 5 * 60 * 1000) {
+            throw new Error(`Generated JSON is stale or future-dated: ${new Date(generatedAtMs).toISOString()}`);
+          }
+          console.log(`All four JSON files share fresh generatedAt ${new Date(generatedAtMs).toISOString()}.`);
           NODE
 
       - name: Commit updated data
