@@ -18,10 +18,9 @@ permissions:
 
 concurrency:
   group: polymarket-scanner-update-v9
-  # A newer scanner build supersedes an older run. The scanner writes no
-  # published JSON until every output passes validation, so cancellation
-  # preserves the last known-good data instead of leaving partial files.
-  cancel-in-progress: true
+  # Let the active full scan finish. GitHub may replace a pending queued run
+  # with the newest schedule, but must never cancel the running data build.
+  cancel-in-progress: false
 
 jobs:
   update:
