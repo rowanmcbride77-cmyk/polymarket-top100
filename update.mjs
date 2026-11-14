@@ -33,6 +33,11 @@ const CLOSED_POSITION_SCAN_LIMIT = null; // Fully paginate the entire rolling 30
 // 30-day qualification and settlement audit; optimize duplicate history work
 // separately rather than reducing the wallet discovery target.
 const CONSENSUS_WALLET_LIMIT = 20000;
+// Keep full 20k-wallet live-position overlap discovery, but bound the expensive
+// per-wallet 30-day settlement audit to the highest-capital 5k holders.
+// Auditing 20k wallets requires up to 60k position-history requests and was
+// the dominant source of 60-70 minute runs. No accuracy threshold is relaxed.
+const CONSENSUS_SETTLEMENT_AUDIT_LIMIT = 5000;
 const MAX_CONSENSUS_POSITION_PAGES_PER_WALLET = 1;
 const MAX_SPORTS_CONSENSUS_POSITION_PAGES_PER_WALLET = 2;
 const LEADER_RECORD_LIMIT = RANKING_RECORD_LIMIT;
@@ -2082,7 +2087,8 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
   }
   const consensusRecordWallets = [...walletCapital.keys()]
     .sort((a,b) => (walletCapital.get(b) || 0) - (walletCapital.get(a) || 0))
-    .slice(0, CONSENSUS_WALLET_LIMIT);
+    .slice(0, CONSENSUS_SETTLEMENT_AUDIT_LIMIT);
+  console.log(`Settlement audit bounded to top ${consensusRecordWallets.length.toLocaleString()} highest-capital holders from ${walletCapital.size.toLocaleString()} eligible consensus holders; full ${CONSENSUS_WALLET_LIMIT.toLocaleString()}-wallet live-position discovery is unchanged.`);
   // Fully paginate the exact selected-period close history for each visible
   // Top 100 wallet. maxPositions=null means continue until the API confirms
   // there are no more pages or the period cutoff is reached.
