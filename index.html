@@ -160,11 +160,11 @@ dialog::backdrop{background:#000b}
         <div id="leaderModeNote" style="display:none"></div>
         <div class="table-wrap">
           <table>
-            <thead><tr id="leaderHeader"><th>#</th><th>Trader</th><th>30-day profitable / unprofitable closes</th><th>30-day close rate</th><th>Period P&amp;L</th><th>Volume</th></tr></thead>
+            <thead><tr id="leaderHeader"><th>#</th><th>Trader</th><th>30-day settled wins / losses</th><th>30-day settlement accuracy</th><th>Period P&amp;L</th><th>Volume</th></tr></thead>
             <tbody id="leadersBody"><tr><td colspan="6" class="loading">Loading traders…</td></tr></tbody>
           </table>
         </div>
-        <div class="source-note">Top 100 includes only traders with a complete rolling 30-day record, 20+ profitable/unprofitable market closes, 90%+ profitable-close rate, and positive 30-day realized P&L. Qualified traders are ranked by selected week/month P&L. Early exits count as closes; this is not settlement-only accuracy.</div>
+        <div class="source-note">Top 100 includes only traders with a complete rolling 30-day settlement record, 20+ resolved markets, 90%+ settlement accuracy, and positive 30-day realized P&L. Early exits and unresolved markets are excluded from wins and losses; incomplete settlement records display N/A.</div>
         <button class="link-button" id="leadersMore" onclick="toggleLeaders()">View all traders →</button>
       </section>
 
@@ -201,7 +201,7 @@ dialog::backdrop{background:#000b}
       </section>
       <details class="panel compact-details">
         <summary>Sports Trader Rankings</summary>
-        <div class="table-wrap"><table><thead><tr><th>#</th><th>Trader</th><th>Profitable / unprofitable closes</th><th>Close rate</th><th>Sample</th></tr></thead><tbody id="sportsLeadersBody"><tr><td colspan="5" class="loading">Loading sports traders…</td></tr></tbody></table></div>
+        <div class="table-wrap"><table><thead><tr><th>#</th><th>Trader</th><th>Settled wins / losses</th><th>Settlement accuracy</th><th>Sample</th></tr></thead><tbody id="sportsLeadersBody"><tr><td colspan="5" class="loading">Loading sports traders…</td></tr></tbody></table></div>
       </details>
     </div>
 
@@ -352,16 +352,15 @@ function walletOf(trader) {
 }
 
 function recordOf(trader) {
-  // The leaderboard record is the fully paginated selected-period
-  // profitable/unprofitable closed-market result, not a settlement-only ledger.
-  if (trader?.recordComplete !== true || trader?.recordVerified !== true) return null;
-  const wins = num(trader?.wins);
-  const losses = num(trader?.losses);
-  const resolved = num(trader?.resolvedMarkets);
+  // Public trader records must be independently verified settlement outcomes.
+  // Never fall back to closed-position profitability: that includes early exits.
+  if (trader?.settlementRecordComplete !== true || trader?.recordComplete !== true) return null;
+  const wins = num(trader?.settlementWins);
+  const losses = num(trader?.settlementLosses);
+  const resolved = wins !== null && losses !== null ? wins + losses : null;
   if (wins === null || losses === null || wins < 0 || losses < 0) return null;
-  const total = wins + losses;
-  if (total <= 0 || (resolved !== null && resolved !== total)) return null;
-  return {wins, losses, total, rate:wins / total * 100, verified:true, basis:"period-profitable-closes"};
+  if (resolved <= 0) return null;
+  return {wins, losses, total:resolved, rate:wins / resolved * 100, verified:true, basis:"verified-settlement-only"};
 }
 
 function recordText(trader) {
