@@ -350,7 +350,7 @@ function walletOf(trader) {
 function recordOf(trader) {
   // Public leaderboard wins/losses are populated from the verified settlement audit.
   // Closed-position profitability is a separate diagnostic and is not settlement accuracy.
-  if (trader?.recordComplete !== true || trader?.recordVerified !== true) return null;
+  if (trader?.recordComplete !== true || trader?.recordVerified !== true || trader?.settlementRecordComplete !== true) return null;
   const wins = num(trader?.wins);
   const losses = num(trader?.losses);
   const resolved = num(trader?.resolvedMarkets);
@@ -489,7 +489,7 @@ function consensus() {
       Array.isArray(market.members) ? market.members : [];
     const qualifiedTraders = traders.filter(trader => trader?.qualified === true).length;
     return {...market, traders, sameSide:num(market?.sameSide) ?? traders.length, qualifiedTraders:num(market?.qualifiedTraders) ?? qualifiedTraders};
-  }).filter(market => market.traders.length >= 2 && (market.signalTier !== "Strong Signals" || market.traders.every(t => t.qualified === true)));
+  }).filter(market => market.traders.length >= 2 && market.traders.every(t => t.settlementRecordComplete === true) && (market.signalTier !== "Strong Signals" || market.traders.every(t => t.qualified === true)));
 }
 
 async function loadConsensusData() {
@@ -709,7 +709,7 @@ function renderLeaders() {
   // Defensively enforce the published 30-day qualification in the browser too.
   // Never display an unqualified/stale row just because it appears in a JSON file.
   const qualifiedLeaderboard = baseList
-    .filter(trader => trader.recordComplete === true &&
+    .filter(trader => trader.recordComplete === true && trader.settlementRecordComplete === true &&
       Number(trader.resolvedMarkets) >= 20 &&
       Number(trader.winRate) >= 90 &&
       Number(trader.realizedPnlTotal) > 0)
@@ -731,8 +731,8 @@ function renderLeaders() {
       const marketPool = Array.isArray(data?.comboCandidates) ? data.comboCandidates : [];
       const marketTrader = marketPool.find(row => walletOf(row).toLowerCase() === String(trader.wallet).toLowerCase()) ||
         baseList.find(row => walletOf(row).toLowerCase() === String(trader.wallet).toLowerCase());
-      const marketWins = marketTrader?.recordVerified === true ? num(marketTrader?.wins) : null;
-      const marketLosses = marketTrader?.recordVerified === true ? num(marketTrader?.losses) : null;
+      const marketWins = marketTrader?.recordVerified === true && marketTrader?.settlementRecordComplete === true ? num(marketTrader?.wins) : null;
+      const marketLosses = marketTrader?.recordVerified === true && marketTrader?.settlementRecordComplete === true ? num(marketTrader?.losses) : null;
       const marketRecordSuffix = marketTrader?.recordComplete === false ? "+" : "";
       const marketPnl = num(marketTrader?.pnl ?? marketTrader?.profit), marketVolume = num(marketTrader?.volume ?? marketTrader?.vol);
       return `<tr><td class="rank">${index+1}</td><td><div class="trader-name">${avatar(trader.trader)}<span class="name-text">${profileButton({...trader.trader, wallet:trader.wallet}, nameOf(trader.trader))}</span>${favoriteButton(trader.wallet)}</div></td><td class="record">${trader.wins}</td><td class="record">${trader.losses}</td><td class="record">${trader.partial}</td><td class="record">${(trader.wins + trader.losses) ? (trader.wins / (trader.wins + trader.losses) * 100).toFixed(1) + "%" : "N/A"}</td><td class="${trader.pnlKnown && trader.profit < 0 ? "negative" : "positive"}">${trader.pnlKnown ? (trader.pnlMissing ? "Partial: " : "") + (trader.profit > 0 ? "+" : "") + cash(trader.profit) : "N/A"}</td><td class="record">${trader.pnlKnown}/${trader.combos} combos</td><td class="record">${marketWins !== null && marketLosses !== null ? marketWins + marketRecordSuffix + "–" + marketLosses + marketRecordSuffix : "N/A"}</td><td class="${marketPnl !== null && marketPnl < 0 ? "negative" : "positive"}">${marketPnl !== null ? cash(marketPnl) : "N/A"}</td><td class="money">${marketVolume !== null ? cash(marketVolume) : "N/A"}</td></tr>`;
@@ -758,11 +758,12 @@ function renderSportsLeaders() {
   const body = $("sportsLeadersBody");
   if (!body) return;
   body.innerHTML = rows.length ? rows.slice(0, 25).map((trader, index) => {
-    const wins = num(trader.sportsWins) ?? 0;
-    const losses = num(trader.sportsLosses) ?? 0;
-    const rate = num(trader.sportsWinRate);
-    const sample = num(trader.sportsResolvedMarkets) ?? 0;
-    return '<tr><td class="rank">' + (index + 1) + '</td><td><div class="trader-name">' + avatar(trader) + '<span class="name-text">' + profileButton(trader) + '</span></div></td><td class="record">' + wins + '–' + losses + '</td><td class="record">' + (rate === null ? 'N/A' : rate.toFixed(1) + '%') + '</td><td>' + sample + '</td></tr>';
+    const settlementVerified = trader.settlementRecordComplete === true;
+    const wins = settlementVerified ? num(trader.sportsWins) : null;
+    const losses = settlementVerified ? num(trader.sportsLosses) : null;
+    const rate = settlementVerified ? num(trader.sportsWinRate) : null;
+    const sample = settlementVerified ? num(trader.sportsResolvedMarkets) : null;
+    return '<tr><td class="rank">' + (index + 1) + '</td><td><div class="trader-name">' + avatar(trader) + '<span class="name-text">' + profileButton(trader) + '</span></div></td><td class="record">' + (wins === null || losses === null ? 'N/A' : wins + '–' + losses) + '</td><td class="record">' + (rate === null ? 'N/A' : rate.toFixed(1) + '%') + '</td><td>' + (sample === null ? 'N/A' : sample) + '</td></tr>';
   }).join('') : '<tr><td colspan="5" class="empty">No traders have five or more classifiable closed sports positions in this candidate pool yet.</td></tr>';
 }
 
@@ -990,7 +991,7 @@ function renderConsensus() {
         const hasReportedEntry = !buy && reportedAvgPrice !== null;
         const sellCost = sell?._cost;
         return '<div class="member member-compact">' +
-          '<div class="member-identity"><strong>' + profileButton(member, memberName) + favoriteButton(wallet) + '</strong><small class="member-record">' + (Number(consensusData?.qualificationWindowDays) || 7) + "-day settled record: " + (num(member.wins) !== null && num(member.losses) !== null ? num(member.wins).toLocaleString() + "–" + num(member.losses).toLocaleString() + " · " + (num(member.winRate) !== null ? num(member.winRate).toFixed(1) + "% settlement accuracy" : "settlement accuracy N/A") + " · " + (num(member.resolvedMarkets) ?? (num(member.wins)+num(member.losses))).toLocaleString() + " settled markets" : "Record incomplete / unavailable") + '</small><small>' + (num(member.weeklyPnl) !== null ? "7-day leaderboard P&L: " + consensusCash(num(member.weeklyPnl)) : "7-day leaderboard P&L unavailable") + '</small><small>' + (hasObservedBuy ? "Observed BUY · "+esc(dateText(buy?.timestamp)) : "Open position confirmed · original BUY timestamp not required") + '</small><small>' + (sell ? "SELL observed · "+esc(dateText(sell.timestamp)) : (!events ? "Checking later SELL trades…" : (member.isStillHolding === true || String(member.positionStatus || "").toUpperCase() === "OPEN" ? "Still listed as an open position; no SELL required" : "No matching SELL found in returned trade history"))) + '</small></div>' +
+          '<div class="member-identity"><strong>' + profileButton(member, memberName) + favoriteButton(wallet) + '</strong><small class="member-record">' + (Number(consensusData?.qualificationWindowDays) || 7) + "-day settled record: " + (member.settlementRecordComplete === true && num(member.wins) !== null && num(member.losses) !== null ? num(member.wins).toLocaleString() + "–" + num(member.losses).toLocaleString() + " · " + (num(member.winRate) !== null ? num(member.winRate).toFixed(1) + "% settlement accuracy" : "settlement accuracy N/A") + " · " + (num(member.resolvedMarkets) ?? (num(member.wins)+num(member.losses))).toLocaleString() + " settled markets" : "Record incomplete / unavailable") + '</small><small>' + (num(member.weeklyPnl) !== null ? "7-day leaderboard P&L: " + consensusCash(num(member.weeklyPnl)) : "7-day leaderboard P&L unavailable") + '</small><small>' + (hasObservedBuy ? "Observed BUY · "+esc(dateText(buy?.timestamp)) : "Open position confirmed · original BUY timestamp not required") + '</small><small>' + (sell ? "SELL observed · "+esc(dateText(sell.timestamp)) : (!events ? "Checking later SELL trades…" : (member.isStillHolding === true || String(member.positionStatus || "").toUpperCase() === "OPEN" ? "Still listed as an open position; no SELL required" : "No matching SELL found in returned trade history"))) + '</small></div>' +
           '<div><strong>' + (buyPrice === null ? "N/A" : tokenPrice(buyPrice)) + '</strong><small>' + (hasObservedBuy ? "Observed BUY price" : (reportedAvgPrice !== null ? "Average buy price from open position" : "Average buy price unavailable")) + '</small><small>' + (bought === null || bought === undefined ? (memberEntry !== null ? "Reported position entry value "+consensusCash(memberEntry)+" · exact trade cost unavailable" : "Entry cost unavailable; no matching BUY trade found") : (hasObservedBuy ? "Observed BUY / position entry "+consensusCash(bought) : "Reported position entry "+consensusCash(bought))+(shares !== null ? " · "+shares.toFixed(1)+" shares" : "")) + '</small>' + (bought !== null && memberValue !== null ? '<small>' + (buy ? "Approx. unrealized change: " : "Approx. change vs estimated entry: ") + (memberValue-bought>0?"+":"") + consensusCash(memberValue-bought) + " (" + (bought>0?((memberValue-bought)/bought*100).toFixed(1):"N/A") + "%)" + '</small>' : "") + '</div>' +
           '<div><strong>' + (sell && sell._price !== null ? (sell._price*100).toFixed(1)+"¢" : "—") + '</strong><small>Observed sell price</small><small>' + (sell ? "SELL transaction "+(sellCost === null ? "amount unavailable" : cash(sellCost)) : (!events ? "Loading transaction history" : "No matching SELL found")) + '</small><small>' + (memberValue !== null ? "Position value reported "+consensusCash(memberValue) : "Current held value unavailable") + '</small></div>' +
         '</div>';
