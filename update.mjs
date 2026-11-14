@@ -2298,11 +2298,43 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
 
   // Count every discovered weekly wallet, not only Top 100 traders or shared-market holders.
   // Reuse cached records so each wallet is queried only once in this period.
-  // Do not publish the early-exit-inclusive profitable-close diagnostic as a
-  // trader accuracy record. Public records and qualification use settlement-only
-  // outcomes from attachSettlementStats; early exits are tracked separately.
-  const qualificationCount = null;
-  output.qualificationCount = null;
+  let qualificationCount = null;
+  if (period.key === "week") {
+    const allCandidateRecords = records;
+    const completeRecordRows = Object.entries(allCandidateRecords)
+      .filter(([, record]) => record?.recordComplete === true);
+    const qualifies = (record, minimumTrades) => {
+      const wins = Number(record.wins);
+      const losses = Number(record.losses);
+      const resolved = Number(record.resolvedMarkets);
+      const rate = Number(record.winRate);
+      return Number.isFinite(wins) && Number.isFinite(losses) &&
+        Number.isFinite(resolved) && resolved === wins + losses &&
+        resolved >= minimumTrades &&
+        Number.isFinite(rate) && rate >= MIN_CONSENSUS_WIN_RATE;
+    };
+    const qualifiedWallets = completeRecordRows
+      .filter(([, record]) => qualifies(record, MIN_TRADER_RESOLVED_MARKETS))
+      .map(([wallet]) => wallet.toLowerCase());
+    const qualifiedAtLeastFiveTrades = completeRecordRows
+      .filter(([, record]) => qualifies(record, 5))
+      .map(([wallet]) => wallet.toLowerCase());
+    qualificationCount = {
+      profitableCloseTraderCount: qualifiedWallets.length,
+      profitableCloseTraderCountAtLeastFiveTrades: qualifiedAtLeastFiveTrades.length,
+      minimumTradesForCloseProfitabilityCount: 5,
+      candidateWalletsScanned: recordCandidates.length,
+      recordsReturned: Object.keys(allCandidateRecords).length,
+      completeRecords: completeRecordRows.length,
+      incompleteOrUnavailableRecords: recordCandidates.length - completeRecordRows.length,
+      minimumWinRate: MIN_CONSENSUS_WIN_RATE,
+      minimumResolvedMarkets: MIN_TRADER_RESOLVED_MARKETS,
+      windowDays: 7,
+      basis: "Trading-profitability diagnostic only: unique wallets from the discovered public leaderboard candidate pool; complete closed-position records within the last 7 days; one net profitable/unprofitable result per market. Early exits count. This is not settlement accuracy and is not used to qualify Top 100 or consensus signals."
+    };
+    output.qualificationCount = qualificationCount;
+    console.log("Weekly all-candidate qualification count: " + JSON.stringify(qualificationCount));
+  }
   // The public position API does not provide a complete, bounded settlement
   // history for every wallet. Keep the period-scoped close-profitability
   // counts computed by rankCandidates; never relabel them as settled W-L.
