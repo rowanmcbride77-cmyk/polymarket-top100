@@ -928,14 +928,7 @@ async function getBroadConsensusMarkets(knownTraders, nowMs, activePositions) {
           sort_by: "CURRENT_VALUE",
           sort_direction: "DESC"
         });
-        // CLOSED rows are bounded by their exit event. Held positions must be
-      // fetched without activity bounds because they may have been bought
-      // before the 30-day window but still resolve inside it.
-      if (status === "CLOSED") {
-        params.set("start", String(Math.floor(periodCutoffMs / 1000)));
-        params.set("end", String(Math.floor(nowMs / 1000)));
-      }
-      if (cursor) params.set("cursor", cursor);
+        if (cursor) params.set("cursor", cursor);
         const response = await getJson(API + "/v2/positions?" + params);
         const rows = asArray(response);
         const pagination = response?.pagination ?? {};
@@ -1660,6 +1653,13 @@ async function getSettlementStats(wallet, period, nowMs, limit = 250) {
         sort_by: "TIMESTAMP",
         sort_direction: "DESC"
       });
+      // CLOSED rows are bounded by their exit event. Held positions must be
+      // fetched without activity bounds because they may have been bought
+      // before the 30-day window but still resolve inside it.
+      if (status === "CLOSED") {
+        params.set("start", String(Math.floor(periodCutoffMs / 1000)));
+        params.set("end", String(Math.floor(nowMs / 1000)));
+      }
       if (cursor) params.set("cursor", cursor);
       const response = await getJson(`${API}/v2/positions?${params}`);
       const page = asArray(response);
