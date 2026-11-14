@@ -18,8 +18,10 @@ permissions:
 
 concurrency:
   group: polymarket-scanner-update-v9
-  # A new push or scheduled trigger must not kill a scan halfway through.
-  cancel-in-progress: false
+  # A newer scanner build supersedes an older run. The scanner writes no
+  # published JSON until every output passes validation, so cancellation
+  # preserves the last known-good data instead of leaving partial files.
+  cancel-in-progress: true
 
 jobs:
   update:
