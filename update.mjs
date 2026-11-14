@@ -1698,7 +1698,9 @@ async function getSettlementStats(wallet, period, nowMs, limit = 250) {
   // A truncated cohort means settlement accuracy is unknown, so fail closed.
   const allPagesComplete = cohorts.every(cohort => cohort.complete);
   const uniqueRows = new Map();
-  const priority = status => status === "CLOSED" ? 2 : status === "REDEEMABLE_LOST" ? 1 : 0;
+  // Prefer a position still held at resolution over an earlier closed row
+  // for the same outcome (e.g. sell, then re-enter before settlement).
+  const priority = status => status === "OPEN" ? 3 : status === "REDEEMABLE_LOST" ? 2 : 1;
   for (let cohortIndex = 0; cohortIndex < cohorts.length; cohortIndex++) {
     const cohort = cohorts[cohortIndex];
     if (cohortIndex === 1 && !cohort.complete) continue;
