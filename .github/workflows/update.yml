@@ -81,8 +81,12 @@ jobs:
               const invalid = leaders.filter(row => {
                 const wins = Number(row.wins), losses = Number(row.losses);
                 const resolved = Number(row.resolvedMarkets), rate = Number(row.winRate);
+                const checked = Number(row.settlementPositionsChecked), unclassified = Number(row.settlementPositionsUnclassified);
+                const pnlBasis = String(row.realizedPnlBasis || "").toLowerCase();
                 return !row.wallet || !Number.isFinite(Number(row.pnl)) ||
                   row.recordComplete !== true || row.recordVerified !== true || row.settlementRecordComplete !== true ||
+                  !Number.isFinite(checked) || checked <= 0 || !Number.isFinite(unclassified) || unclassified !== 0 ||
+                  !pnlBasis.includes("includes early exits") || !pnlBasis.includes("never as settlement") ||
                   !Number.isFinite(wins) || wins < 0 || !Number.isFinite(losses) || losses < 0 ||
                   !Number.isFinite(resolved) || resolved !== wins + losses || resolved < 20 ||
                   !Number.isFinite(rate) || rate < 90 || Math.abs(rate - wins / resolved * 100) > 1e-6 ||
@@ -99,6 +103,11 @@ jobs:
               const proxyFields = ["wins", "losses", "winRate", "resolvedMarkets", "sportsWins", "sportsLosses", "sportsWinRate", "sportsResolvedMarkets"];
               const leaked = discoveryRows.filter(row => proxyFields.some(key => row[key] !== null && row[key] !== undefined));
               if (leaked.length) throw new Error(`${file} exposes close-profitability proxies in sports/combo discovery W/L fields (${leaked.length} rows)`);
+              const unlabeledRealizedPnl = discoveryRows.filter(row =>
+                row.realizedPnlTotal !== null && row.realizedPnlTotal !== undefined &&
+                !String(row.realizedPnlBasis || "").toLowerCase().includes("includes early exits")
+              );
+              if (unlabeledRealizedPnl.length) throw new Error(`${file} exposes realized close P&L without an early-exit disclosure (${unlabeledRealizedPnl.length} rows)`);
             }
             if (file === "consensus-week.json" || file === "consensus-month.json") {
               const groups = Array.isArray(parsed.consensus) ? parsed.consensus : [];
@@ -122,7 +131,9 @@ jobs:
                   if (!strong) return false;
                   const wins = Number(row.wins), losses = Number(row.losses), resolved = Number(row.resolvedMarkets);
                   const rate = Number(row.winRate), shares = Number(row.shares ?? row.size);
+                  const checked = Number(row.settlementPositionsChecked), unclassified = Number(row.settlementPositionsUnclassified);
                   return row.qualified !== true || row.recordComplete !== true || row.settlementRecordComplete !== true ||
+                    !Number.isFinite(checked) || checked <= 0 || !Number.isFinite(unclassified) || unclassified !== 0 ||
                     !Number.isFinite(wins) || wins < 0 || !Number.isFinite(losses) || losses < 0 ||
                     !Number.isFinite(resolved) || resolved !== wins + losses || resolved < 20 ||
                     !Number.isFinite(rate) || rate < 90 || Math.abs(rate - wins / resolved * 100) > 1e-6 ||
