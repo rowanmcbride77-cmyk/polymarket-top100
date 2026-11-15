@@ -90,7 +90,7 @@ jobs:
                   !Number.isFinite(Number(row.realizedPnlTotal)) || Number(row.realizedPnlTotal) <= 0;
               });
               if (invalid.length) throw new Error(`${file}: ${invalid.length} rows fail the complete 30-day / 20+ / 90%+ / positive-P&L gate`);
-              if (!leaders.length) console.log(`${file}: zero traders passed the settlement-only qualification gate; publishing explicit empty qualified list.`);
+              if (!leaders.length) throw new Error(`${file} has no qualified settlement-verified leaders; refusing to replace the last valid publication.`);
               console.log(`${file}: ${leaders.length} settlement-verified qualified leaders`);
               const discoveryRows = [
                 ...(Array.isArray(parsed.sportsLeaders) ? parsed.sportsLeaders : []),
@@ -102,7 +102,7 @@ jobs:
             }
             if (file === "consensus-week.json" || file === "consensus-month.json") {
               const groups = Array.isArray(parsed.consensus) ? parsed.consensus : [];
-              if (!groups.length) console.log(`${file}: zero markets passed the settlement-only consensus gate; publishing explicit empty qualified list.`);
+              if (!groups.length) throw new Error(`${file} has no qualified consensus markets; refusing to replace the last valid publication.`);
               const seenConditions = new Set();
               const invalid = groups.filter(group => {
                 const traders = Array.isArray(group.traders) ? group.traders : [];
