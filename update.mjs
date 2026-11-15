@@ -323,6 +323,7 @@ async function getResolvedRecord(wallet, period, nowMs, maxPositions = RANKING_R
     wins: publishableRecord ? wins : null,
     losses: publishableRecord ? losses : null,
     realizedPnlTotal: publishableRecord ? realizedPnlTotal : null,
+    realizedPnlBasis: "Rolling closed-position realized P&L; includes early exits and is used only as a separate profitability measure, never as settlement wins, losses, resolved markets, or accuracy.",
     sportsWins: recordComplete ? sportsWins : null,
     sportsLosses: recordComplete ? sportsLosses : null,
     sportsResolvedMarkets: recordComplete ? sportsWins + sportsLosses : null,
@@ -1940,6 +1941,7 @@ function makeOutput(period, ranked, sportsRanked, activePositions, tradeRows, no
     rankingBasis:
       "Top 100 includes only discovered active-position traders who pass the complete rolling 30-day settlement gate: 20+ settled markets, 90%+ settlement accuracy, and positive 30-day realized P&L.",
     recordBasis: "Published Top 100 wins, losses, and win rate are verified settlement outcomes only. Positions exited before resolution are excluded.",
+    realizedPnlBasis: "Separate rolling closed-position dollar P&L may include early exits; it is not a settlement outcome or accuracy measure.",
     candidateCount: ranked.length,
     sportsLeaders: sportsRanked.slice(0, LEADER_COUNT).map(trader => ({
       ...trader,
