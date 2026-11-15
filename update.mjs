@@ -1823,7 +1823,7 @@ async function getSettlementStats(wallet, period, nowMs, limit = 250) {
     earlyExitMarkets:earlyKeys.size, earlyExitPositions, settlementRecordComplete,
     settlementPositionsChecked:positions.length, settlementPositionsClassified:classified,
     settlementPositionsUnclassified:unclassified,
-    settlementRecordBasis:"Settlement-only record: verified market outcomes; positions exited before resolution excluded from wins and losses; complete CLOSED, OPEN, and REDEEMABLE_LOST cohorts plus verified market metadata required",
+    settlementRecordBasis:"Settlement-only record: verified market outcomes; positions exited before resolution excluded from wins and losses; complete CLOSED, REDEEMABLE, and REDEEMABLE_LOST cohorts plus verified market metadata required. OPEN positions are unresolved and excluded.",
     settlementRecordCoverage:settlementRecordComplete?"complete":"partial"
   };
 }
@@ -2191,6 +2191,10 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
       settlementLosses: losses,
       earlyExitMarkets: trader.earlyExitMarkets ?? null,
       earlyExitPositions: trader.earlyExitPositions ?? null,
+      settlementPositionsChecked: trader.settlementPositionsChecked ?? 0,
+      settlementPositionsClassified: trader.settlementPositionsClassified ?? 0,
+      settlementPositionsUnclassified: trader.settlementPositionsUnclassified ?? 0,
+      settlementRecordCoverage: trader.settlementRecordCoverage ?? (trader.settlementRecordComplete === true ? "complete" : "partial"),
       recordBasis: trader.settlementRecordBasis || "Settlement history incomplete; excluded from prediction qualification"
     }];
   }));
