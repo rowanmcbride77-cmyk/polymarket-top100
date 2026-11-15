@@ -2486,3 +2486,4 @@ main().catch(error => {
   console.error("Polymarket update failed:", error);
   process.exitCode = 1;
 });
+// Manual refresh trigger: run the existing validated scanner workflow without changing scan logic.
