@@ -277,7 +277,7 @@ let period = "week";
 let data = null;
 let consensusData = null;
 let allLeaders = true;
-let allMarkets = false;
+let allMarkets = true;
 let allCombos = false;
 let comboRows = [];
 let comboLoadFinished = false;
@@ -833,19 +833,16 @@ function renderConsensus() {
   const minCount = Number($("minTraders").value || 2);
   const qualificationDays = Number(consensusData?.qualificationWindowDays) || 30;
   const qualificationCloses = Number(consensusData?.minimumResolvedMarkets) || 20;
-  const nowSeconds = Date.now() / 1000;
-  const windowHours = 48; // Sports markets may remain visible for 48 hours; non-sports are filtered to 24 hours below.
-  const cutoffSeconds = nowSeconds + windowHours * 60 * 60;
   const filteredSides = consensus().map((market, index) => {
       const endSeconds = marketEndTimestamp(market);
       return {...market, _index:index, _endSeconds:endSeconds};
     })
-    .filter(market => market.marketMetadataVerified === true &&
+    // Show every market the scanner has verified as currently active and open.
+    // Do not hide started games, missing/estimated end dates, or markets outside
+    // an arbitrary 24/48-hour resolution window.
+    .filter(market =>
+      market.marketMetadataVerified === true &&
       market.marketClosed === false &&
-      market._endSeconds !== null &&
-      market._endSeconds > nowSeconds &&
-      market._endSeconds <= cutoffSeconds &&
-      (String(market.category || "").toLowerCase() === "sports" || market._endSeconds <= nowSeconds + 24 * 60 * 60) &&
       traderCount(market) >= minCount)
     .sort((a, b) =>
       (["Strong Signals","Developing Signals","Watchlist"].indexOf(a.signalTier) - ["Strong Signals","Developing Signals","Watchlist"].indexOf(b.signalTier)) ||
