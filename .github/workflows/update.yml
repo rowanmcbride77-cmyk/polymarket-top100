@@ -89,7 +89,8 @@ jobs:
                   !String(row.recordBasis || "").toLowerCase().includes("settlement-only") ||
                   !Number.isFinite(Number(row.realizedPnlTotal)) || Number(row.realizedPnlTotal) <= 0;
               });
-              if (!leaders.length || invalid.length) throw new Error(`${file}: ${invalid.length} rows fail the complete 30-day / 20+ / 90%+ / positive-P&L gate`);
+              if (invalid.length) throw new Error(`${file}: ${invalid.length} rows fail the complete 30-day / 20+ / 90%+ / positive-P&L gate`);
+              if (!leaders.length) console.log(`${file}: zero traders passed the settlement-only qualification gate; publishing explicit empty qualified list.`);
               console.log(`${file}: ${leaders.length} settlement-verified qualified leaders`);
               const discoveryRows = [
                 ...(Array.isArray(parsed.sportsLeaders) ? parsed.sportsLeaders : []),
@@ -101,7 +102,7 @@ jobs:
             }
             if (file === "consensus-week.json" || file === "consensus-month.json") {
               const groups = Array.isArray(parsed.consensus) ? parsed.consensus : [];
-              if (!groups.length) throw new Error(`${file}: no qualified consensus markets; refusing to publish an empty dataset`);
+              if (!groups.length) console.log(`${file}: zero markets passed the settlement-only consensus gate; publishing explicit empty qualified list.`);
               const seenConditions = new Set();
               const invalid = groups.filter(group => {
                 const traders = Array.isArray(group.traders) ? group.traders : [];
@@ -159,6 +160,16 @@ jobs:
           cp month.json /tmp/scanner-month.json
           cp consensus-week.json /tmp/scanner-consensus-week.json
           cp consensus-month.json /tmp/scanner-consensus-month.json
+          node --input-type=module <<'NODE'
+          import fs from "node:fs/promises";
+          const files = ["week.json", "month.json", "consensus-week.json", "consensus-month.json"];
+          const docs = await Promise.all(files.map(async file => JSON.parse(await fs.readFile(file, "utf8"))));
+          const stamps = docs.map(doc => doc.generatedAt);
+          if (!stamps.every(value => value === stamps[0])) throw new Error("Cannot publish status: generatedAt values differ");
+          const status = {startedAt: stamps[0], finishedAt: new Date().toISOString(), ok: true, errors: [], weekLeaders: docs[0].leaders?.length ?? 0, monthLeaders: docs[1].leaders?.length ?? 0, consensusMarkets: docs[2].consensus?.length ?? 0, recordBasis: "Settlement-only: positions exited before actual market resolution are excluded from wins, losses, win rates, and qualification. Incomplete settlement histories are withheld."};
+          await fs.writeFile("status.json", JSON.stringify(status, null, 2) + "\n");
+          NODE
+          cp status.json /tmp/scanner-status.json
           git fetch origin main
           FRESHNESS="$(node --input-type=module <<'NODE'
           import fs from "node:fs/promises";
@@ -180,7 +191,8 @@ jobs:
           cp /tmp/scanner-month.json month.json
           cp /tmp/scanner-consensus-week.json consensus-week.json
           cp /tmp/scanner-consensus-month.json consensus-month.json
-          git add week.json month.json consensus-week.json consensus-month.json
+          cp /tmp/scanner-status.json status.json
+          git add week.json month.json consensus-week.json consensus-month.json status.json
           if ! git diff --cached --quiet; then
             git commit -m "Update Polymarket scanner data"
             git push origin HEAD:main
