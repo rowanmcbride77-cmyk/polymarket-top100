@@ -1716,7 +1716,11 @@ async function getSettlementStats(wallet, period, nowMs, limit = 250) {
   for (let i = 0; i < conditions.length; i += 100) conditionChunks.push(conditions.slice(i, i + 100));
   const marketPages = await mapLimit(conditionChunks, CONCURRENCY, async ids => {
     const q = new URLSearchParams();
-    q.set("limit", "1000");
+    // Gamma defaults to closed=false, which silently omits resolved markets.
+    // Settlement verification needs metadata for both live early exits and
+    // actually resolved markets, so explicitly request the complete status set.
+    q.set("closed", "any");
+    q.set("limit", String(Math.min(ids.length, 100)));
     for (const id of ids) q.append("condition_ids", id);
     try {
       return {rows:asArray(await getJson(`${GAMMA_API}/markets?${q.toString()}`)), ok:true};
@@ -1781,7 +1785,10 @@ async function getSettlementStats(wallet, period, nowMs, limit = 250) {
 
     const rawIndex = position.outcome_index ?? position.outcomeIndex;
     let positionIndex = rawIndex === null || rawIndex === undefined ? -1 : Number(rawIndex);
-    if (!Number.isInteger(positionIndex) || positionIndex < 0) {
+    // Data API v2 uses 999 as an explicit "outcome not labeled" sentinel.
+    // If the row still includes an exact outcome label, resolve it against
+    // Gamma's canonical outcome list; never infer a side from prices or P&L.
+    if (!Number.isInteger(positionIndex) || positionIndex < 0 || positionIndex === 999 || positionIndex >= outcomes.length) {
       const outcome = String(position.outcome ?? "").trim().toLowerCase();
       positionIndex = outcomes.findIndex(label => String(label).trim().toLowerCase() === outcome);
     }
