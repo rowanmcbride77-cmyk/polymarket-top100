@@ -113,6 +113,7 @@ jobs:
                 const condition = String(group.conditionId || "").trim().toLowerCase();
                 const side = String(group.side || "").trim().toLowerCase();
                 const duplicateCondition = !condition || seenConditions.has(condition);
+                const mixedSide = traders.some(row => String(row.side || "").trim().toLowerCase() !== side);
                 if (condition) seenConditions.add(condition);
                 const invalidTrader = traders.some(row => {
                   const value = Number(row.currentValue);
@@ -137,7 +138,7 @@ jobs:
                 const hasEnd = end !== null && end !== undefined && String(end).trim() !== "";
                 return duplicateCondition || !side || !validTier || group.marketMetadataVerified !== true || group.marketClosed !== false ||
                   !hasEnd || !Number.isFinite(endMs) || wallets.size < 2 || wallets.size !== traders.length ||
-                  !Number.isFinite(Number(group.sameSide)) || Number(group.sameSide) !== traders.length || invalidTrader;
+                  !Number.isFinite(Number(group.sameSide)) || Number(group.sameSide) !== traders.length || mixedSide || invalidTrader;
               });
               if (invalid.length) throw new Error(`${file} contains ${invalid.length} invalid consensus groups`);
               console.log(`${file}: ${groups.length} validated consensus groups`);
