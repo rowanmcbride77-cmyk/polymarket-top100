@@ -183,6 +183,10 @@ jobs:
           NODE
           cp status.json /tmp/scanner-status.json
           git fetch origin main
+          if [ "$GITHUB_SHA" != "$(git rev-parse origin/main)" ]; then
+            echo "Skipping publication from outdated scan commit $GITHUB_SHA; main has advanced to $(git rev-parse origin/main)."
+            exit 0
+          fi
           FRESHNESS="$(node --input-type=module <<'NODE'
           import fs from "node:fs/promises";
           import { execFileSync } from "node:child_process";
