@@ -2121,13 +2121,20 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
       if (!selectedConsensusWallets.has(wallet)) { selectedConsensusWallets.add(wallet); added++; }
     }
   }
-  const otherRows = [...totalCapital.entries()].sort((a,b) => b[1]-a[1]);
+  const otherCapital = new Map();
+  for (const [category, wallets] of categoryWallets) {
+    if (["sports","crypto","esports"].includes(category)) continue;
+    for (const [wallet, capital] of wallets) otherCapital.set(wallet, (otherCapital.get(wallet) || 0) + capital);
+  }
+  const otherRows = [...otherCapital.entries()].sort((a,b) => b[1]-a[1]);
   let otherAdded = 0;
   for (const [wallet] of otherRows) {
     if (otherAdded >= categoryBudgets.other || selectedConsensusWallets.size >= auditBudget) break;
     if (!selectedConsensusWallets.has(wallet)) { selectedConsensusWallets.add(wallet); otherAdded++; }
   }
-  for (const [wallet] of otherRows) {
+  // If a category has fewer eligible wallets than its reserved quota, fill
+  // unused slots from the global capital ranking without exceeding the budget.
+  for (const [wallet] of [...totalCapital.entries()].sort((a,b) => b[1]-a[1])) {
     if (selectedConsensusWallets.size >= auditBudget) break;
     selectedConsensusWallets.add(wallet);
   }
