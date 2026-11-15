@@ -26,6 +26,9 @@ const MAX_LEADERBOARD_PAGES_PER_STREAM = 30;
 const POSITION_FETCH_LIMIT = 100;
 const POSITIONS_PER_TRADER = 10;
 const RANKING_RECORD_LIMIT = 1000;
+// Expand the strict Top 100 qualification sample without auditing the full 20k discovery pool.
+// This increases candidate coverage while keeping the expensive history audit bounded.
+const LEADER_QUALIFICATION_AUDIT_LIMIT = 2500;
 // Bound closed-position history requests. Records that hit this cap are marked
 // incomplete and withheld rather than presented as complete win/loss stats.
 const CLOSED_POSITION_SCAN_LIMIT = null; // Fully paginate the entire rolling 30-day close history; capped samples cannot qualify.
@@ -41,8 +44,8 @@ const CONSENSUS_SETTLEMENT_AUDIT_LIMIT = 1000;
 const MAX_CONSENSUS_POSITION_PAGES_PER_WALLET = 1;
 const MAX_SPORTS_CONSENSUS_POSITION_PAGES_PER_WALLET = 2;
 const LEADER_RECORD_LIMIT = RANKING_RECORD_LIMIT;
-// Keep upcoming markets in the data so the UI can filter 24h / 3d / 7d accurately.
-const CONSENSUS_WINDOW_HOURS = 48; // Sports markets may remain eligible through the estimated finish of games starting within 48 hours.
+// Retained for dashboard horizon labels only; active sports eligibility is not time-window limited.
+const CONSENSUS_WINDOW_HOURS = 48;
 const CONSENSUS_HOLDERS_PER_MARKET = 1000;
 const MIN_CONSENSUS_DISCOVERY_VALUE = 3; // Discovery feeds Developing/Watchlist; Strong Signals retain the $10 gate.
 const MIN_CONSENSUS_POSITION_VALUE = 10;
@@ -1117,8 +1120,9 @@ function classifyMarketCategory(market, group = {}) {
   return "other";
 }
 async function getDirectSportsConsensusGroups(nowMs, knownNames = new Map()) {
-  // Gamma groups sports markets under events. Query /events by league tag,
-  // then flatten each event's markets so event kickoff metadata is retained.
+  // Gamma groups sports markets under events. Query a wider page for each
+  // league tag, then flatten all active event markets; do not apply kickoff,
+  // end-date, or 48-hour filters to explicitly active markets.
   const sports = [
     ["NFL","nfl"],["NBA","nba"],["WNBA","wnba"],["MLB","mlb"],["NHL","nhl"],
     ["NCAAF","ncaaf"],["NCAAB","ncaab"],["Soccer","soccer"],["EPL","epl"],
@@ -1128,7 +1132,7 @@ async function getDirectSportsConsensusGroups(nowMs, knownNames = new Map()) {
   const marketByCondition = new Map(), familyCounts = {};
   for (const [family, tagSlug] of sports) {
     const params = new URLSearchParams({
-      tag_slug:tagSlug,active:"true",closed:"false",limit:"100",order:"startDate",ascending:"true"
+      tag_slug:tagSlug,active:"true",closed:"false",limit:"500",order:"startDate",ascending:"true"
     });
     let familyMarkets = 0, eventCount = 0, marketCount = 0, inWindow = 0;
     try {
@@ -1151,13 +1155,11 @@ async function getDirectSportsConsensusGroups(nowMs, knownNames = new Map()) {
         const conditionId = String(market.conditionId ?? market.condition_id ?? "").toLowerCase();
         if (!conditionId || market.closed === true || String(market.closed).toLowerCase() === "true" ||
             market.active === false || String(market.active).toLowerCase() === "false") continue;
-        const timing = consensusTiming(market);
-        let endMs = timestampMs(timing.endDate);
-        if (typeof timing.endDate === "string" && /^\\d{4}-\\d{2}-\\d{2}$/.test(timing.endDate)) {
-          endMs = Date.parse(timing.endDate + "T23:59:59.999Z");
-        }
-        if (endMs === null || endMs <= nowMs || endMs > nowMs + CONSENSUS_WINDOW_HOURS * 60 * 60 * 1000) continue;
+        // Gamma's active=true / closed=false flags are authoritative. Do not
+        // discard games that have started, are in progress, or have stale
+        // estimated end dates while the market remains actively tradable.
         inWindow++;
+        const timing = consensusTiming(market);
         if (!marketByCondition.has(conditionId)) {
           marketByCondition.set(conditionId,{
             ...market,conditionId,category:"sports",sport:family,
@@ -1167,7 +1169,7 @@ async function getDirectSportsConsensusGroups(nowMs, knownNames = new Map()) {
           });
           familyMarkets++;
         }
-        if (familyMarkets >= 100) break;
+        if (familyMarkets >= 500) break;
       }
     } catch (error) {
       console.warn(`Direct ${family} event discovery failed for tag slug ${tagSlug}:`,error.message);
@@ -2151,14 +2153,11 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     {volume: trader.volume ?? null, volumeBasis: trader.volumeBasis || "Unavailable from period user-volume endpoint"}
   ]));
   console.log(period.key + ": independently audited " + consensusRecordCandidates.length + " shared-market holders for consensus; Top 100 audit covers the full " + discoveredCandidates.length + "-wallet leaderboard candidate pool.");
-  // Audit only the highest-ranked 1,000 leaderboard candidates by selected-period P&L.
-  // Auditing every discovered wallet (19k-20k) added tens of thousands of
-  // paginated API calls after consensus had already been discovered and was
-  // the main reason the scheduled run hit its hard timeout. The candidate
-  // discovery pool and 20,000-wallet consensus overlap scan remain unchanged;
-  // this is an explicit, bounded qualification sample for the Top 100.
+  // Audit a wider, bounded P&L-ranked sample so the Top 100 is not artificially
+  // capped by the first 1,000 candidates. Keep the audit well below the full
+  // 19k-20k discovery pool to avoid tens of thousands of history requests.
   const leaderAuditCandidates = rankCandidates(usableLeaderboardCandidates, {})
-    .slice(0, RANKING_RECORD_LIMIT);
+    .slice(0, LEADER_QUALIFICATION_AUDIT_LIMIT);
   const leaderAuditRecords = await attachRecords(
     leaderAuditCandidates,
     CONSENSUS_RECORD_PERIOD,
