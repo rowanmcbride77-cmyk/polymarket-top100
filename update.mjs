@@ -2202,10 +2202,31 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
       const wallet = String(candidate.wallet || "").toLowerCase();
       const closeRecord = leaderAuditRecords[wallet] || {};
       const settlement = leaderSettlementByWallet[wallet] || {};
-      return {...candidate, ...closeRecord, ...settlement,
-        realizedPnlTotal: closeRecord.realizedPnlTotal, wallet};
+      // Fail closed: a closed-position profitability record is NOT settlement
+      // accuracy. Only the independent market-resolution audit may supply W/L
+      // counts or qualify a Top 100 trader. Missing/partial settlement rows
+      // must never fall back to the closeRecord's early-exit-inclusive stats.
+      const wins = num(settlement.settlementWins);
+      const losses = num(settlement.settlementLosses);
+      const resolvedMarkets = wins !== null && losses !== null ? wins + losses : null;
+      const settlementComplete = settlement.settlementRecordComplete === true &&
+        resolvedMarkets !== null && resolvedMarkets > 0;
+      return {
+        ...candidate,
+        ...closeRecord,
+        ...settlement,
+        wins: settlementComplete ? wins : null,
+        losses: settlementComplete ? losses : null,
+        resolvedMarkets: settlementComplete ? resolvedMarkets : null,
+        winRate: settlementComplete ? wins / resolvedMarkets * 100 : null,
+        recordComplete: settlementComplete,
+        settlementRecordComplete: settlementComplete,
+        realizedPnlTotal: closeRecord.realizedPnlTotal,
+        wallet
+      };
     })
-    .filter(trader => trader.recordComplete === true &&
+    .filter(trader => trader.settlementRecordComplete === true &&
+      trader.recordComplete === true &&
       Number(trader.resolvedMarkets) >= MIN_CONSENSUS_CLOSED_MARKETS &&
       Number(trader.winRate) >= MIN_CONSENSUS_WIN_RATE &&
       Number(trader.realizedPnlTotal) > 0)
@@ -2339,11 +2360,9 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     // Do not publish the close-profitability diagnostic: its closed-position proxy includes early exits and is not settlement accuracy.
     console.log("Weekly all-candidate qualification count: " + JSON.stringify(qualificationCount));
   }
-  // The public position API does not provide a complete, bounded settlement
-  // history for every wallet. Keep the period-scoped close-profitability
-  // counts computed by rankCandidates; never relabel them as settled W-L.
-  // This avoids a second, slow settlement scan that mostly returns
-  // incomplete records and hides every trader record.
+  // Do not use period-scoped closed-position W/L as public accuracy.
+  // Those counts include early exits; only the independent settlement audit
+  // above may populate Top 100 wins, losses, win rate, or qualification.
   output.leaders = await attachPeriodVolumes(output.leaders, period, nowMs);
   output.leaders = output.leaders.map(trader => ({
     ...trader,
