@@ -2065,8 +2065,14 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
   // Watchlist groups, so auditing holders with <$10 verified entry cost or
   // <$10 current value can never change a published Strong Signal result.
   // Keep the complete 20,000-wallet position-discovery pool unchanged.
-  const walletCapital = new Map();
+  // Allocate the fixed settlement-audit budget across market categories.
+  // A single global capital sort starved sports/props because crypto and
+  // high-dollar macro markets dominated the first 1,000 wallets. Keep the
+  // same 1,000-wallet request budget (and therefore similar runtime), but
+  // reserve coverage for sports, crypto, esports and the remaining categories.
+  const walletCategoryCapital = new Map();
   for (const group of consensusGroups) {
+    const category = String(group.category || classifyMarketCategory({}, group) || "other").toLowerCase();
     for (const holder of (Array.isArray(group.traders) ? group.traders : [])) {
       const wallet = String(holder.wallet || "").toLowerCase();
       if (!wallet) continue;
@@ -2079,13 +2085,54 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
         entryCost >= MIN_CONSENSUS_ENTRY_VALUE &&
         currentValue !== null && currentValue >= MIN_CONSENSUS_POSITION_VALUE;
       if (!hasVerifiedStrongEntry) continue;
-      walletCapital.set(wallet, (walletCapital.get(wallet) || 0) + entryCost);
+      if (!walletCategoryCapital.has(wallet)) walletCategoryCapital.set(wallet, new Map());
+      const byCategory = walletCategoryCapital.get(wallet);
+      byCategory.set(category, (byCategory.get(category) || 0) + entryCost);
     }
   }
-  const consensusRecordWallets = [...walletCapital.keys()]
-    .sort((a,b) => (walletCapital.get(b) || 0) - (walletCapital.get(a) || 0))
-    .slice(0, CONSENSUS_SETTLEMENT_AUDIT_LIMIT);
-  console.log(`Settlement audit bounded to top ${consensusRecordWallets.length.toLocaleString()} highest-capital holders from ${walletCapital.size.toLocaleString()} eligible consensus holders; full ${CONSENSUS_WALLET_LIMIT.toLocaleString()}-wallet live-position discovery is unchanged.`);
+  const categoryWallets = new Map();
+  const totalCapital = new Map();
+  for (const [wallet, byCategory] of walletCategoryCapital) {
+    totalCapital.set(wallet, [...byCategory.values()].reduce((sum, value) => sum + value, 0));
+    for (const [category, capital] of byCategory) {
+      if (!categoryWallets.has(category)) categoryWallets.set(category, new Map());
+      categoryWallets.get(category).set(wallet, capital);
+    }
+  }
+  const auditBudget = CONSENSUS_SETTLEMENT_AUDIT_LIMIT;
+  const categoryBudgets = {sports:400, crypto:200, esports:100, other:300};
+  const selectedConsensusWallets = new Set();
+  const addCategory = (category, budget) => {
+    const rows = [...(categoryWallets.get(category) || new Map()).entries()]
+      .sort((a,b) => b[1] - a[1]);
+    for (const [wallet] of rows) {
+      if (selectedConsensusWallets.size >= auditBudget || selectedConsensusWallets.size >= budget + [...selectedConsensusWallets].length) break;
+      selectedConsensusWallets.add(wallet);
+    }
+  };
+  // Apply category-specific quotas independently, then use unused capacity
+  // for the strongest remaining holders across every category.
+  for (const category of ["sports","crypto","esports"]) {
+    const quota = categoryBudgets[category];
+    const rows = [...(categoryWallets.get(category) || new Map()).entries()].sort((a,b) => b[1]-a[1]);
+    let added = 0;
+    for (const [wallet] of rows) {
+      if (added >= quota || selectedConsensusWallets.size >= auditBudget) break;
+      if (!selectedConsensusWallets.has(wallet)) { selectedConsensusWallets.add(wallet); added++; }
+    }
+  }
+  const otherRows = [...totalCapital.entries()].sort((a,b) => b[1]-a[1]);
+  let otherAdded = 0;
+  for (const [wallet] of otherRows) {
+    if (otherAdded >= categoryBudgets.other || selectedConsensusWallets.size >= auditBudget) break;
+    if (!selectedConsensusWallets.has(wallet)) { selectedConsensusWallets.add(wallet); otherAdded++; }
+  }
+  for (const [wallet] of otherRows) {
+    if (selectedConsensusWallets.size >= auditBudget) break;
+    selectedConsensusWallets.add(wallet);
+  }
+  const consensusRecordWallets = [...selectedConsensusWallets];
+  console.log(`Settlement audit balanced across categories: ${consensusRecordWallets.length.toLocaleString()} wallets from ${walletCategoryCapital.size.toLocaleString()} eligible holders; category quotas sports=400, crypto=200, esports=100, other=300; full ${CONSENSUS_WALLET_LIMIT.toLocaleString()}-wallet live-position discovery and the 1,000-wallet audit budget are unchanged.`);
   // Fully paginate the exact selected-period close history for each visible
   // Top 100 wallet. maxPositions=null means continue until the API confirms
   // there are no more pages or the period cutoff is reached.
