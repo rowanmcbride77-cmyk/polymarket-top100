@@ -1981,10 +1981,9 @@ async function writeJsonUnderLimit(filename, output) {
   const hasLeaders = Array.isArray(output?.leaders) && output.leaders.length > 0;
   const hasConsensus = Array.isArray(output?.consensus) && output.consensus.length > 0;
   const allowEmptyConsensus = String(filename).startsWith("consensus-");
-  const allowEmptyQualifiedLeaderboard = false;
-  if ((filename === "week.json" || filename === "month.json") && !hasLeaders) {
-    throw new Error(`${filename}: no traders passed the strict 30-day 90% / 20+ qualification gate; refusing to replace the last valid Top 100.`);
-  }
+  // Empty qualified lists are valid when no trader passes the settlement-only gate.
+  // Publish the explicit result rather than leaving stale data online.
+  const allowEmptyQualifiedLeaderboard = filename === "week.json" || filename === "month.json";
   if (!output || (!hasLeaders && !hasConsensus && !allowEmptyConsensus && !allowEmptyQualifiedLeaderboard)) {
     throw new Error(`${filename}: refusing to write empty or missing leaderboard/consensus data`);
   }
@@ -2030,7 +2029,7 @@ async function writeJsonUnderLimit(filename, output) {
   const parsedCheck = JSON.parse(json);
   const parsedHasLeaders = Array.isArray(parsedCheck.leaders) && parsedCheck.leaders.length > 0;
   const parsedHasConsensus = Array.isArray(parsedCheck.consensus) && parsedCheck.consensus.length > 0;
-  if (!parsedHasLeaders && !parsedHasConsensus && !allowEmptyConsensus) {
+  if (!parsedHasLeaders && !parsedHasConsensus && !allowEmptyConsensus && !allowEmptyQualifiedLeaderboard) {
     throw new Error(`${filename}: serialized output failed the non-empty data check`);
   }
   const tempFilename = `${filename}.tmp`;
