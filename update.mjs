@@ -1264,26 +1264,16 @@ async function enrichConsensusMarkets(holderGroups, nowMs) {  // Position record
       endMs = Date.parse(endDate + "T23:59:59.999Z");
     }
 
-    // For sports, endDate is the estimated finish (kickoff + 4 hours) when
-    // Gamma exposes kickoff in its endDate field. Other categories use the
-    // explicit market end/resolution timestamp. Keep the same strict 24h cap.
-    if (endMs === null) {
-      unknownDateKept++;
-      continue;
-    }
-    if (endMs <= nowMs) {
-      staleDateCleared++;
-      continue;
-    }
-    const marketWindowHours = isSportsMarket(market || group) ? CONSENSUS_WINDOW_HOURS : 24;
-    if (endMs > nowMs + marketWindowHours * 60 * 60 * 1000) {
-      outsideWindowRemoved++;
-      continue;
-    }
+    // Market eligibility is based on Gamma's live state, not its scheduled
+    // start/end timestamp. A game or event can already have started and still
+    // be actively tradable; delayed events can also resolve after their estimate.
+    // Keep every explicitly active, not-closed market regardless of end-date
+    // horizon. Settlement-only history remains separate and still excludes exits.
+    if (endMs === null) unknownDateKept++;
 
     const category = classifyMarketCategory(market || {}, group);
-    // Keep every verified category. Category filtering belongs in presentation,
-    // never in discovery; the 24-hour window and trader-quality gates remain strict.
+    // No 24h/48h expiry cutoff: only Gamma's explicit active/closed flags decide
+    // whether a discovered market remains eligible for consensus.
 
     enriched.push({
       ...group,
