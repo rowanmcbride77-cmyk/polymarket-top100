@@ -43,8 +43,8 @@ const CONSENSUS_WALLET_LIMIT = 20000;
 // Selection is category-balanced; every published Strong Signal holder still
 // needs a complete 30-day settlement audit and the unchanged strict quality gate.
 const CONSENSUS_SETTLEMENT_AUDIT_LIMIT = 2500;
-const MAX_CONSENSUS_POSITION_PAGES_PER_WALLET = 1;
-const MAX_SPORTS_CONSENSUS_POSITION_PAGES_PER_WALLET = 2;
+const MAX_CONSENSUS_POSITION_PAGES_PER_WALLET = 2;
+const MAX_SPORTS_CONSENSUS_POSITION_PAGES_PER_WALLET = 4;
 const LEADER_RECORD_LIMIT = RANKING_RECORD_LIMIT;
 // Retained for dashboard horizon labels only; active sports eligibility is not time-window limited.
 const CONSENSUS_WINDOW_HOURS = 24;
