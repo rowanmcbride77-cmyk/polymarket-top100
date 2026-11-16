@@ -28,7 +28,7 @@ const POSITIONS_PER_TRADER = 10;
 const RANKING_RECORD_LIMIT = 1000;
 // Expand the strict Top 100 qualification sample without auditing the full 20k discovery pool.
 // This increases candidate coverage while keeping the expensive history audit bounded.
-const LEADER_QUALIFICATION_AUDIT_LIMIT = 2500;
+const LEADER_QUALIFICATION_AUDIT_LIMIT = 5000;
 // Bound closed-position history requests. Records that hit this cap are marked
 // incomplete and withheld rather than presented as complete win/loss stats.
 const CLOSED_POSITION_SCAN_LIMIT = null; // Fully paginate the entire rolling 30-day close history; capped samples cannot qualify.
