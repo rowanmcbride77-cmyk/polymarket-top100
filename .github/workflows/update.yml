@@ -20,7 +20,7 @@ concurrency:
   group: polymarket-scanner-update-v12
   # Always run the newest committed scanner code. Older runs are superseded so
   # a stale 20k-wallet scan cannot hold the queue ahead of the current fix.
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   update:
@@ -57,6 +57,21 @@ jobs:
 
       - name: Run scanner update
         run: node update.mjs
+
+      - name: Stamp data with actual publication time
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from "node:fs/promises";
+          const files = ["week.json", "month.json", "consensus-week.json", "consensus-month.json"];
+          const generatedAt = new Date().toISOString();
+          for (const file of files) {
+            const data = JSON.parse(await fs.readFile(file, "utf8"));
+            data.scanStartedAt = data.generatedAt || null;
+            data.generatedAt = generatedAt;
+            await fs.writeFile(file, JSON.stringify(data) + "\n");
+          }
+          console.log(`Stamped all four datasets with completion time ${generatedAt}.`);
+          NODE
 
       - name: Validate JSON and file sizes
         run: |
