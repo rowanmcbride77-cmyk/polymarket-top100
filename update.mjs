@@ -1927,28 +1927,28 @@ function makeOutput(period, ranked, sportsRanked, activePositions, tradeRows, no
   // The Top 100 is the actual selected-period P&L ranking, not a filtered list
   // of traders whose separate settlement-history lookup happened to be complete.
   // Settlement W-L is attached afterward and shown only when independently verified.
-  const leaders = LEADER_QUALIFICATION_AUDIT_LIMIT > 0
-    ? ranked.slice(0, LEADER_COUNT).map(trader => {
-    const lifetime = leaderRecords[trader.wallet] || {};
-    return {
-      ...lifetime,
+  // Always publish the actual selected-period leaderboard. The expensive
+  // settlement audit is intentionally separate; until a row has a verified
+  // settlement audit, keep W/L and accuracy blank rather than hiding every trader
+  // or treating early exits as wins/losses.
+  const leaders = ranked
+    .filter(trader => num(trader.pnl) !== null)
+    .slice(0, LEADER_COUNT)
+    .map((trader, index) => ({
       ...trader,
-      lifetimeWins: lifetime.wins ?? null,
-      lifetimeLosses: lifetime.losses ?? null,
-      lifetimeWinRate: lifetime.winRate ?? null,
-      lifetimeResolvedMarkets: lifetime.resolvedMarkets ?? null,
-      wins: trader.wins,
-      losses: trader.losses,
-      winRate: trader.winRate,
-      resolvedMarkets: trader.resolvedMarkets,
-      recordBasis: trader.recordBasis,
-      recordVerified: trader.recordVerified === true,
-      settlementRecordComplete: trader.settlementRecordComplete === true,
-      settlementRecordCoverage: trader.settlementRecordCoverage ?? null,
-      settlementPositionsChecked: trader.settlementPositionsChecked ?? 0,
-      settlementPositionsUnclassified: trader.settlementPositionsUnclassified ?? 0
-    };
-  }) : [];
+      rank: index + 1,
+      wins: null,
+      losses: null,
+      winRate: null,
+      resolvedMarkets: null,
+      recordComplete: false,
+      recordVerified: false,
+      settlementRecordComplete: false,
+      settlementRecordCoverage: null,
+      settlementPositionsChecked: 0,
+      settlementPositionsUnclassified: 0,
+      recordBasis: "Settlement-only audit not completed for this leaderboard row; early exits are excluded from wins, losses, and accuracy."
+    }));
 
   const leaderPositions = Object.fromEntries(
     leaders.map(trader => [
@@ -1962,7 +1962,7 @@ function makeOutput(period, ranked, sportsRanked, activePositions, tradeRows, no
     generatedAt: new Date(nowMs).toISOString(),
     period: period.key,
     rankingBasis:
-      "Top 100 includes only discovered active-position traders who pass the complete rolling 30-day settlement gate: 20+ settled markets, 90%+ settlement accuracy, and positive 30-day realized P&L.",
+      "Top 100 is ranked by verified selected-period Polymarket leaderboard P&L. Settlement wins/losses and accuracy are shown only after independent settlement verification; early exits are never counted as resolved wins or losses.",
     recordBasis: "Published Top 100 wins, losses, and win rate are verified settlement outcomes only. Positions exited before resolution are excluded.",
     realizedPnlBasis: "Separate rolling closed-position dollar P&L may include early exits; it is not a settlement outcome or accuracy measure.",
     candidateCount: ranked.length,
