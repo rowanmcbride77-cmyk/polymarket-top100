@@ -18,9 +18,10 @@ permissions:
 
 concurrency:
   group: polymarket-scanner-update-v12
-  # Always run the newest committed scanner code. Older runs are superseded so
-  # a stale 20k-wallet scan cannot hold the queue ahead of the current fix.
-  cancel-in-progress: false
+  # A newer committed scanner build supersedes an older in-progress build.
+  # Publication is atomic and validation-gated, so cancellation preserves the
+  # last known-good JSON instead of allowing stale code to hold the queue.
+  cancel-in-progress: true
 
 jobs:
   update:
@@ -90,26 +91,26 @@ jobs:
             generatedAtValues.add(parsed.generatedAt);
             if (file === "week.json" || file === "month.json") {
               const leaders = Array.isArray(parsed.leaders) ? parsed.leaders : [];
-              if (leaders.length > 1000) throw new Error(`${file} exceeds 1,000 leaders`);
+              if (leaders.length > 100) throw new Error(`${file} exceeds the 100-leader publication cap`);
               const wallets = new Set(leaders.map(row => String(row.wallet || "").toLowerCase()).filter(Boolean));
               if (wallets.size !== leaders.length) throw new Error(`${file} has duplicate or missing wallets`);
               const invalid = leaders.filter(row => {
                 if (!row.wallet || row.pnl === null || row.pnl === undefined || !Number.isFinite(Number(row.pnl))) return true;
-                // Un-audited leaderboard rows are allowed, but must not expose
-                // proxy W/L or accuracy. Early exits remain excluded.
-                if (row.settlementRecordComplete !== true) {
-                  return row.recordComplete !== false || row.recordVerified !== false ||
-                    row.wins != null || row.losses != null || row.winRate != null || row.resolvedMarkets != null;
-                }
                 const wins = Number(row.wins), losses = Number(row.losses);
                 const resolved = Number(row.resolvedMarkets), rate = Number(row.winRate);
                 const checked = Number(row.settlementPositionsChecked), unclassified = Number(row.settlementPositionsUnclassified);
-                return row.recordComplete !== true || row.recordVerified !== true ||
+                const realizedPnl = Number(row.realizedPnlTotal);
+                const realizedBasis = String(row.realizedPnlBasis || "").toLowerCase();
+                return row.recordComplete !== true || row.recordVerified !== true || row.settlementRecordComplete !== true ||
                   !Number.isFinite(checked) || checked <= 0 || !Number.isFinite(unclassified) || unclassified !== 0 ||
                   !Number.isFinite(wins) || wins < 0 || !Number.isFinite(losses) || losses < 0 ||
                   !Number.isFinite(resolved) || resolved !== wins + losses || resolved < 20 ||
                   !Number.isFinite(rate) || rate < 90 || Math.abs(rate - wins / resolved * 100) > 1e-6 ||
-                  !String(row.recordBasis || "").toLowerCase().includes("settlement-only");
+                  !String(row.recordBasis || "").toLowerCase().includes("settlement-only") ||
+                  !Number.isFinite(realizedPnl) || realizedPnl <= 0 ||
+                  !realizedBasis.includes("may include early exits") ||
+                  !realizedBasis.includes("separate") ||
+                  !realizedBasis.includes("never settlement accuracy");
               });
               if (leaders.length === 0) throw new Error(`${file}: Top 100 leaderboard is empty; refusing to publish an empty trader table`);
               if (invalid.length) throw new Error(`${file}: ${invalid.length} leaderboard rows have invalid P&L or expose unverified settlement stats`);
@@ -129,7 +130,7 @@ jobs:
             }
             if (file === "consensus-week.json" || file === "consensus-month.json") {
               const groups = Array.isArray(parsed.consensus) ? parsed.consensus : [];
-              // Zero qualifying groups is a valid result; publish it rather than leave stale signals live.
+              if (groups.length === 0) throw new Error(`${file}: consensus is empty; refusing to replace the last known-good signals`);
               const seenConditions = new Set();
               const invalid = groups.filter(group => {
                 const traders = Array.isArray(group.traders) ? group.traders : [];
@@ -150,11 +151,20 @@ jobs:
                   const wins = Number(row.wins), losses = Number(row.losses), resolved = Number(row.resolvedMarkets);
                   const rate = Number(row.winRate), shares = Number(row.shares ?? row.size);
                   const checked = Number(row.settlementPositionsChecked), unclassified = Number(row.settlementPositionsUnclassified);
+                  const realizedPnl = Number(row.realizedPnlTotal);
+                  const realizedBasis = String(row.realizedPnlBasis || "").toLowerCase();
+                  const leakedPeriodProxy = ["periodWins", "periodLosses", "periodResolvedMarkets", "periodWinRate"]
+                    .some(key => row[key] !== null && row[key] !== undefined);
                   return row.qualified !== true || row.recordComplete !== true || row.settlementRecordComplete !== true ||
                     !Number.isFinite(checked) || checked <= 0 || !Number.isFinite(unclassified) || unclassified !== 0 ||
                     !Number.isFinite(wins) || wins < 0 || !Number.isFinite(losses) || losses < 0 ||
                     !Number.isFinite(resolved) || resolved !== wins + losses || resolved < 20 ||
                     !Number.isFinite(rate) || rate < 90 || Math.abs(rate - wins / resolved * 100) > 1e-6 ||
+                    !Number.isFinite(realizedPnl) || realizedPnl <= 0 ||
+                    !realizedBasis.includes("may include early exits") ||
+                    !realizedBasis.includes("separate") ||
+                    !realizedBasis.includes("never settlement accuracy") ||
+                    leakedPeriodProxy ||
                     !String(row.recordBasis || "").toLowerCase().includes("settlement-only") ||
                     String(row.side || "").trim().toLowerCase() !== side ||
                     !Number.isFinite(Number(row.avgPrice)) || Number(row.avgPrice) <= 0 || Number(row.avgPrice) > 1 ||
