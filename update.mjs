@@ -1474,7 +1474,7 @@ function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedM
       if (!complete) diagnostics.incompleteRecord++;
       if (resolvedMarkets === null || resolvedMarkets < minimumResolvedMarkets) diagnostics.fewerThanMinimumCloses++;
       if (winRate === null || winRate < MIN_CONSENSUS_WIN_RATE) diagnostics.belowMinimumWinRate++;
-      if (historicalPnl30d === null || historicalPnl30d <= 0) diagnostics.nonPositive30dPnl++;
+      // Early-exit P&L is intentionally not part of consensus diagnostics or qualification.
       if (!hasStrongEntry) diagnostics.missingVerifiedEntry++;
       if (strongQualified) diagnostics.strongHolders++;
       if (developingQualified) diagnostics.developingHolders++;
