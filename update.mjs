@@ -1908,7 +1908,8 @@ function makeOutput(period, ranked, sportsRanked, activePositions, tradeRows, no
   // The Top 100 is the actual selected-period P&L ranking, not a filtered list
   // of traders whose separate settlement-history lookup happened to be complete.
   // Settlement W-L is attached afterward and shown only when independently verified.
-  const leaders = ranked.slice(0, LEADER_COUNT).map(trader => {
+  const leaders = LEADER_QUALIFICATION_AUDIT_LIMIT > 0
+    ? ranked.slice(0, LEADER_COUNT).map(trader => {
     const lifetime = leaderRecords[trader.wallet] || {};
     return {
       ...lifetime,
@@ -1928,7 +1929,7 @@ function makeOutput(period, ranked, sportsRanked, activePositions, tradeRows, no
       settlementPositionsChecked: trader.settlementPositionsChecked ?? 0,
       settlementPositionsUnclassified: trader.settlementPositionsUnclassified ?? 0
     };
-  });
+  }) : [];
 
   const leaderPositions = Object.fromEntries(
     leaders.map(trader => [
@@ -2054,7 +2055,9 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
   // Select the actual period-P&L Top 100 first, then fully paginate their
   // selected-period CLOSED-position history. Never spend the record budget
   // on the first 1,000 discovery-order wallets and leave the displayed leaders unaudited.
-  const rankingRecordCandidates = rankCandidates(usableLeaderboardCandidates, {}).slice(0, LEADER_COUNT);
+  const rankingRecordCandidates = LEADER_QUALIFICATION_AUDIT_LIMIT > 0
+    ? rankCandidates(usableLeaderboardCandidates, {}).slice(0, Math.min(LEADER_COUNT, LEADER_QUALIFICATION_AUDIT_LIMIT))
+    : [];
   // Use the selected period's leaderboard rows for rank/P&L; the shared
   // consensus discovery pool may contain a different period's P&L or nulls.
   const candidateByWallet = new Map(
