@@ -325,7 +325,7 @@ async function getResolvedRecord(wallet, period, nowMs, maxPositions = RANKING_R
     wins: publishableRecord ? wins : null,
     losses: publishableRecord ? losses : null,
     realizedPnlTotal: publishableRecord ? realizedPnlTotal : null,
-    realizedPnlBasis: "Rolling closed-position realized P&L; includes early exits and is used only as a separate profitability measure, never as settlement wins, losses, resolved markets, or accuracy.",
+    realizedPnlBasis: "Rolling 30-day closed-position realized dollar P&L; may include early exits; separate profitability measure, never settlement accuracy, wins, losses, or resolved-market denominator.",
     sportsWins: recordComplete ? sportsWins : null,
     sportsLosses: recordComplete ? sportsLosses : null,
     sportsResolvedMarkets: recordComplete ? sportsWins + sportsLosses : null,
