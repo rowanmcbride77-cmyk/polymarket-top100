@@ -2337,7 +2337,7 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
       volume: candidateByWallet.get(String(trader.wallet).toLowerCase())?.volume ?? null
     }));
   const qualifiedRanked = rankCandidates(qualifiedLeaderRows, {});
-  const leaders = qualifiedRanked.slice(0, LEADER_COUNT);
+  const leaders = ranked.filter(trader => num(trader.pnl) !== null).slice(0, LEADER_COUNT);
   console.log(`${period.key}: strict Top 100 qualification retained ${qualifiedRanked.length} traders with complete 30-day settlement records, 20+ settled markets, 90%+ settlement accuracy, and positive realized P&L.`);
   // Reuse the settlement-only audit already performed for this candidate sample.
   const settlementRecords = leaderSettlementByWallet;
@@ -2443,17 +2443,32 @@ output.leaderQualification = {
   // Those counts include early exits; only the independent settlement audit
   // above may populate Top 100 wins, losses, win rate, or qualification.
   output.leaders = await attachPeriodVolumes(output.leaders, period, nowMs);
-  output.leaders = output.leaders.map(trader => ({
-    ...trader,
-    recordVerified: trader.recordComplete === true &&
-      num(trader.wins) !== null &&
-      num(trader.losses) !== null &&
-      num(trader.resolvedMarkets) !== null &&
-      num(trader.resolvedMarkets) === num(trader.wins) + num(trader.losses),
-    pnlBasis: `Polymarket v2 leaderboard P&L for selected ${period.key} period`,
-    recordBasis: trader.recordBasis || "Selected-period closed-market record unavailable"
-  }));
-  output.recordBasis = "Top 100 contains up to 100 genuine passers with complete rolling 30-day settlement-only records, 20+ resolved markets, 90%+ settlement accuracy, and positive 30-day realized dollar P&L as a separate profitability gate. Early exits are excluded from settlement wins, losses, resolved-market denominator, and accuracy; early-exit realized P&L may contribute only to the separate dollar-P&L gate.";
+  output.leaders = output.leaders.map(trader => {
+    const settlement = leaderSettlementByWallet[String(trader.wallet || "").toLowerCase()] || {};
+    const wins = num(settlement.settlementWins);
+    const losses = num(settlement.settlementLosses);
+    const resolvedMarkets = wins !== null && losses !== null ? wins + losses : null;
+    const verified = settlement.settlementRecordComplete === true &&
+      resolvedMarkets !== null && resolvedMarkets > 0 &&
+      Number(settlement.settlementPositionsUnclassified || 0) === 0;
+    return {
+      ...trader,
+      wins: verified ? wins : null,
+      losses: verified ? losses : null,
+      resolvedMarkets: verified ? resolvedMarkets : null,
+      winRate: verified ? wins / resolvedMarkets * 100 : null,
+      recordComplete: verified,
+      recordVerified: verified,
+      settlementRecordComplete: verified,
+      settlementPositionsChecked: settlement.settlementPositionsChecked ?? 0,
+      settlementPositionsUnclassified: settlement.settlementPositionsUnclassified ?? 0,
+      recordBasis: verified
+        ? "Verified settlement-only record; positions exited before market resolution are excluded."
+        : "Settlement history not fully verified; wins, losses, and accuracy withheld. Early exits are never counted as settled outcomes.",
+      pnlBasis: `Polymarket v2 leaderboard P&L for selected ${period.key} period`
+    };
+  });
+  output.recordBasis = "Top 100 is the selected-period Polymarket P&L leaderboard. Settlement wins, losses, and accuracy are shown only when independently verified; early exits are excluded and incomplete histories are left blank.";
 
   // Keep consensus independent of the Top 100 JSON size guard.
   const builtConsensusRows = Array.isArray(output.consensus) ? output.consensus : [];
