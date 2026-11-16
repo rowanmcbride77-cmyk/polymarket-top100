@@ -2310,6 +2310,17 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
           ? (settlement.settlementRecordBasis || "Complete rolling 30-day settlement-only record; early exits excluded from wins and losses.")
           : "Settlement record incomplete; not qualified.",
         settlementRecordBasis: settlement.settlementRecordBasis || "Settlement history incomplete; excluded from prediction qualification.",
+        // Close-profitability sports W/L proxies may include early exits. Do not
+        // publish them beside the settlement-only Top 100 record.
+        sportsWins: null,
+        sportsLosses: null,
+        sportsWinRate: null,
+        sportsResolvedMarkets: null,
+        periodWins: null,
+        periodLosses: null,
+        periodResolvedMarkets: null,
+        periodWinRate: null,
+        periodRecordComplete: false,
         realizedPnlTotal: closeRecord.realizedPnlTotal,
         realizedPnlBasis: closeRecord.realizedPnlBasis || "Rolling 30-day closed-position realized dollar P&L; may include early exits; separate profitability measure, never settlement accuracy.",
         wallet
