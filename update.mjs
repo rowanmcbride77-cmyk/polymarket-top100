@@ -2076,8 +2076,8 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
   // Allocate the fixed settlement-audit budget across market categories.
   // A single global capital sort starved sports/props because crypto and
   // high-dollar macro markets dominated the first 1,000 wallets. Keep the
-  // same 1,000-wallet request budget (and therefore similar runtime), but
-  // reserve coverage for sports, crypto, esports and the remaining categories.
+  // 2,500-wallet consensus-only audit budget, with reserved coverage for
+  // sports, crypto, esports and the remaining categories.
   const walletCategoryCapital = new Map();
   for (const group of consensusGroups) {
     const category = String(group.category || classifyMarketCategory({}, group) || "other").toLowerCase();
@@ -2147,7 +2147,7 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     selectedConsensusWallets.add(wallet);
   }
   const consensusRecordWallets = [...selectedConsensusWallets];
-  console.log(`Settlement audit balanced across categories: ${consensusRecordWallets.length.toLocaleString()} wallets from ${walletCategoryCapital.size.toLocaleString()} eligible holders; category quotas sports=1000, crypto=500, esports=250, other=750; full ${CONSENSUS_WALLET_LIMIT.toLocaleString()}-wallet live-position discovery and the 1,000-wallet audit budget are unchanged.`);
+  console.log(`Settlement audit balanced across categories: ${consensusRecordWallets.length.toLocaleString()} wallets from ${walletCategoryCapital.size.toLocaleString()} eligible holders; category quotas sports=1000, crypto=500, esports=250, other=750; full ${CONSENSUS_WALLET_LIMIT.toLocaleString()}-wallet live-position discovery and the 2,500-wallet consensus audit budget.`);
   // Fully paginate the exact selected-period close history for each visible
   // Top 100 wallet. maxPositions=null means continue until the API confirms
   // there are no more pages or the period cutoff is reached.
