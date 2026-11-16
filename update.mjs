@@ -834,10 +834,16 @@ function consensusTiming(market) {
     const parsed = timestampMs(value);
     if (parsed !== null) { kickoffMs = parsed; break; }
   }
-  // In the observed NFL/NBA-style Gamma records, endDate is the scheduled
-  // kickoff. When a separate start field is unavailable, use that timestamp
-  // as kickoff and allow four hours for play to finish. This keeps live games
-  // visible after kickoff without treating them as already resolved.
+  // Prefer an explicit game/event start time. Some Gamma sports markets only
+  // expose a date-only endDate; parsing that as midnight UTC invents a kickoff
+  // time and incorrectly expires same-day NBA/NFL markets before games begin.
+  // Preserve date-only metadata and let the enrichment stage treat it as valid
+  // through the end of that UTC date instead of fabricating a four-hour finish.
+  if (kickoffMs === null && typeof rawEnd === "string" && /^\\d{4}-\\d{2}-\\d{2}$/.test(rawEnd.trim())) {
+    return {endDate: rawEnd, endTimeBasis: "date_only_market_end"};
+  }
+  // In NFL/NBA-style records, a timestamp endDate commonly represents kickoff.
+  // If no separate start field exists, allow four hours for play to finish.
   if (kickoffMs === null) kickoffMs = timestampMs(rawEnd);
   if (kickoffMs === null) return {endDate: rawEnd, endTimeBasis: "market_end"};
   const estimatedFinish = new Date(kickoffMs + 4 * 60 * 60 * 1000).toISOString();
