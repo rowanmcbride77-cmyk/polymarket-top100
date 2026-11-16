@@ -112,7 +112,7 @@ jobs:
             }
             if (file === "consensus-week.json" || file === "consensus-month.json") {
               const groups = Array.isArray(parsed.consensus) ? parsed.consensus : [];
-              if (!groups.length) throw new Error(`${file} has no qualified consensus markets; refusing to replace the last valid publication.`);
+              // Zero qualifying groups is a valid result; publish it rather than leave stale signals live.
               const seenConditions = new Set();
               const invalid = groups.filter(group => {
                 const traders = Array.isArray(group.traders) ? group.traders : [];
