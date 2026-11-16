@@ -1515,13 +1515,13 @@ function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedM
     if (strongHolders.length >= 2) {
       tier = "Strong Signals";
       displayTraders = strongHolders;
-      tierReason = "Every listed trader independently passes a complete rolling 30-day settlement-only record, 20+ settled markets, 90%+ settlement accuracy, positive 30-day realized P&L, and verified $10+ entry/current value. Early exits do not count as wins or losses.";
+      tierReason = "Every listed trader independently passes a complete rolling 30-day settlement-only record, 20+ settled markets, 90%+ settlement accuracy, and verified $10+ entry/current value.";
     } else if (developingHolders.length >= 2) {
       // Preserve the strict Strong gate, but publish the already-calculated
       // Developing tier instead of silently dropping those same-side holders.
       tier = "Developing Signals";
       displayTraders = developingHolders;
-      tierReason = "Every listed trader has a complete rolling 30-day settlement-only record, 10+ settled markets, 75%+ settlement accuracy, positive 30-day realized P&L, and a $3+ active position.";
+      tierReason = "Every listed trader has a complete rolling 30-day settlement-only record, 10+ settled markets, 75%+ settlement accuracy, and a $3+ active position.";
     } else {
       // Keep genuine 2+ same-outcome holdings visible as Watchlist, without
       // presenting incomplete or sub-threshold records as qualified signals.
@@ -2306,7 +2306,7 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
   // Reuse the settlement-only audit already performed for this candidate sample.
   const settlementRecords = leaderSettlementByWallet;
   const consensusMinimumResolved = MIN_CONSENSUS_CLOSED_MARKETS;
-  console.log(`${period.key}: Strong Signals require 2+ same-side holders, each with a complete rolling 30-day audited record, 20+ qualifying outcomes, >=90% success, positive 30-day realized P&L, and verified $10+ entry/current value. Developing and Watchlist tiers remain separate and do not count as qualified traders.`);
+  console.log(`${period.key}: Strong Signals require 2+ same-side holders, each with a complete rolling 30-day settlement-only record, 20+ settled outcomes, >=90% settlement accuracy, and verified $10+ entry/current value. Developing and Watchlist tiers remain separate and do not count as qualified traders.`);
   // Reuse the period-scoped record sample used for ranking; avoid a second history scan.
   const leaderRecords = records;
   const tradeRows = await mapLimit(
