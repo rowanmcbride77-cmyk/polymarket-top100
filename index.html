@@ -164,7 +164,7 @@ dialog::backdrop{background:#000b}
             <tbody id="leadersBody"><tr><td colspan="6" class="loading">Loading traders…</td></tr></tbody>
           </table>
         </div>
-        <div class="source-note">Top 100 records show verified 30-day market settlements only. Early exits before resolution are excluded from wins, losses, and settlement accuracy. Qualification requires a complete settlement audit, 20+ settled markets, 90%+ settlement accuracy, and positive 30-day realized P&L.</div>
+        <div class="source-note">Top 100 is ranked by selected-period Polymarket leaderboard P&L. Verified settlement wins/losses and accuracy appear only when independently audited; early exits are never counted as resolved wins or losses.</div>
         <button class="link-button" id="leadersMore" onclick="toggleLeaders()">View all traders →</button>
       </section>
 
@@ -709,10 +709,7 @@ function renderLeaders() {
   // Defensively enforce the published 30-day qualification in the browser too.
   // Never display an unqualified/stale row just because it appears in a JSON file.
   const qualifiedLeaderboard = baseList
-    .filter(trader => trader.recordComplete === true && trader.settlementRecordComplete === true &&
-      Number(trader.resolvedMarkets) >= 20 &&
-      Number(trader.winRate) >= 90 &&
-      Number(trader.realizedPnlTotal) > 0)
+    .filter(trader => num(trader.pnl ?? trader.profit) !== null)
     .slice(0, 100)
     .map((trader, index) => ({ ...trader, displayRank: index + 1 }));
   const list = comboMode ? comboProfitRows() : efficiencyMode ? comboEfficiencyRows() : qualifiedLeaderboard;
@@ -846,6 +843,8 @@ function renderConsensus() {
       traderCount(market) >= minCount)
     .sort((a, b) =>
       (["Strong Signals","Developing Signals","Watchlist"].indexOf(a.signalTier) - ["Strong Signals","Developing Signals","Watchlist"].indexOf(b.signalTier)) ||
+      (({sports:0, esports:1, other:2, crypto:3, weather:4, politics:5, government:6}[String(a.category || "other").toLowerCase()] ?? 7) -
+       ({sports:0, esports:1, other:2, crypto:3, weather:4, politics:5, government:6}[String(b.category || "other").toLowerCase()] ?? 7)) ||
       (num(b.consensusScore) ?? 0) - (num(a.consensusScore) ?? 0) ||
       traderCount(b) - traderCount(a) ||
       (marketAmount(b) ?? -1) - (marketAmount(a) ?? -1) ||
