@@ -94,7 +94,8 @@ jobs:
                   !Number.isFinite(Number(row.realizedPnlTotal)) || Number(row.realizedPnlTotal) <= 0;
               });
               if (invalid.length) throw new Error(`${file}: ${invalid.length} rows fail the complete 30-day / 20+ / 90%+ / positive-P&L gate`);
-              if (!leaders.length) throw new Error(`${file} has no qualified settlement-verified leaders; refusing to replace the last valid publication.`);
+              // The Top 100 is intentionally optional; consensus is the primary output.
+              // An empty leaderboard must not block fresh, fully validated consensus publication.
               console.log(`${file}: ${leaders.length} settlement-verified qualified leaders`);
               const discoveryRows = [
                 ...(Array.isArray(parsed.sportsLeaders) ? parsed.sportsLeaders : []),
