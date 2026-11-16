@@ -1051,7 +1051,7 @@ async function getBroadConsensusMarkets(knownTraders, nowMs, activePositions) {
         wallet,
         name: trader.name || null,
         rank: trader.rank ?? null,
-        pnl: trader.pnl ?? null,
+        pnl: null,
         volume: trader.volume ?? null,
         side,
         amount: invested > 0 ? invested : null,
@@ -1462,12 +1462,11 @@ function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedM
       const hasDevelopingEntry = currentValue !== null && currentValue >= MIN_CONSENSUS_DISCOVERY_VALUE;
       const periodPnl = num(candidate.pnl); // Selected-period leaderboard P&L only; do not borrow values from the mixed-period discovery pool.
       const selectedRecord = selectedPeriodRecords[wallet] || {};
-      const historicalPnl30d = num(record.realizedPnlTotal);
       const complete = record.recordComplete === true && record.settlementRecordComplete === true;
-      const strongQualified = historicalPnl30d !== null && historicalPnl30d > 0 && complete &&
+      const strongQualified = complete &&
         resolvedMarkets !== null && resolvedMarkets >= minimumResolvedMarkets &&
         winRate !== null && winRate >= MIN_CONSENSUS_WIN_RATE && hasStrongEntry;
-      const developingQualified = historicalPnl30d !== null && historicalPnl30d > 0 && complete &&
+      const developingQualified = complete &&
         resolvedMarkets !== null && resolvedMarkets >= 10 && winRate !== null &&
         winRate >= 75 && hasDevelopingEntry;
 
@@ -1579,7 +1578,21 @@ function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedM
   watchlistGroups.sort(sortGroups);
 
   const perTierLimit = 1500;
-  const result = strongGroups.slice(0, perTierLimit);
+  const sportsRows = strongGroups.filter(group => String(group.category || "").toLowerCase() === "sports");
+  const esportsRows = strongGroups.filter(group => String(group.category || "").toLowerCase() === "esports");
+  const otherRows = strongGroups.filter(group => !["sports","esports"].includes(String(group.category || "").toLowerCase()));
+  const result = [
+    ...sportsRows.slice(0, 750),
+    ...esportsRows.slice(0, 150),
+    ...otherRows.slice(0, 600)
+  ];
+  const selectedKeys = new Set(result.map(group => String(group.conditionId || "").toLowerCase()+"|"+String(group.side || "").toLowerCase()));
+  for (const group of strongGroups) {
+    if (result.length >= perTierLimit) break;
+    const key = String(group.conditionId || "").toLowerCase()+"|"+String(group.side || "").toLowerCase();
+    if (!selectedKeys.has(key)) { result.push(group); selectedKeys.add(key); }
+  }
+  result.sort(sortGroups);
   console.log("Consensus tier diagnostics:", JSON.stringify({
     ...diagnostics,
     strongMarkets: strongGroups.length, developingMarkets: developingGroups.length,
@@ -2174,10 +2187,9 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
   );
   const settlementAuditConsensusCandidates = consensusRecordCandidates.filter(candidate => {
     const record = consensusCloseRecords[String(candidate.wallet || "").toLowerCase()] || {};
-    return record.recordComplete === true &&
-      Number(record.realizedPnlTotal) > 0;
+    return record.recordComplete === true;
   });
-  console.log(`Settlement-auditing ${settlementAuditConsensusCandidates.length} consensus holders who pass the independent 20+ market and positive-realized-P&L precheck.`);
+  console.log(`Settlement-auditing ${settlementAuditConsensusCandidates.length} consensus holders with complete position-history scans; early-exit P&L is not a qualification input.`);
   const consensusSettlementRows = await attachSettlementStats(
     settlementAuditConsensusCandidates,
     CONSENSUS_RECORD_PERIOD,
@@ -2190,7 +2202,7 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     const losses = num(trader.settlementLosses);
     const resolvedMarkets = wins !== null && losses !== null ? wins + losses : null;
     return [wallet, {
-      ...closeRecord,
+      recordComplete: closeRecord.recordComplete === true,
       wins, losses, resolvedMarkets,
       winRate: resolvedMarkets > 0 ? wins / resolvedMarkets * 100 : null,
       recordComplete: trader.settlementRecordComplete === true,
