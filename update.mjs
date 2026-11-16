@@ -28,7 +28,9 @@ const POSITIONS_PER_TRADER = 10;
 const RANKING_RECORD_LIMIT = 1000;
 // Expand the strict Top 100 qualification sample without auditing the full 20k discovery pool.
 // This increases candidate coverage while keeping the expensive history audit bounded.
-const LEADER_QUALIFICATION_AUDIT_LIMIT = 5000;
+// Top-100 accuracy auditing is intentionally disabled: runtime is reserved for
+// auditing traders who actually overlap in live same-side consensus markets.
+const LEADER_QUALIFICATION_AUDIT_LIMIT = 0;
 // Bound closed-position history requests. Records that hit this cap are marked
 // incomplete and withheld rather than presented as complete win/loss stats.
 const CLOSED_POSITION_SCAN_LIMIT = null; // Fully paginate the entire rolling 30-day close history; capped samples cannot qualify.
@@ -36,11 +38,11 @@ const CLOSED_POSITION_SCAN_LIMIT = null; // Fully paginate the entire rolling 30
 // 30-day qualification and settlement audit; optimize duplicate history work
 // separately rather than reducing the wallet discovery target.
 const CONSENSUS_WALLET_LIMIT = 20000;
-// Keep full 20k-wallet live-position overlap discovery, but bound the expensive
-// per-wallet 30-day settlement audit to the highest-capital 5k holders.
-// Auditing 20k wallets requires up to 60k position-history requests and was
-// the dominant source of 60-70 minute runs. No accuracy threshold is relaxed.
-const CONSENSUS_SETTLEMENT_AUDIT_LIMIT = 1000;
+// Keep full 20k-wallet live-position overlap discovery and devote the saved
+// leaderboard audit budget to 2,500 actual shared-market holders.
+// Selection is category-balanced; every published Strong Signal holder still
+// needs a complete 30-day settlement audit and the unchanged strict quality gate.
+const CONSENSUS_SETTLEMENT_AUDIT_LIMIT = 2500;
 const MAX_CONSENSUS_POSITION_PAGES_PER_WALLET = 1;
 const MAX_SPORTS_CONSENSUS_POSITION_PAGES_PER_WALLET = 2;
 const LEADER_RECORD_LIMIT = RANKING_RECORD_LIMIT;
@@ -2102,7 +2104,7 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     }
   }
   const auditBudget = CONSENSUS_SETTLEMENT_AUDIT_LIMIT;
-  const categoryBudgets = {sports:400, crypto:200, esports:100, other:300};
+  const categoryBudgets = {sports:1000, crypto:500, esports:250, other:750};
   const selectedConsensusWallets = new Set();
   const addCategory = (category, budget) => {
     const rows = [...(categoryWallets.get(category) || new Map()).entries()]
@@ -2141,7 +2143,7 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     selectedConsensusWallets.add(wallet);
   }
   const consensusRecordWallets = [...selectedConsensusWallets];
-  console.log(`Settlement audit balanced across categories: ${consensusRecordWallets.length.toLocaleString()} wallets from ${walletCategoryCapital.size.toLocaleString()} eligible holders; category quotas sports=400, crypto=200, esports=100, other=300; full ${CONSENSUS_WALLET_LIMIT.toLocaleString()}-wallet live-position discovery and the 1,000-wallet audit budget are unchanged.`);
+  console.log(`Settlement audit balanced across categories: ${consensusRecordWallets.length.toLocaleString()} wallets from ${walletCategoryCapital.size.toLocaleString()} eligible holders; category quotas sports=1000, crypto=500, esports=250, other=750; full ${CONSENSUS_WALLET_LIMIT.toLocaleString()}-wallet live-position discovery and the 1,000-wallet audit budget are unchanged.`);
   // Fully paginate the exact selected-period close history for each visible
   // Top 100 wallet. maxPositions=null means continue until the API confirms
   // there are no more pages or the period cutoff is reached.
