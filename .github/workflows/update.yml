@@ -94,7 +94,7 @@ jobs:
               const wallets = new Set(leaders.map(row => String(row.wallet || "").toLowerCase()).filter(Boolean));
               if (wallets.size !== leaders.length) throw new Error(`${file} has duplicate or missing wallets`);
               const invalid = leaders.filter(row => {
-                if (!row.wallet || num(row.pnl) === null) return true;
+                if (!row.wallet || row.pnl === null || row.pnl === undefined || !Number.isFinite(Number(row.pnl))) return true;
                 // Un-audited leaderboard rows are allowed, but must not expose
                 // proxy W/L or accuracy. Early exits remain excluded.
                 if (row.settlementRecordComplete !== true) {
