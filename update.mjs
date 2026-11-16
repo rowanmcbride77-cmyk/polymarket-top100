@@ -2341,28 +2341,27 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     consensusVolumeStats
   );
 
-  // Publish the strict 30-day-qualified ranking calculated above.
-  // Previously makeOutput received the broad P&L ranking and its first 100
-  // rows were written unchanged, bypassing qualifiedRanked entirely.
-  // These rows have already passed: complete 30-day record, 20+ outcomes,
-  // 90%+ profitable-close rate, positive 30-day realized P&L, and the
-  // verified $10+ live-entry/current-position gate.
-  output.leaders = leaders.map((trader, index) => ({
-    ...trader,
-    rank: index + 1,
-    settlementWins: trader.wins ?? null,
-    settlementLosses: trader.losses ?? null,
-    settlementWinRate: trader.winRate ?? null,
-    recordComplete: true,
-    recordVerified: true,
-    qualificationWindowDays: 30,
-    qualificationMinimumResolvedMarkets: MIN_CONSENSUS_CLOSED_MARKETS,
-    qualificationMinimumWinRate: MIN_CONSENSUS_WIN_RATE,
-    qualificationPositiveRealizedPnl: true,
-    qualificationEntryValue: num(trader.entryValue),
-    qualificationCurrentValue: num(trader.currentValue),
-    recordBasis: "Complete rolling 30-day settlement-only record; 20+ settled markets; 90%+ settlement accuracy; positive 30-day realized P&L. Early exits are excluded from wins and losses."
-  }));
+  // Keep the Top 100 as the actual selected-period Polymarket P&L leaderboard.
+  // Settlement W/L and accuracy remain null unless independently audited;
+  // early exits are never promoted into wins/losses or used as qualification.
+  // Strict settlement qualification remains enforced for consensus signals.
+  output.leaders = rankCandidates(usableLeaderboardCandidates, {})
+    .slice(0, LEADER_COUNT)
+    .map((trader, index) => ({
+      ...trader,
+      rank: index + 1,
+      wins: null,
+      losses: null,
+      winRate: null,
+      resolvedMarkets: null,
+      recordComplete: false,
+      recordVerified: false,
+      settlementRecordComplete: false,
+      settlementWins: null,
+      settlementLosses: null,
+      settlementWinRate: null,
+      recordBasis: "Top 100 is ranked by selected-period Polymarket P&L. Settlement W/L and accuracy are withheld until independently audited; early exits are excluded."
+    }));
   output.leaderQualification = {
     windowDays: 30,
     minimumResolvedMarkets: MIN_CONSENSUS_CLOSED_MARKETS,
@@ -2370,27 +2369,12 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     requirePositiveRealizedPnl: true,
     minimumEntryValue: MIN_CONSENSUS_ENTRY_VALUE,
     minimumCurrentPositionValue: MIN_CONSENSUS_POSITION_VALUE,
-    eligibleCandidatesAudited: settlementAuditLeaderCandidates.length,
-    prefilteredCandidates: leaderAuditCandidates.length,
-    qualifiedCandidates: qualifiedRanked.length,
+    eligibleCandidatesAudited: 0,
+    prefilteredCandidates: 0,
+    qualifiedCandidates: 0,
     publishedLeaders: output.leaders.length,
-    basis: "Only complete rolling 30-day audited records passing every published threshold are included."
+    basis: "Leaderboard ranking is independent of consensus qualification. Consensus continues to require complete settlement-only audits; early exits are excluded."
   };
-
-  // Public Top 100 W/L fields are settlement-only. Never overwrite them with
-  // the close-profitability proxy, which includes early exits.
-  output.leaders = output.leaders.map(trader => ({
-    ...trader,
-    settlementWins: trader.wins ?? null,
-    settlementLosses: trader.losses ?? null,
-    settlementWinRate: trader.winRate ?? null,
-    recordComplete: trader.recordComplete === true,
-    recordVerified: trader.recordComplete === true,
-    recordBasis: trader.recordComplete === true
-      ? "Complete rolling 30-day settlement-only record; early exits excluded from wins and losses."
-      : "Settlement history incomplete; W/L withheld."
-  }));
-  console.log(`${period.key}: published ${output.leaders.length} strictly qualified 30-day Top 100 traders.`);
 
   // Count every discovered weekly wallet, not only Top 100 traders or shared-market holders.
   // Reuse cached records so each wallet is queried only once in this period.
