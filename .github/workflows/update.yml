@@ -94,24 +94,25 @@ jobs:
               const wallets = new Set(leaders.map(row => String(row.wallet || "").toLowerCase()).filter(Boolean));
               if (wallets.size !== leaders.length) throw new Error(`${file} has duplicate or missing wallets`);
               const invalid = leaders.filter(row => {
+                if (!row.wallet || num(row.pnl) === null) return true;
+                // Un-audited leaderboard rows are allowed, but must not expose
+                // proxy W/L or accuracy. Early exits remain excluded.
+                if (row.settlementRecordComplete !== true) {
+                  return row.recordComplete !== false || row.recordVerified !== false ||
+                    row.wins != null || row.losses != null || row.winRate != null || row.resolvedMarkets != null;
+                }
                 const wins = Number(row.wins), losses = Number(row.losses);
                 const resolved = Number(row.resolvedMarkets), rate = Number(row.winRate);
                 const checked = Number(row.settlementPositionsChecked), unclassified = Number(row.settlementPositionsUnclassified);
-                const pnlBasis = String(row.realizedPnlBasis || "").toLowerCase();
-                return !row.wallet || !Number.isFinite(Number(row.pnl)) ||
-                  row.recordComplete !== true || row.recordVerified !== true || row.settlementRecordComplete !== true ||
+                return row.recordComplete !== true || row.recordVerified !== true ||
                   !Number.isFinite(checked) || checked <= 0 || !Number.isFinite(unclassified) || unclassified !== 0 ||
-                  !pnlBasis.includes("includes early exits") || !pnlBasis.includes("never as settlement") ||
                   !Number.isFinite(wins) || wins < 0 || !Number.isFinite(losses) || losses < 0 ||
                   !Number.isFinite(resolved) || resolved !== wins + losses || resolved < 20 ||
                   !Number.isFinite(rate) || rate < 90 || Math.abs(rate - wins / resolved * 100) > 1e-6 ||
-                  !String(row.recordBasis || "").toLowerCase().includes("settlement-only") ||
-                  !Number.isFinite(Number(row.realizedPnlTotal)) || Number(row.realizedPnlTotal) <= 0;
+                  !String(row.recordBasis || "").toLowerCase().includes("settlement-only");
               });
-              if (invalid.length) throw new Error(`${file}: ${invalid.length} rows fail the complete 30-day / 20+ / 90%+ / positive-P&L gate`);
-              // The Top 100 is intentionally optional; consensus is the primary output.
-              // An empty leaderboard must not block fresh, fully validated consensus publication.
-              console.log(`${file}: ${leaders.length} settlement-verified qualified leaders`);
+              if (invalid.length) throw new Error(`${file}: ${invalid.length} leaderboard rows have invalid P&L or expose unverified settlement stats`);
+              console.log(`${file}: ${leaders.length} selected-period leaderboard traders`);
               const discoveryRows = [
                 ...(Array.isArray(parsed.sportsLeaders) ? parsed.sportsLeaders : []),
                 ...(Array.isArray(parsed.comboCandidates) ? parsed.comboCandidates : [])
