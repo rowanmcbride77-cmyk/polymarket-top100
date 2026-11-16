@@ -839,7 +839,7 @@ function consensusTiming(market) {
   // time and incorrectly expires same-day NBA/NFL markets before games begin.
   // Preserve date-only metadata and let the enrichment stage treat it as valid
   // through the end of that UTC date instead of fabricating a four-hour finish.
-  if (kickoffMs === null && typeof rawEnd === "string" && /^\\d{4}-\\d{2}-\\d{2}$/.test(rawEnd.trim())) {
+  if (kickoffMs === null && typeof rawEnd === "string" && /^\d{4}-\d{2}-\d{2}$/.test(rawEnd.trim())) {
     return {endDate: rawEnd, endTimeBasis: "date_only_market_end"};
   }
   // In NFL/NBA-style records, a timestamp endDate commonly represents kickoff.
