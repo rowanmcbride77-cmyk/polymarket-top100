@@ -183,10 +183,9 @@ jobs:
           NODE
           cp status.json /tmp/scanner-status.json
           git fetch origin main
-          if [ "$GITHUB_SHA" != "$(git rev-parse origin/main)" ]; then
-            echo "Skipping publication from outdated scan commit $GITHUB_SHA; main has advanced to $(git rev-parse origin/main)."
-            exit 0
-          fi
+          # Other workflows may update forward-test.json while this scan runs.
+          # The generatedAt comparison below is the authoritative stale-scan guard;
+          # unrelated commits must not prevent fresh scanner data from publishing.
           FRESHNESS="$(node --input-type=module <<'NODE'
           import fs from "node:fs/promises";
           import { execFileSync } from "node:child_process";
