@@ -47,7 +47,7 @@ const MAX_CONSENSUS_POSITION_PAGES_PER_WALLET = 1;
 const MAX_SPORTS_CONSENSUS_POSITION_PAGES_PER_WALLET = 2;
 const LEADER_RECORD_LIMIT = RANKING_RECORD_LIMIT;
 // Retained for dashboard horizon labels only; active sports eligibility is not time-window limited.
-const CONSENSUS_WINDOW_HOURS = 48;
+const CONSENSUS_WINDOW_HOURS = 24;
 const CONSENSUS_HOLDERS_PER_MARKET = 1000;
 const MIN_CONSENSUS_DISCOVERY_VALUE = 3; // Discovery feeds Developing/Watchlist; Strong Signals retain the $10 gate.
 const MIN_CONSENSUS_POSITION_VALUE = 10;
@@ -1158,11 +1158,13 @@ async function getDirectSportsConsensusGroups(nowMs, knownNames = new Map()) {
         const conditionId = String(market.conditionId ?? market.condition_id ?? "").toLowerCase();
         if (!conditionId || market.closed === true || String(market.closed).toLowerCase() === "true" ||
             market.active === false || String(market.active).toLowerCase() === "false") continue;
-        // Gamma's active=true / closed=false flags are authoritative. Do not
-        // discard games that have started, are in progress, or have stale
-        // estimated end dates while the market remains actively tradable.
-        inWindow++;
+        // Require both live tradability and an estimated resolution within 24h.
+        // For sports, consensusTiming estimates finish from kickoff, including live games.
         const timing = consensusTiming(market);
+        const finishMs = timestampMs(timing.endDate);
+        if (finishMs === null || finishMs <= nowMs ||
+            finishMs > nowMs + CONSENSUS_WINDOW_HOURS * 60 * 60 * 1000) continue;
+        inWindow++;
         if (!marketByCondition.has(conditionId)) {
           marketByCondition.set(conditionId,{
             ...market,conditionId,category:"sports",sport:family,
@@ -1269,16 +1271,15 @@ async function enrichConsensusMarkets(holderGroups, nowMs) {  // Position record
       endMs = Date.parse(endDate + "T23:59:59.999Z");
     }
 
-    // Market eligibility is based on Gamma's live state, not its scheduled
-    // start/end timestamp. A game or event can already have started and still
-    // be actively tradable; delayed events can also resolve after their estimate.
-    // Keep every explicitly active, not-closed market regardless of end-date
-    // horizon. Settlement-only history remains separate and still excludes exits.
-    if (endMs === null) unknownDateKept++;
+    // Keep only explicitly active markets with a verifiable estimated resolution
+    // inside the next 24 hours. For sports, consensusTiming estimates game finish
+    // from kickoff; unknown or stale dates are not copy-ready and are excluded.
+    if (endMs === null || endMs <= nowMs || endMs > nowMs + CONSENSUS_WINDOW_HOURS * 60 * 60 * 1000) {
+      outsideWindowRemoved++;
+      continue;
+    }
 
     const category = classifyMarketCategory(market || {}, group);
-    // No 24h/48h expiry cutoff: only Gamma's explicit active/closed flags decide
-    // whether a discovered market remains eligible for consensus.
 
     enriched.push({
       ...group,
