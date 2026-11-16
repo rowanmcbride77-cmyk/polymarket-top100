@@ -111,6 +111,7 @@ jobs:
                   !Number.isFinite(rate) || rate < 90 || Math.abs(rate - wins / resolved * 100) > 1e-6 ||
                   !String(row.recordBasis || "").toLowerCase().includes("settlement-only");
               });
+              if (leaders.length === 0) throw new Error(`${file}: Top 100 leaderboard is empty; refusing to publish an empty trader table`);
               if (invalid.length) throw new Error(`${file}: ${invalid.length} leaderboard rows have invalid P&L or expose unverified settlement stats`);
               console.log(`${file}: ${leaders.length} selected-period leaderboard traders`);
               const discoveryRows = [
