@@ -1737,7 +1737,8 @@ async function getSettlementStats(wallet, period, nowMs, limit = 250) {
     .filter(Boolean))];
   const conditionChunks = [];
   for (let i = 0; i < conditions.length; i += 100) conditionChunks.push(conditions.slice(i, i + 100));
-  const marketPages = await mapLimit(conditionChunks, CONCURRENCY, async ids => {
+  // Settlement metadata pages can be large; limit per-wallet fan-out to avoid heap spikes.
+  const marketPages = await mapLimit(conditionChunks, 4, async ids => {
     const q = new URLSearchParams();
     // Gamma defaults to closed=false, which silently omits resolved markets.
     // Settlement verification needs metadata for both live early exits and
@@ -1899,7 +1900,8 @@ async function attachSettlementStats(traders, period, nowMs) {
   if (eligibleTraders.length !== traders.length) {
     console.warn(`Skipped ${traders.length - eligibleTraders.length} rows without a valid EVM trader wallet during settlement audit.`);
   }
-  return await mapLimit(eligibleTraders, 8, async trader => {
+  // Keep only a few full settlement histories in memory at once; each trader can have thousands of position rows and Gamma market lookups.
+  return await mapLimit(eligibleTraders, 3, async trader => {
     try {
       const wallet = String(trader.wallet || "").toLowerCase();
       const cacheKey = String(period?.key || period?.api || period || "week") + "|" + wallet;
