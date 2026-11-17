@@ -18,10 +18,10 @@ permissions:
   contents: write
 
 concurrency:
-  # Isolate the corrected early-exit-inclusive scanner from stale v12 runs.
-  # Keep new scheduled scans queued rather than cancelling an active scan.
+  # New scanner code supersedes older work. Only validated data is committed,
+  # so cancelling an unfinished scan preserves the last known-good publication.
   group: polymarket-scanner-update-v13
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   update:
@@ -104,14 +104,16 @@ jobs:
                   "periodWins", "periodLosses", "periodResolvedMarkets", "periodWinRate"]
                   .some(key => row[key] !== null && row[key] !== undefined);
                 if (leakedPeriodFields) return true;
-                if (row.recordComplete !== true) {
-                  return row.wins !== null || row.losses !== null || row.winRate !== null || row.resolvedMarkets !== null;
-                }
+                if (row.recordComplete !== true || row.settlementRecordComplete !== true || row.recordVerified !== true) return true;
                 if (!Number.isFinite(wins) || wins < 0 || !Number.isFinite(losses) || losses < 0 ||
-                    !Number.isFinite(resolved) || resolved !== wins + losses || resolved < 0) return true;
-                if (resolved === 0) return row.winRate !== null;
-                return !Number.isFinite(rate) || Math.abs(rate - wins / resolved * 100) > 1e-6 ||
-                  !String(row.recordBasis || "").toLowerCase().includes("early exits count");
+                    !Number.isFinite(resolved) || resolved !== wins + losses || resolved < 20) return true;
+                const basis = String(row.recordBasis || "").toLowerCase();
+                if (!Number.isFinite(rate) || rate < 90 ||
+                    Math.abs(rate - wins / resolved * 100) > 1e-6 ||
+                    !basis.includes("settlement-only") || !basis.includes("excluded")) return true;
+                if (row.realizedPnlTotal !== null && row.realizedPnlTotal !== undefined &&
+                    !String(row.realizedPnlBasis || "").toLowerCase().includes("early exits")) return true;
+                return false;
               });
               if (leaders.length === 0) throw new Error(`${file}: Top 100 leaderboard is empty; refusing to publish an empty trader table`);
               if (invalid.length) throw new Error(`${file}: ${invalid.length} leaderboard rows have invalid P&L or expose unverified settlement stats`);
@@ -150,12 +152,13 @@ jobs:
                   const rate = Number(row.winRate);
                   const leakedPeriodProxy = ["periodWins", "periodLosses", "periodResolvedMarkets", "periodWinRate"]
                     .some(key => row[key] !== null && row[key] !== undefined);
-                  return row.qualified !== true || row.recordComplete !== true ||
+                  const basis = String(row.recordBasis || "").toLowerCase();
+                  return row.qualified !== true || row.recordComplete !== true || row.settlementRecordComplete !== true ||
                     !Number.isFinite(wins) || wins < 0 || !Number.isFinite(losses) || losses < 0 ||
                     !Number.isFinite(resolved) || resolved !== wins + losses || resolved < 20 ||
                     !Number.isFinite(rate) || rate < 90 || Math.abs(rate - wins / resolved * 100) > 1e-6 ||
                     leakedPeriodProxy ||
-                    !String(row.recordBasis || "").toLowerCase().includes("early exits count") ||
+                    !basis.includes("settlement-only") || !basis.includes("excluded") ||
                     String(row.side || "").trim().toLowerCase() !== side;
                 });
                 const end = group.endDate ?? group.end_date ?? null;
@@ -193,11 +196,18 @@ jobs:
           const docs = await Promise.all(files.map(async file => JSON.parse(await fs.readFile(file, "utf8"))));
           const stamps = docs.map(doc => doc.generatedAt);
           if (!stamps.every(value => value === stamps[0])) throw new Error("Cannot publish status: generatedAt values differ");
-          const status = {startedAt: stamps[0], finishedAt: new Date().toISOString(), ok: true, errors: [], weekLeaders: docs[0].leaders?.length ?? 0, monthLeaders: docs[1].leaders?.length ?? 0, consensusMarkets: docs[2].consensus?.length ?? 0, recordBasis: "Rolling 30-day closed-position profitability: early exits count as wins or losses; consensus requires 20+ closed markets and 90%+ win rate."};
+          const status = {startedAt: stamps[0], finishedAt: new Date().toISOString(), ok: true, errors: [], weekLeaders: docs[0].leaders?.length ?? 0, monthLeaders: docs[1].leaders?.length ?? 0, consensusMarkets: docs[2].consensus?.length ?? 0, recordBasis: "Rolling 30-day verified settlement-only outcomes; positions exited before resolution are excluded from wins, losses, denominator, and accuracy. Any separate close-profitability diagnostic is not settlement accuracy."};
           await fs.writeFile("status.json", JSON.stringify(status, null, 2) + "\n");
           NODE
           cp status.json /tmp/scanner-status.json
           git fetch origin main
+          # Never let a run started on older scanner logic publish after main has
+          # moved to a different update.mjs or workflow. Data-only and dashboard-only
+          # commits do not invalidate an otherwise current scan.
+          if ! git diff --quiet "$GITHUB_SHA" origin/main -- update.mjs .github/workflows/update.yml; then
+            echo "Skipping stale scan because scanner source or workflow changed after this run started."
+            exit 0
+          fi
           # Other workflows may update forward-test.json while this scan runs.
           # The generatedAt comparison below is the authoritative stale-scan guard;
           # unrelated commits must not prevent fresh scanner data from publishing.
