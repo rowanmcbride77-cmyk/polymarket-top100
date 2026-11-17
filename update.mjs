@@ -42,7 +42,7 @@ const CONSENSUS_WALLET_LIMIT = 20000;
 // leaderboard audit budget to 2,500 actual shared-market holders.
 // Selection is category-balanced; every published Strong Signal holder still
 // needs a complete 30-day settlement audit and the unchanged strict quality gate.
-const CONSENSUS_SETTLEMENT_AUDIT_LIMIT = 6000; // Keep full 20k live-position discovery; cap the expensive 30-day settlement audit to fit the 40-minute run.
+const CONSENSUS_SETTLEMENT_AUDIT_LIMIT = 1000; // Prioritize the most widely shared wallets so the full 20k discovery scan and qualification audit can finish inside the 40-minute job.
 const MAX_CONSENSUS_POSITION_PAGES_PER_WALLET = 2;
 const MAX_SPORTS_CONSENSUS_POSITION_PAGES_PER_WALLET = 4;
 const LEADER_RECORD_LIMIT = RANKING_RECORD_LIMIT;
@@ -2103,11 +2103,21 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
   const candidateByWallet = new Map(
     candidates.map(trader => [String(trader.wallet || "").toLowerCase(), trader])
   );
-  const consensusWallets = new Set(
-    consensusGroups.flatMap(group => (Array.isArray(group.traders) ? group.traders : [])
+  // Prioritize wallets shared across the greatest number of distinct markets.
+  // This makes the bounded qualification audit cover the highest-overlap traders
+  // first instead of depending on whichever market happened to appear first.
+  const consensusWalletFrequency = new Map();
+  for (const group of consensusGroups) {
+    const groupWallets = new Set((Array.isArray(group.traders) ? group.traders : [])
       .map(holder => String(holder.wallet || "").toLowerCase())
-      .filter(Boolean))
-  );
+      .filter(Boolean));
+    for (const wallet of groupWallets) {
+      consensusWalletFrequency.set(wallet, (consensusWalletFrequency.get(wallet) || 0) + 1);
+    }
+  }
+  const consensusWallets = new Set([...consensusWalletFrequency.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .map(([wallet]) => wallet));
   // Audit every distinct wallet actually holding a discovered consensus outcome.
   // Do not pre-filter by position size, entry price, P&L, category, or capital.
   const consensusRecordWallets = [...consensusWallets].slice(0, CONSENSUS_SETTLEMENT_AUDIT_LIMIT);
@@ -2424,7 +2434,7 @@ output.leaderQualification = {
     consensusHolderRecordCandidateCount: consensusWallets.size,
     totalRecordCandidateCount: recordCandidates.length,
     scanDiagnostics: lastConsensusDiagnostics,
-    candidatePoolBasis: `Up to ${CONSENSUS_WALLET_LIMIT.toLocaleString()} unique wallets selected from public Data API v2 leaderboard discovery across sports, crypto, esports, politics, culture, mentions, weather, economics, tech, finance, and overall categories. The public API does not expose a literal all-wallet directory. The scan checks up to 200 open positions for sports-category wallets and 100 for other wallets. Discovery includes active positions worth $3+; the Strong Signals tier keeps its separate $10+ entry/current-value requirement.`,
+    candidatePoolBasis: `Up to ${CONSENSUS_WALLET_LIMIT.toLocaleString()} unique wallets selected from public Data API v2 leaderboard discovery across sports, crypto, esports, politics, culture, mentions, weather, economics, tech, finance, and overall categories. The public API does not expose a literal all-wallet directory. The scan checks up to 200 open positions for sports-category wallets and 100 for other wallets. No minimum position-value or entry-value qualification filter is applied.`,
     resolutionWindowHours: CONSENSUS_WINDOW_HOURS,
     recordBasis: "Consensus qualification uses exactly three rules per trader: complete rolling 30-day settlement-only record (early exits excluded), at least 20 settled markets, and at least 90% settlement accuracy. No P&L, position-size, entry-price, or current-value filters. Player props are grouped by exact market and outcome. This is a research signal, not a proven profitable strategy.",
     consensus: consensusRows
