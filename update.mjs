@@ -413,20 +413,32 @@ async function mapLimit(items, limit, callback) {
 // but category-specific P&L must never be mixed into the global ranking.
 async function getCanonicalLeaderboard(period) {
   const rows = [];
-  const timePeriod = String(period?.api || period || "WEEK").toUpperCase();
-  for (const offset of [0, 50]) {
+  const timePeriod = String(period?.api || period || "WEEK").toLowerCase();
+  let cursor = null;
+  const seenCursors = new Set();
+
+  // Data API v1 was retired (HTTP 410). The v2 leaderboard is cursor-paginated
+  // and wraps rows in { data, pagination }; offset/timePeriod/orderBy are v1-only.
+  while (rows.length < 100) {
     const params = new URLSearchParams({
-      category: "OVERALL",
-      timePeriod,
-      orderBy: "PNL",
-      limit: "50",
-      offset: String(offset)
+      category: "overall",
+      time_period: timePeriod,
+      sort_by: "PNL",
+      limit: "50"
     });
-    const response = await getJson(`${API}/v1/leaderboard?${params}`);
+    if (cursor) params.set("cursor", cursor);
+
+    const response = await getJson(`${API}/v2/leaderboard?${params}`);
     const page = asArray(response);
     rows.push(...page);
     if (page.length < 50) break;
+
+    const nextCursor = response?.pagination?.next_cursor;
+    if (!nextCursor || seenCursors.has(nextCursor)) break;
+    seenCursors.add(nextCursor);
+    cursor = nextCursor;
   }
+
   const unique = new Map();
   for (let i = 0; i < rows.length; i++) {
     const trader = normalizeLeader(rows[i], i + 1);
