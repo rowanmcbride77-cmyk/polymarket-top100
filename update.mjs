@@ -2158,10 +2158,9 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     String(trader.wallet || "").toLowerCase(),
     {volume: trader.volume ?? null, volumeBasis: trader.volumeBasis || "Unavailable from period user-volume endpoint"}
   ]));
-  console.log(period.key + ": independently audited " + consensusRecordCandidates.length + " shared-market holders for consensus; strict Top 100 audit separately evaluates up to " + LEADER_QUALIFICATION_AUDIT_LIMIT.toLocaleString() + " selected-period P&L candidates.");
-  // Audit a wider, bounded P&L-ranked sample so the Top 100 is not artificially
-  // capped by the first 1,000 candidates. Keep the audit well below the full
-  // 19k-20k discovery pool to avoid tens of thousands of history requests.
+  console.log(period.key + ": loaded rolling 30-day close records for " + Object.keys(consensusRecords).length + " shared-market holders; Top 100 records are audited separately.");
+  // The canonical Top 100 is already selected by period P&L; audit those
+  // 100 records only, while consensus separately audits its highest-overlap holders.
   const leaders = ranked
     .filter(trader => num(trader.pnl) !== null)
     .slice(0, LEADER_COUNT);
@@ -2280,9 +2279,10 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     minimumSameSideTraders: 2,
     candidateCount: ranked.length,
     discoveredCandidateCount: discoveredCandidates.length,
-    settlementRecordCandidateCount: rankingRecordCandidates.length,
+    closedPositionRecordCandidateCount: consensusRecordCandidates.length,
     consensusHolderRecordCandidateCount: consensusWallets.size,
-    totalRecordCandidateCount: recordCandidates.length,
+    top100ClosedRecordCandidateCount: leaderAuditCandidates.length,
+    selectedPeriodRecordCandidateCount: recordCandidates.length,
     scanDiagnostics: lastConsensusDiagnostics,
     candidatePoolBasis: `Up to ${CONSENSUS_WALLET_LIMIT.toLocaleString()} unique wallets selected from public Data API v2 leaderboard discovery across sports, crypto, esports, politics, culture, mentions, weather, economics, tech, finance, and overall categories. The public API does not expose a literal all-wallet directory. The scan checks up to 200 open positions for sports-category wallets and 100 for other wallets. No minimum position-value or entry-value qualification filter is applied.`,
     resolutionWindowHours: CONSENSUS_WINDOW_HOURS,
