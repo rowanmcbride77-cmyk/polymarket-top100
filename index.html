@@ -348,16 +348,20 @@ function walletOf(trader) {
 }
 
 function recordOf(trader) {
-  // The published record is rolling 30-day closed-position profitability.
-  // Early exits are intentionally included; this is not hold-to-settlement accuracy.
-  if (trader?.recordComplete !== true) return null;
-  const wins = num(trader?.wins);
-  const losses = num(trader?.losses);
+  // Only verified terminal market outcomes may be displayed as W/L or accuracy.
+  // Positions exited before resolution are excluded from this settlement record.
+  if (trader?.recordComplete !== true || trader?.settlementRecordComplete !== true) return null;
+  const wins = num(trader?.settlementWins ?? trader?.wins);
+  const losses = num(trader?.settlementLosses ?? trader?.losses);
   const resolved = num(trader?.resolvedMarkets);
-  if (wins === null || losses === null || wins < 0 || losses < 0) return null;
-  const total = wins + losses;
-  if (total <= 0 || (resolved !== null && resolved !== total)) return null;
-  return {wins, losses, total, rate:wins / total * 100, verified:false, basis:"30-day-closed-positions-including-early-exits"};
+  const publishedRate = num(trader?.winRate);
+  const basis = String(trader?.recordBasis || "").toLowerCase();
+  if (wins === null || losses === null || resolved === null || wins < 0 || losses < 0 ||
+      resolved !== wins + losses || resolved < 20 ||
+      !basis.includes("settlement-only") || !basis.includes("excluded")) return null;
+  const rate = wins / resolved * 100;
+  if (publishedRate === null || Math.abs(publishedRate - rate) > 1e-6 || rate < 90) return null;
+  return {wins, losses, total:resolved, rate, verified:true, basis:"verified-settlement-only"};
 }
 
 function recordText(trader) {
@@ -484,12 +488,54 @@ function trades() {
 function consensus() {
   const rows = Array.isArray(consensusData?.consensus) ? consensusData.consensus :
     Array.isArray(consensusData?.consensusMarkets) ? consensusData.consensusMarkets : [];
-  return rows.map(market => {
+  const valid = rows.map(market => {
     const traders = Array.isArray(market.traders) ? market.traders :
       Array.isArray(market.members) ? market.members : [];
-    const qualifiedTraders = traders.filter(trader => trader?.qualified === true).length;
-    return {...market, traders, sameSide:num(market?.sameSide) ?? traders.length, qualifiedTraders:num(market?.qualifiedTraders) ?? qualifiedTraders};
-  }).filter(market => market.traders.length >= 2 && (market.signalTier !== "Strong Signals" || market.traders.every(t => t.qualified === true)));
+    const condition = String(market.conditionId || "").trim().toLowerCase();
+    const side = String(market.side || market.outcome || "").trim().toLowerCase();
+    const wallets = traders.map(trader => walletOf(trader)).filter(Boolean);
+    const uniqueWallets = new Set(wallets);
+    const verifiedTraders = traders.every(trader => {
+      const wins = num(trader?.settlementWins ?? trader?.wins);
+      const losses = num(trader?.settlementLosses ?? trader?.losses);
+      const resolved = num(trader?.resolvedMarkets);
+      const rate = num(trader?.winRate);
+      const basis = String(trader?.recordBasis || "").toLowerCase();
+      return trader?.qualified === true &&
+        trader?.recordComplete === true &&
+        trader?.settlementRecordComplete === true &&
+        String(trader?.side || "").trim().toLowerCase() === side &&
+        wins !== null && losses !== null && resolved === wins + losses && resolved >= 20 &&
+        rate !== null && rate >= 90 && Math.abs(rate - wins / resolved * 100) <= 1e-6 &&
+        basis.includes("settlement-only") && basis.includes("excluded");
+    });
+    const sameSide = num(market?.sameSide) ?? traders.length;
+    return {
+      ...market, traders, sameSide,
+      qualifiedTraders:traders.filter(trader => trader?.qualified === true).length,
+      _validatedCondition:condition, _validatedSide:side,
+      _settlementValid:market.signalTier === "Strong Signals" &&
+        market.marketMetadataVerified === true && market.marketClosed === false &&
+        Boolean(condition && side) && traders.length >= 2 &&
+        uniqueWallets.size === traders.length && sameSide === traders.length &&
+        wallets.length === traders.length && verifiedTraders
+    };
+  }).filter(market => market._settlementValid);
+  // Fail closed if a condition has duplicate groups or qualified holders on
+  // more than one outcome side. The dashboard never counts either side then.
+  const byCondition = new Map();
+  for (const market of valid) {
+    const group = byCondition.get(market._validatedCondition) || [];
+    group.push(market);
+    byCondition.set(market._validatedCondition, group);
+  }
+  return valid.filter(market => {
+    const groups = byCondition.get(market._validatedCondition) || [];
+    return groups.length === 1 && groups[0]._validatedSide === market._validatedSide;
+  }).map(market => {
+    const {_validatedCondition, _validatedSide, _settlementValid, ...clean} = market;
+    return clean;
+  });
 }
 
 async function loadConsensusData() {
@@ -498,11 +544,9 @@ async function loadConsensusData() {
   $("consensusPeriod").textContent = "20K-wallet discovery · Strong Signals require 20+ resolved markets and 90%+ settlement accuracy over 30 days; early exits excluded";
   const filename = CONSENSUS_FILES[pool];
   try {
-    const urls = [
-      "https://raw.githubusercontent.com/rowanmcbride77-cmyk/polymarket-top100/main/" + filename + "?t=" + Date.now(),
-      filename + "?t=" + Date.now()
-    ];
-    // The raw repository file is authoritative. Pages is requested only if raw fails.
+    const urls = [filename + "?t=" + Date.now()];
+    // Read the deployed Pages copy so the visible dashboard timestamp matches
+    // the data actually served to visitors.
     let loaded = null;
     let lastError = null;
     for (const url of urls) {
@@ -710,7 +754,7 @@ function renderLeaders() {
   // Do not apply a second qualification filter in the browser.
   // Only verified resolved market outcomes are published as the 30-day W/L record.
   const qualifiedLeaderboard = baseList
-    .filter(trader => num(trader.pnl ?? trader.profit) !== null)
+    .filter(trader => num(trader.pnl ?? trader.profit) !== null && recordOf(trader) !== null)
     .slice(0, 100)
     .map((trader, index) => ({ ...trader, displayRank: index + 1 }));
   const list = comboMode ? comboProfitRows() : efficiencyMode ? comboEfficiencyRows() : qualifiedLeaderboard;
@@ -729,9 +773,9 @@ function renderLeaders() {
       const marketPool = Array.isArray(data?.comboCandidates) ? data.comboCandidates : [];
       const marketTrader = marketPool.find(row => walletOf(row).toLowerCase() === String(trader.wallet).toLowerCase()) ||
         baseList.find(row => walletOf(row).toLowerCase() === String(trader.wallet).toLowerCase());
-      const marketWins = marketTrader?.recordComplete === true ? num(marketTrader?.wins) : null;
-      const marketLosses = marketTrader?.recordComplete === true ? num(marketTrader?.losses) : null;
-      const marketRecordSuffix = marketTrader?.recordComplete === false ? "+" : "";
+      const marketWins = marketTrader?.settlementRecordComplete === true ? num(marketTrader?.settlementWins ?? marketTrader?.wins) : null;
+      const marketLosses = marketTrader?.settlementRecordComplete === true ? num(marketTrader?.settlementLosses ?? marketTrader?.losses) : null;
+      const marketRecordSuffix = marketTrader?.settlementRecordComplete === false ? "+" : "";
       const marketPnl = num(marketTrader?.pnl ?? marketTrader?.profit), marketVolume = num(marketTrader?.volume ?? marketTrader?.vol);
       return `<tr><td class="rank">${index+1}</td><td><div class="trader-name">${avatar(trader.trader)}<span class="name-text">${profileButton({...trader.trader, wallet:trader.wallet}, nameOf(trader.trader))}</span>${favoriteButton(trader.wallet)}</div></td><td class="record">${trader.wins}</td><td class="record">${trader.losses}</td><td class="record">${trader.partial}</td><td class="record">${(trader.wins + trader.losses) ? (trader.wins / (trader.wins + trader.losses) * 100).toFixed(1) + "%" : "N/A"}</td><td class="${trader.pnlKnown && trader.profit < 0 ? "negative" : "positive"}">${trader.pnlKnown ? (trader.pnlMissing ? "Partial: " : "") + (trader.profit > 0 ? "+" : "") + cash(trader.profit) : "N/A"}</td><td class="record">${trader.pnlKnown}/${trader.combos} combos</td><td class="record">${marketWins !== null && marketLosses !== null ? marketWins + marketRecordSuffix + "–" + marketLosses + marketRecordSuffix : "N/A"}</td><td class="${marketPnl !== null && marketPnl < 0 ? "negative" : "positive"}">${marketPnl !== null ? cash(marketPnl) : "N/A"}</td><td class="money">${marketVolume !== null ? cash(marketVolume) : "N/A"}</td></tr>`;
     }
@@ -756,13 +800,14 @@ function renderSportsLeaders() {
   const body = $("sportsLeadersBody");
   if (!body) return;
   body.innerHTML = rows.length ? rows.slice(0, 25).map((trader, index) => {
-    const settlementVerified = trader.recordComplete === true;
+    const settlementVerified = trader.settlementRecordComplete === true &&
+      String(trader.recordBasis || "").toLowerCase().includes("settlement-only");
     const wins = settlementVerified ? num(trader.sportsWins) : null;
     const losses = settlementVerified ? num(trader.sportsLosses) : null;
     const rate = settlementVerified ? num(trader.sportsWinRate) : null;
     const sample = settlementVerified ? num(trader.sportsResolvedMarkets) : null;
     return '<tr><td class="rank">' + (index + 1) + '</td><td><div class="trader-name">' + avatar(trader) + '<span class="name-text">' + profileButton(trader) + '</span></div></td><td class="record">' + (wins === null || losses === null ? 'N/A' : wins + '–' + losses) + '</td><td class="record">' + (rate === null ? 'N/A' : rate.toFixed(1) + '%') + '</td><td>' + (sample === null ? 'N/A' : sample) + '</td></tr>';
-  }).join('') : '<tr><td colspan="5" class="empty">No traders have five or more classifiable closed sports positions in this candidate pool yet.</td></tr>';
+  }).join('') : '<tr><td colspan="5" class="empty">Sports discovery rows are not independently settlement-audited; verified W/L and accuracy are withheld.</td></tr>';
 }
 
 const consensusTradeCache = new Map();
@@ -895,7 +940,7 @@ function renderConsensus() {
 
   const tierSections = [
     {title:"Strong Signals", note:`Every listed trader has 20+ resolved markets and a 90%+ win rate over the last 30 days; early exits excluded.`, rows:filtered.filter(m => m.signalTier === "Strong Signals")},
-    {title:"Developing Signals", note:`Developing Signals are disabled; only holders passing the 20-market / 90% close-record threshold are shown as Strong Signals.`, rows:filtered.filter(m => m.signalTier === "Developing Signals")},
+    {title:"Developing Signals", note:`Developing Signals are disabled; only holders passing the 20-market / 90% settlement-only threshold are shown as Strong Signals.`, rows:filtered.filter(m => m.signalTier === "Developing Signals")},
     {title:"Watchlist", note:"2+ distinct wallets hold the same outcome, but historical qualification is incomplete or below the Developing threshold.", rows:filtered.filter(m => m.signalTier === "Watchlist")}
   ];
   const visible = tierSections.flatMap(section =>
@@ -988,7 +1033,7 @@ function renderConsensus() {
         const hasReportedEntry = !buy && reportedAvgPrice !== null;
         const sellCost = sell?._cost;
         return '<div class="member member-compact">' +
-          '<div class="member-identity"><strong>' + profileButton(member, memberName) + favoriteButton(wallet) + '</strong><small class="member-record">' + (Number(consensusData?.qualificationWindowDays) || 30) + "-day settlement-only record: " + (member.recordComplete === true && num(member.wins) !== null && num(member.losses) !== null ? num(member.wins).toLocaleString() + "–" + num(member.losses).toLocaleString() + " · " + (num(member.winRate) !== null ? num(member.winRate).toFixed(1) + "% win rate" : "win rate N/A") + " · " + (num(member.resolvedMarkets) ?? (num(member.wins)+num(member.losses))).toLocaleString() + " resolved markets" : "Record incomplete / unavailable") + '</small><small>' + (num(member.weeklyPnl) !== null ? "7-day leaderboard P&L: " + consensusCash(num(member.weeklyPnl)) : "7-day leaderboard P&L unavailable") + '</small><small>' + (hasObservedBuy ? "Observed BUY · "+esc(dateText(buy?.timestamp)) : "Open position confirmed · original BUY timestamp not required") + '</small><small>' + (sell ? "SELL observed · "+esc(dateText(sell.timestamp)) : (!events ? "Checking later SELL trades…" : (member.isStillHolding === true || String(member.positionStatus || "").toUpperCase() === "OPEN" ? "Still listed as an open position; no SELL required" : "No matching SELL found in returned trade history"))) + '</small></div>' +
+          '<div class="member-identity"><strong>' + profileButton(member, memberName) + favoriteButton(wallet) + '</strong><small class="member-record">' + (Number(consensusData?.qualificationWindowDays) || 30) + "-day settlement-only record: " + (member.settlementRecordComplete === true && String(member.recordBasis || "").toLowerCase().includes("settlement-only") && num(member.settlementWins ?? member.wins) !== null && num(member.settlementLosses ?? member.losses) !== null ? num(member.settlementWins ?? member.wins).toLocaleString() + "–" + num(member.settlementLosses ?? member.losses).toLocaleString() + " · " + (num(member.winRate) !== null ? num(member.winRate).toFixed(1) + "% settlement accuracy" : "settlement accuracy N/A") + " · " + (num(member.resolvedMarkets) ?? (num(member.settlementWins ?? member.wins)+num(member.settlementLosses ?? member.losses))).toLocaleString() + " resolved markets" : "Verified settlement record incomplete / unavailable") + '</small><small>' + (num(member.weeklyPnl) !== null ? "7-day leaderboard P&L: " + consensusCash(num(member.weeklyPnl)) : "7-day leaderboard P&L unavailable") + '</small><small>' + (hasObservedBuy ? "Observed BUY · "+esc(dateText(buy?.timestamp)) : "Open position confirmed · original BUY timestamp not required") + '</small><small>' + (sell ? "SELL observed · "+esc(dateText(sell.timestamp)) : (!events ? "Checking later SELL trades…" : (member.isStillHolding === true || String(member.positionStatus || "").toUpperCase() === "OPEN" ? "Still listed as an open position; no SELL required" : "No matching SELL found in returned trade history"))) + '</small></div>' +
           '<div><strong>' + (buyPrice === null ? "N/A" : tokenPrice(buyPrice)) + '</strong><small>' + (hasObservedBuy ? "Observed BUY price" : (reportedAvgPrice !== null ? "Average buy price from open position" : "Average buy price unavailable")) + '</small><small>' + (bought === null || bought === undefined ? (memberEntry !== null ? "Reported position entry value "+consensusCash(memberEntry)+" · exact trade cost unavailable" : "Entry cost unavailable; no matching BUY trade found") : (hasObservedBuy ? "Observed BUY / position entry "+consensusCash(bought) : "Reported position entry "+consensusCash(bought))+(shares !== null ? " · "+shares.toFixed(1)+" shares" : "")) + '</small>' + (bought !== null && memberValue !== null ? '<small>' + (buy ? "Approx. unrealized change: " : "Approx. change vs estimated entry: ") + (memberValue-bought>0?"+":"") + consensusCash(memberValue-bought) + " (" + (bought>0?((memberValue-bought)/bought*100).toFixed(1):"N/A") + "%)" + '</small>' : "") + '</div>' +
           '<div><strong>' + (sell && sell._price !== null ? (sell._price*100).toFixed(1)+"¢" : "—") + '</strong><small>Observed sell price</small><small>' + (sell ? "SELL transaction "+(sellCost === null ? "amount unavailable" : cash(sellCost)) : (!events ? "Loading transaction history" : "No matching SELL found")) + '</small><small>' + (memberValue !== null ? "Position value reported "+consensusCash(memberValue) : "Current held value unavailable") + '</small></div>' +
         '</div>';
@@ -1360,17 +1405,17 @@ function openProfile(wallet) {
   const volume = num(trader.volume ?? trader.vol);
   const positions = activePositions(trader);
   const selectedPeriodLabel = "30-day";
-  // Consensus members carry one rolling 30-day settlement-only record, including early exits.
-  const closeRecord = recordOf(trader);
-  const selectedWins = closeRecord?.wins ?? null;
-  const selectedLosses = closeRecord?.losses ?? null;
-  const selectedRate = closeRecord?.rate ?? null;
+  // Consensus members carry a verified rolling 30-day settlement-only record.
+  const settlementRecord = recordOf(trader);
+  const selectedWins = settlementRecord?.wins ?? null;
+  const selectedLosses = settlementRecord?.losses ?? null;
+  const selectedRate = settlementRecord?.rate ?? null;
   const otherPeriodLabel = "other-period";
   const otherWins = null;
   const otherLosses = null;
   const otherComplete = false;
-  const periodBasis = closeRecord
-    ? "Closed-position profitability record; early exits included"
+  const periodBasis = settlementRecord
+    ? "Verified settlement-only record; early exits excluded"
     : "No complete 30-day settlement-only record was published for this trader";
   const recentTrades = Array.isArray(data?.traderActiveTrades?.[traderWallet])
     ? data.traderActiveTrades[traderWallet]
@@ -1381,7 +1426,7 @@ function openProfile(wallet) {
     <div class="profile-grid">
       <div class="profile-stat"><small>Leaderboard rank</small><strong>${trader.rank ?? trader.displayRank ? "#" + esc(trader.rank ?? trader.displayRank) : "Not ranked in loaded data"}</strong></div>
       <div class="profile-stat"><small>${selectedPeriodLabel} wins / losses</small><strong>${selectedWins !== null && selectedLosses !== null ? selectedWins.toLocaleString() + "–" + selectedLosses.toLocaleString() : "No complete record in published data"}</strong><small class="subtitle">${esc(periodBasis)}</small></div>
-      <div class="profile-stat"><small>${selectedPeriodLabel} win rate</small><strong>${selectedRate !== null ? selectedRate.toFixed(1) + "%" : "Not calculable from published data"}</strong><small class="subtitle">Verified resolved market outcomes only; early exits are excluded</small></div>
+      <div class="profile-stat"><small>${selectedPeriodLabel} settlement accuracy</small><strong>${selectedRate !== null ? selectedRate.toFixed(1) + "%" : "Not calculable from published data"}</strong><small class="subtitle">Verified resolved market outcomes only; early exits are excluded</small></div>
       <div class="profile-stat"><small>${otherPeriodLabel} wins / losses</small><strong>${otherComplete && otherWins !== null && otherLosses !== null ? otherWins.toLocaleString() + "–" + otherLosses.toLocaleString() : "Not available"}</strong><small class="subtitle">Early exits are excluded from settlement wins, losses, and accuracy; any close-profitability diagnostic is separate.</small></div>
       <div class="profile-stat"><small>Markets with SELL activity</small><strong id="sellMarketCount">Checking…</strong><small class="subtitle">A SELL print can be a partial reduction, not necessarily a full exit.</small></div>
       <div class="profile-stat"><small>${period === "week" ? "Weekly" : "Monthly"} market P&amp;L</small><strong class="${pnl !== null && pnl < 0 ? "negative" : "positive"}">${cash(pnl)}</strong></div>
@@ -1735,13 +1780,12 @@ async function loadData(forceReload = false) {
 
   try {
     const filename = FILES[period];
-    const rawUrl = "https://raw.githubusercontent.com/rowanmcbride77-cmyk/polymarket-top100/main/" + filename + "?t=" + Date.now();
     const pagesUrl = filename + "?t=" + Date.now() + (forceReload ? "&reload=1" : "");
     let result = null;
     let lastError = null;
-    // Read the authoritative raw file first. Only fetch Pages as a fallback;
-    // parsing both copies on every load doubled startup work.
-    for (const url of [rawUrl, pagesUrl]) {
+    // The deployed Pages JSON is authoritative for the visible dashboard.
+    // Never show a newer raw-branch timestamp before Pages has the same data.
+    for (const url of [pagesUrl]) {
       try {
         const response = await fetch(url, {cache:"no-store", signal:AbortSignal.timeout(20000)});
         if (!response.ok) throw new Error(`${url.split("?")[0]} returned HTTP ${response.status}`);
