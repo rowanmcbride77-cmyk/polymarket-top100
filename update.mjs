@@ -1926,12 +1926,19 @@ async function attachSettlementStats(traders, period, nowMs) {
 }
 
 function makeOutput(period, ranked, sportsRanked, activePositions, tradeRows, nowMs, consensusCandidates, records, leaderRecords, consensusGroups, settlementRecords, consensusRecords, consensusPeriodRecords, consensusVolumeStats) {
-  // Keep the selected-period P&L ranking separate from the rolling 30-day
-  // closed-position record. The latter includes early exits and is attached
-  // only as a separate profitability statistic; consensus qualification uses
-  // its own complete 30-day record for the 20-market / 90% thresholds.
+  // Keep selected-period P&L ranking separate from the verified 30-day settlement
+  // record. Only complete settlement records meeting the same thresholds qualify
+  // for Top 100 or Strong Consensus. Close-profitability diagnostics are separate.
   const leaders = ranked
-    .filter(trader => num(trader.pnl) !== null)
+    .filter(trader => {
+      if (num(trader.pnl) === null) return false;
+      const record = settlementRecords?.[String(trader.wallet || "").toLowerCase()] || {};
+      const wins = num(record.settlementWins), losses = num(record.settlementLosses);
+      const resolved = wins !== null && losses !== null ? wins + losses : 0;
+      return record.settlementRecordComplete === true &&
+        resolved >= MIN_CONSENSUS_CLOSED_MARKETS &&
+        resolved > 0 && wins / resolved * 100 >= MIN_CONSENSUS_WIN_RATE;
+    })
     .slice(0, LEADER_COUNT)
     .map((trader, index) => {
       const record = settlementRecords?.[String(trader.wallet || "").toLowerCase()] || {};
@@ -1973,7 +1980,7 @@ function makeOutput(period, ranked, sportsRanked, activePositions, tradeRows, no
     period: period.key,
     rankingBasis:
       "Top 100 is ranked by selected-period Polymarket leaderboard P&L. The displayed record is a separate rolling 30-day closed-position profitability measure.",
-    recordBasis: "Rolling 30-day closed-position win/loss record; early exits count as wins or losses. This is not a hold-to-settlement accuracy measure.",
+    recordBasis: "Rolling 30-day verified settlement-only win/loss record; early exits before resolution are excluded.",
     realizedPnlBasis: "Rolling 30-day closed-position realized dollar P&L; early exits are included.",
     candidateCount: ranked.length,
     sportsLeaders: sportsRanked.slice(0, LEADER_COUNT).map(trader => ({
@@ -1986,7 +1993,7 @@ function makeOutput(period, ranked, sportsRanked, activePositions, tradeRows, no
     minResolvedMarketsForRecordRanking: 10,
     recordRankingEnabled: true,
     recordWarning:
-      "Consensus qualification uses 20+ closed markets and a 90%+ win rate over the last 30 days. Profitable and losing early exits count as wins and losses; incomplete histories are not qualified.",
+      "Top 100 and Strong Consensus qualification require complete rolling 30-day settlement-only records with 20+ resolved markets and 90%+ settlement accuracy. Early exits are excluded from wins, losses, accuracy, and qualification.",
     leaders,
     // Combo discovery pool is intentionally broad: combo traders can be profitable
     // despite low win rates or small sample sizes. Rank and display their actual combo positions.
