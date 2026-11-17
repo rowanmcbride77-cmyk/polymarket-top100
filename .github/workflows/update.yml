@@ -18,10 +18,9 @@ permissions:
 
 concurrency:
   group: polymarket-scanner-update-v12
-  # A newer committed scanner build supersedes an older in-progress build.
-  # Publication is atomic and validation-gated, so cancellation preserves the
-  # last known-good JSON instead of allowing stale code to hold the queue.
-  cancel-in-progress: true
+  # Never cancel an active 20k-wallet scan when a newer commit is pushed.
+  # GitHub queues the latest update and publishes only after validation.
+  cancel-in-progress: false
 
 jobs:
   update:
