@@ -144,7 +144,9 @@ function asArray(value) {
   if (Array.isArray(value)) return value;
   if (Array.isArray(value?.data)) return value.data;
   if (Array.isArray(value?.data?.leaderboard)) return value.data.leaderboard;
+  if (Array.isArray(value?.data?.entries)) return value.data.entries;
   if (Array.isArray(value?.leaderboard)) return value.leaderboard;
+  if (Array.isArray(value?.entries)) return value.entries;
   if (Array.isArray(value?.results)) return value.results;
   return [];
 }
@@ -192,10 +194,12 @@ function normalizeLeader(row, index) {
       row.name ||
       row.pseudonym ||
       (wallet ? `${wallet.slice(0, 8)}…${wallet.slice(-4)}` : "Unknown"),
-    pnl: num(row.pnl),
+    // Preserve selected-period USD P&L across current and legacy leaderboard field spellings.
+    // Never substitute position-level P&L.
+    pnl: num(row.pnl ?? row.profit ?? row.rankPnl ?? row.rank_pnl ?? row.realized_pnl ?? row.realizedPnl),
     // v2's bare volume is shares; only publish a dollar figure when the API
     // explicitly supplies a USDC-denominated field.
-    volume: num(row.volume_usdc ?? row.volumeUsdc ?? null),
+    volume: num(row.volume_usdc ?? row.volumeUsdc ?? row.volumeUsd ?? row.volume_usd ?? null),
     wins: null,
     losses: null,
     winRate: null,
@@ -402,6 +406,56 @@ async function mapLimit(items, limit, callback) {
   );
 
   return results;
+}
+
+// Use Polymarket's canonical OVERALL P&L board for the visible Top 100.
+// Category leaderboard rows remain the broad 20k-wallet discovery source,
+// but category-specific P&L must never be mixed into the global ranking.
+async function getCanonicalLeaderboard(period) {
+  const rows = [];
+  const timePeriod = String(period?.api || period || "WEEK").toUpperCase();
+  for (const offset of [0, 50]) {
+    const params = new URLSearchParams({
+      category: "OVERALL",
+      timePeriod,
+      orderBy: "PNL",
+      limit: "50",
+      offset: String(offset)
+    });
+    const response = await getJson(`${API}/v1/leaderboard?${params}`);
+    const page = asArray(response);
+    rows.push(...page);
+    if (page.length < 50) break;
+  }
+  const unique = new Map();
+  for (let i = 0; i < rows.length; i++) {
+    const trader = normalizeLeader(rows[i], i + 1);
+    if (!isUsableTraderWallet(trader.wallet) || num(trader.pnl) === null) continue;
+    trader.canonicalLeaderboard = true;
+    trader.canonicalRank = num(rows[i]?.rank) ?? i + 1;
+    trader.sourceCategories = ["overall"];
+    unique.set(trader.wallet, trader);
+  }
+  if (!unique.size) throw new Error(`Canonical ${timePeriod} OVERALL P&L leaderboard returned no usable traders`);
+  return [...unique.values()].sort((a, b) => Number(b.pnl) - Number(a.pnl)).slice(0, 100);
+}
+
+function mergeCanonicalLeaderboard(discovered, canonical) {
+  const byWallet = new Map(discovered.map(row => [String(row.wallet || "").toLowerCase(), row]));
+  for (const row of canonical) {
+    const wallet = String(row.wallet || "").toLowerCase();
+    const prior = byWallet.get(wallet) || {};
+    byWallet.set(wallet, {
+      ...prior,
+      ...row,
+      wallet,
+      pnl: num(row.pnl),
+      canonicalLeaderboard: true,
+      canonicalRank: row.canonicalRank ?? row.rank ?? null,
+      sourceCategories: [...new Set([...(prior.sourceCategories || []), "overall"])]
+    });
+  }
+  return [...byWallet.values()];
 }
 
 async function getCandidates(period) {
@@ -1669,7 +1723,9 @@ async function getSettlementStats(wallet, period, nowMs, limit = 250) {
     do {
       const params = new URLSearchParams({
         user: wallet,
-        limit: String(limit),
+        // v2 supports up to 1,000 rows per page. Larger pages avoid falsely
+        // marking active high-volume traders incomplete after a 1,000-row cap.
+        limit: "1000",
         status,
         sort_by: "TIMESTAMP",
         sort_direction: "DESC"
@@ -1706,9 +1762,9 @@ async function getSettlementStats(wallet, period, nowMs, limit = 250) {
   // If a cohort is truncated or a market cannot be classified, the record
   // remains incomplete and is never presented as a verified W-L.
   const cohorts = await Promise.all([
-    fetchPositionCohort("CLOSED", 10),
-    fetchPositionCohort("REDEEMABLE", 10),
-    fetchPositionCohort("REDEEMABLE_LOST", 10)
+    fetchPositionCohort("CLOSED", 100),
+    fetchPositionCohort("REDEEMABLE", 100),
+    fetchPositionCohort("REDEEMABLE_LOST", 100)
   ]);
   // Require complete CLOSED, REDEEMABLE, and REDEEMABLE_LOST cohorts.
   // REDEEMABLE contains unredeemed settled winners; REDEEMABLE_LOST contains
@@ -2085,8 +2141,10 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
   // Select the actual period-P&L Top 100 first, then fully paginate their
   // selected-period CLOSED-position history. Never spend the record budget
   // on the first 1,000 discovery-order wallets and leave the displayed leaders unaudited.
+  const canonicalCandidates = usableLeaderboardCandidates.filter(trader => trader.canonicalLeaderboard === true);
+  const visibleRankingCandidates = canonicalCandidates.length ? canonicalCandidates : usableLeaderboardCandidates;
   const rankingRecordCandidates = LEADER_QUALIFICATION_AUDIT_LIMIT > 0
-    ? rankCandidates(usableLeaderboardCandidates, {}).slice(0, Math.min(LEADER_COUNT, LEADER_QUALIFICATION_AUDIT_LIMIT))
+    ? rankCandidates(visibleRankingCandidates, {}).slice(0, Math.min(LEADER_COUNT, LEADER_QUALIFICATION_AUDIT_LIMIT))
     : [];
   // Use the selected period's leaderboard rows for rank/P&L; the shared
   // consensus discovery pool may contain a different period's P&L or nulls.
@@ -2186,7 +2244,7 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
   const records = await attachRecords(recordCandidates, period, nowMs, null, fullRecordCache);
   const rejectedLeaderboardWallets = candidates.length - usableLeaderboardCandidates.length;
   if (rejectedLeaderboardWallets) {
-    console.warn(`Excluded ${rejectedLeaderboardWallets} malformed/protocol wallets from leaderboard ranking.`);  }  const ranked = rankCandidates(usableLeaderboardCandidates, records);
+    console.warn(`Excluded ${rejectedLeaderboardWallets} malformed/protocol wallets from leaderboard ranking.`);  }  const ranked = rankCandidates(visibleRankingCandidates, records);
   const sportsRanked = rankSportsCandidates(usableLeaderboardCandidates, records);
   console.log(`${period.key}: ranked ${ranked.length} candidates; ${sportsRanked.length} sports-qualified candidates.`);
   // Consensus holder records are scanned across the complete rolling 7-day window; leaderboard records remain separately capped.
@@ -2338,7 +2396,7 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     }));
   const qualifiedRanked = rankCandidates(qualifiedLeaderRows, {});
   const leaders = ranked.filter(trader => num(trader.pnl) !== null).slice(0, LEADER_COUNT);
-  console.log(`${period.key}: strict Top 100 qualification retained ${qualifiedRanked.length} traders with complete 30-day settlement records, 20+ settled markets, 90%+ settlement accuracy, and positive realized P&L.`);
+  console.log(`${period.key}: published ${leaders.length} canonical OVERALL P&L leaderboard traders; ${qualifiedRanked.length} independently passed the separate 30-day settlement qualification.`);
   // Reuse the settlement-only audit already performed for this candidate sample.
   const settlementRecords = leaderSettlementByWallet;
   const consensusMinimumResolved = MIN_CONSENSUS_CLOSED_MARKETS;
@@ -2371,18 +2429,22 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     consensusVolumeStats
   );
 
-  // Publish only genuine Top 100 passers from the independently audited candidate sample.
-// The settlement-only record supplies every public W/L and accuracy field. Positive
-// realized dollar P&L is a separate 30-day profitability gate and may include early exits.
+  // Publish the actual canonical Top 100 P&L board. Settlement records remain
+// explicitly blank until the independent resolution audit verifies them;
+// never stamp an unaudited row as verified.
 output.leaders = leaders.map((trader, index) => ({
   ...trader,
   rank: index + 1,
-  recordComplete: true,
-  recordVerified: true,
-  settlementRecordComplete: true,
-  recordBasis: trader.recordBasis || "Complete rolling 30-day settlement-only record; early exits excluded from wins and losses.",
-  settlementRecordBasis: trader.settlementRecordBasis || "Complete rolling 30-day settlement-only record; early exits excluded from wins and losses.",
-  realizedPnlBasis: trader.realizedPnlBasis || "Rolling 30-day closed-position realized dollar P&L; may include early exits; separate profitability measure, never settlement accuracy."
+  wins: null,
+  losses: null,
+  winRate: null,
+  resolvedMarkets: null,
+  recordComplete: false,
+  recordVerified: false,
+  settlementRecordComplete: false,
+  settlementPositionsChecked: 0,
+  settlementPositionsUnclassified: 0,
+  recordBasis: "Settlement-only audit pending; early exits are excluded from wins, losses, and accuracy."
 }));
 output.traderActivePositions = Object.fromEntries(output.leaders.map(trader => [
   trader.wallet,
@@ -2397,7 +2459,7 @@ output.leaderQualification = {
   prefilteredCandidates: settlementAuditLeaderCandidates.length,
   qualifiedCandidates: qualifiedRanked.length,
   publishedLeaders: output.leaders.length,
-  basis: "Up to 100 genuine passers from the highest selected-period P&L candidates audited. Every published trader has a complete rolling 30-day settlement-only record, 20+ resolved markets, 90%+ settlement accuracy, and positive realized dollar P&L as a separate profitability gate. Early exits are excluded from settlement wins, losses, denominator, and accuracy."
+  basis: "The visible Top 100 is the canonical selected-period OVERALL P&L leaderboard. qualifiedCandidates is a separate subset independently verified for 30-day settlement-only accuracy; early exits never count as settled wins or losses."
 };
 
 // Count every discovered weekly wallet, not only Top 100 traders or shared-market holders.
@@ -2513,13 +2575,24 @@ async function main() {
 
   console.log("Loading monthly leaderboard...");
   const monthCandidates = await getCandidates(PERIODS[1]);
-  console.log(`Monthly candidates: ${monthCandidates.length}`);  const unique = new Map();
+  console.log(`Monthly candidates: ${monthCandidates.length}`);
+
+  console.log("Loading canonical weekly and monthly OVERALL P&L leaderboards...");
+  const [weekCanonical, monthCanonical] = await Promise.all([
+    getCanonicalLeaderboard(PERIODS[0]),
+    getCanonicalLeaderboard(PERIODS[1])
+  ]);
+  const finalWeekCandidates = mergeCanonicalLeaderboard(weekCandidates, weekCanonical);
+  const finalMonthCandidates = mergeCanonicalLeaderboard(monthCandidates, monthCanonical);
+  console.log(`Canonical leaderboard rows merged: week=${weekCanonical.length}, month=${monthCanonical.length}.`);
+
+  const unique = new Map();
 
   // Use the full discovered pool for overlap detection; only the detailed
   // period-history scan is bounded separately.
   const positionCandidates = [
-    ...weekCandidates,
-    ...monthCandidates
+    ...finalWeekCandidates,
+    ...finalMonthCandidates
   ];
   for (const trader of positionCandidates) {
     if (!unique.has(trader.wallet)) unique.set(trader.wallet, trader);
@@ -2570,8 +2643,8 @@ async function main() {
   // IMPORTANT: consensus membership must use the full discovered candidate pool,
   // not the tiny record-filtered leaderboard. The latter can make valid overlaps
   // vanish even when the position scan found them.
-  await buildPeriod(PERIODS[0], weekCandidates, activePositions, nowMs, consensusCandidatePool, fullRecordCache, consensusGroups);
-  await buildPeriod(PERIODS[1], monthCandidates, activePositions, nowMs, consensusCandidatePool, fullRecordCache, consensusGroups);
+  await buildPeriod(PERIODS[0], finalWeekCandidates, activePositions, nowMs, consensusCandidatePool, fullRecordCache, consensusGroups);
+  await buildPeriod(PERIODS[1], finalMonthCandidates, activePositions, nowMs, consensusCandidatePool, fullRecordCache, consensusGroups);
 
   console.log("Polymarket tracker update completed.");
 }
