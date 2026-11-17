@@ -19,8 +19,9 @@ permissions:
 
 concurrency:
   group: polymarket-scanner-update-v12
-  # Replace stuck scans immediately when a newer validated fix is pushed.
-  cancel-in-progress: true
+  # Never cancel a long-running scan just because the hourly schedule fires.
+  # GitHub queues the newest pending run until the active scan finishes.
+  cancel-in-progress: false
 
 jobs:
   update:
