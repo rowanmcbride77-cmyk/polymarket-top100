@@ -1515,16 +1515,13 @@ function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedM
       const wallet = String(holder.wallet || "").toLowerCase();
       const candidate = candidateMap.get(wallet) || {};
       const record = records[wallet] || records[candidate.wallet] || {};
-      const wins = num(record.wins), losses = num(record.losses);
-      const resolvedMarkets = wins !== null && losses !== null ? wins + losses : num(record.resolvedMarkets);
-      const winRate = wins !== null && losses !== null && resolvedMarkets > 0
-        ? wins / resolvedMarkets * 100 : num(record.winRate);
+      const wins = num(record.settlementWins), losses = num(record.settlementLosses);
+      const resolvedMarkets = wins !== null && losses !== null ? wins + losses : null;
+      const winRate = wins !== null && losses !== null && resolvedMarkets > 0 ? wins / resolvedMarkets * 100 : null;
       const hasVerifiedEntryPrice = true; // Position size and entry price are display-only, not qualification rules.
       const periodPnl = num(candidate.pnl); // Display context only; not a qualification input.
-      const complete = record.recordComplete === true;
-      const realizedPnlTotal = num(record.realizedPnlTotal);
-      // Exactly two performance thresholds apply: 20+ closed markets and a
-      // 90%+ win rate over 30 days. Early exits count as wins or losses.
+      const complete = record.settlementRecordComplete === true;
+      // Qualification is based only on verified resolved outcomes; early exits are diagnostics only.
       const strongQualified = complete &&
         resolvedMarkets !== null && resolvedMarkets >= minimumResolvedMarkets &&
         winRate !== null && winRate >= MIN_CONSENSUS_WIN_RATE;
@@ -1554,16 +1551,16 @@ function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedM
         recordStatus: !complete ? "Closed-position history incomplete" :
           (resolvedMarkets === null || resolvedMarkets < minimumResolvedMarkets ? "Fewer than 20 closed markets in 30 days" :
             (winRate !== null && winRate < MIN_CONSENSUS_WIN_RATE ? "Below 90% closed-market win rate" : "Meets both performance thresholds")),
-        recordBasis: complete
-          ? "Complete rolling 30-day closed-position record; early exits count as wins or losses."
-          : "Closed-position history incomplete; not qualified.",
-        realizedPnlTotal,
-        realizedPnlBasis: record.realizedPnlBasis || "Rolling 30-day closed-position realized dollar P&L; early exits included.",
-        settlementRecordComplete: false,
-        settlementWins: null,
-        settlementLosses: null,
-        settlementPositionsChecked: record.scannedPositions ?? 0,
-        settlementPositionsUnclassified: 0
+        recordBasis: complete ? record.settlementRecordBasis : "Settlement history incomplete or unclassified; not qualified.",
+        realizedPnlTotal: null,
+        realizedPnlBasis: "Separate close-profitability diagnostic may include early exits; never used for settlement accuracy or qualification.",
+        settlementRecordComplete: complete,
+        settlementWins: wins,
+        settlementLosses: losses,
+        settlementPositionsChecked: record.settlementPositionsChecked ?? 0,
+        settlementPositionsUnclassified: record.settlementPositionsUnclassified ?? null,
+        earlyExitMarkets: record.earlyExitMarkets ?? null,
+        earlyExitPositions: record.earlyExitPositions ?? null
       };
     });
 
@@ -1576,7 +1573,7 @@ function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedM
     const developingHolders = [];
     const tier = "Strong Signals";
     const displayTraders = strongHolders;
-    const tierReason = "Every listed trader has a complete rolling 30-day closed-position record, 20+ closed markets, and 90%+ win rate. Early exits count as wins or losses.";
+    const tierReason = "Every listed trader has a complete rolling 30-day settlement-only record, 20+ resolved markets, and 90%+ settlement accuracy. Early exits are excluded.";
 
     if (displayTraders.length >= 10 && tier === "Strong Signals") diagnostics.marketsWithTenStrongHolders++;
     if (displayTraders.length >= 10 && tier === "Developing Signals") diagnostics.marketsWithTenDevelopingHolders++;
@@ -1596,7 +1593,7 @@ function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedM
       displayedTraders: strongHolders.length,
       qualifiedTraders: strongHolders.length, developingTraders: developingHolders.length,
       strongHolderCount: strongHolders.length, signalTier: "Strong Signals",
-      tierReason: "Every listed trader has a complete rolling 30-day closed-position record, 20+ closed markets, and 90%+ win rate. Early exits count as wins or losses.",
+      tierReason: "Every listed trader has a complete rolling 30-day settlement-only record, 20+ resolved markets, and 90%+ settlement accuracy. Early exits are excluded.",
       consensusScore: Math.round(breadthScore + capitalScore + qualityScore),
       totalValue, totalEntry
     };
@@ -1900,7 +1897,7 @@ async function attachSettlementStats(traders, period, nowMs) {
     console.warn(`Skipped ${traders.length - eligibleTraders.length} rows without a valid EVM trader wallet during settlement audit.`);
   }
   // Keep only a few full settlement histories in memory at once; each trader can have thousands of position rows and Gamma market lookups.
-  return await mapLimit(eligibleTraders, 3, async trader => {
+  const audited = await mapLimit(eligibleTraders, 3, async trader => {
     try {
       const wallet = String(trader.wallet || "").toLowerCase();
       const cacheKey = String(period?.key || period?.api || period || "week") + "|" + wallet;
@@ -1923,6 +1920,7 @@ async function attachSettlementStats(traders, period, nowMs) {
       return {...trader, settlementWins: null, settlementLosses: null, earlyExitMarkets: null, earlyExitPositions: null, settlementRecordComplete: false, settlementPositionsChecked: 0};
     }
   });
+  return Object.fromEntries(audited.map(row => [String(row.wallet || "").toLowerCase(), row]));
 }
 
 function makeOutput(period, ranked, sportsRanked, activePositions, tradeRows, nowMs, consensusCandidates, records, leaderRecords, consensusGroups, settlementRecords, consensusRecords, consensusPeriodRecords, consensusVolumeStats) {
@@ -1942,25 +1940,25 @@ function makeOutput(period, ranked, sportsRanked, activePositions, tradeRows, no
     .slice(0, LEADER_COUNT)
     .map((trader, index) => {
       const record = settlementRecords?.[String(trader.wallet || "").toLowerCase()] || {};
-      const complete = record.recordComplete === true;
+      const complete = record.settlementRecordComplete === true;
       return {
         ...trader,
         rank: index + 1,
-        wins: complete ? record.wins : null,
-        losses: complete ? record.losses : null,
-        winRate: complete ? record.winRate : null,
-        resolvedMarkets: complete ? record.resolvedMarkets : null,
+        wins: complete ? record.settlementWins : null,
+        losses: complete ? record.settlementLosses : null,
+        winRate: complete && (record.settlementWins + record.settlementLosses) > 0 ? record.settlementWins / (record.settlementWins + record.settlementLosses) * 100 : null,
+        resolvedMarkets: complete ? record.settlementWins + record.settlementLosses : null,
         recordComplete: complete,
-        recordVerified: false,
-        settlementRecordComplete: false,
-        settlementRecordCoverage: null,
-        settlementPositionsChecked: record.scannedPositions ?? 0,
-        settlementPositionsUnclassified: 0,
-        realizedPnlTotal: complete ? record.realizedPnlTotal : null,
-        realizedPnlBasis: record.realizedPnlBasis || null,
-        recordBasis: complete
-          ? "Complete rolling 30-day closed-position record; early exits count as wins or losses."
-          : "Rolling 30-day closed-position history incomplete; W/L and win rate unavailable.",
+        recordVerified: complete,
+        settlementRecordComplete: complete,
+        settlementRecordCoverage: record.settlementRecordCoverage || (complete ? "complete" : "partial"),
+        settlementPositionsChecked: record.settlementPositionsChecked ?? 0,
+        settlementPositionsUnclassified: record.settlementPositionsUnclassified ?? null,
+        earlyExitMarkets: record.earlyExitMarkets ?? null,
+        earlyExitPositions: record.earlyExitPositions ?? null,
+        realizedPnlTotal: null,
+        realizedPnlBasis: "Separate close-profitability diagnostic only; may include early exits and is never used for qualification.",
+        recordBasis: complete ? record.settlementRecordBasis : "Settlement history incomplete or unclassified; W/L and settlement accuracy unavailable.",
         sportsWins: null, sportsLosses: null, sportsWinRate: null, sportsResolvedMarkets: null,
         periodWins: null, periodLosses: null, periodResolvedMarkets: null, periodWinRate: null,
         periodRecordComplete: false
@@ -2136,13 +2134,7 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
   const consensusRecordCandidates = consensusRecordWallets.map(wallet =>
     candidateByWallet.get(wallet) || {wallet}
   );
-  const consensusRecords = await attachRecords(
-    consensusRecordCandidates,
-    CONSENSUS_RECORD_PERIOD,
-    nowMs,
-    null,
-    fullRecordCache
-  );
+  const consensusRecords = await attachSettlementStats(consensusRecordCandidates, CONSENSUS_RECORD_PERIOD, nowMs);
   console.log(`${period.key}: ${Object.keys(consensusRecords).length} rolling 30-day closed-position records loaded for consensus holders.`);
   // Keep selected-period records separate from the rolling 30-day qualification record.
   // Weekly period detail is optional display context, not a qualification input.
@@ -2162,13 +2154,7 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     .filter(trader => num(trader.pnl) !== null)
     .slice(0, LEADER_COUNT);
   const leaderAuditCandidates = leaders;
-  const leaderRecords30d = await attachRecords(
-    leaderAuditCandidates,
-    CONSENSUS_RECORD_PERIOD,
-    nowMs,
-    null,
-    fullRecordCache
-  );
+  const leaderRecords30d = await attachSettlementStats(leaderAuditCandidates, CONSENSUS_RECORD_PERIOD, nowMs);
   const settlementRecords = leaderRecords30d;
   console.log(`${period.key}: Top 100 is the selected-period P&L leaderboard; attaching rolling 30-day closed-position records to its ${leaderAuditCandidates.length} traders.`);
   console.log(`${period.key}: Consensus requires 2+ distinct same-side holders; each trader needs 20+ closed markets and >=90% win rate in the last 30 days. Early exits count. No P&L, stake-size, entry-price, or current-value qualification filters.`);
@@ -2272,7 +2258,7 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     qualificationWindowDays: 30,
     minimumWinRate: MIN_CONSENSUS_WIN_RATE,
     minimumResolvedMarkets: MIN_CONSENSUS_CLOSED_MARKETS,
-    qualificationBasis: "Signals are grouped by exact Polymarket condition and outcome, including individual player props. Each trader must have a complete rolling 30-day closed-position record, 20+ closed markets, and 90%+ win rate. Early exits count as wins or losses. No P&L, stake-size, entry-price, or current-value qualification filters.",
+    qualificationBasis: "Signals are grouped by exact Polymarket condition and outcome. Each trader must have a complete rolling 30-day settlement-only record, 20+ actually resolved markets, and 90%+ settlement accuracy. Early exits are excluded from wins, losses, accuracy, and qualification. Close-profitability diagnostics may include early exits but are separate and never used for qualification.",
     minimumSameSideTraders: 2,
     candidateCount: ranked.length,
     discoveredCandidateCount: discoveredCandidates.length,
@@ -2283,7 +2269,7 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     scanDiagnostics: lastConsensusDiagnostics,
     candidatePoolBasis: `Up to ${CONSENSUS_WALLET_LIMIT.toLocaleString()} unique wallets selected from public Data API v2 leaderboard discovery across sports, crypto, esports, politics, culture, mentions, weather, economics, tech, finance, and overall categories. The public API does not expose a literal all-wallet directory. The scan checks up to 200 open positions for sports-category wallets and 100 for other wallets. No minimum position-value or entry-value qualification filter is applied.`,
     resolutionWindowHours: CONSENSUS_WINDOW_HOURS,
-    recordBasis: "Consensus qualification uses a complete rolling 30-day closed-position record, at least 20 closed markets, and at least 90% win rate. Early exits count as wins or losses. No P&L, position-size, entry-price, or current-value filters. Player props are grouped by exact market and outcome. This is a research signal, not a proven profitable strategy.",
+    recordBasis: "Consensus qualification uses only complete rolling 30-day verified settlement outcomes: at least 20 resolved markets and at least 90% settlement accuracy. Early exits are excluded. Any separate close-profitability diagnostic may include early exits but is not accuracy or used for qualification. Player props are grouped by exact market and outcome. This is a research signal, not a proven profitable strategy.",
     consensus: consensusRows
   });
 
