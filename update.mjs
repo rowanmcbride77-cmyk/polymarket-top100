@@ -1525,6 +1525,7 @@ function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedM
       const resolvedMarkets = wins !== null && losses !== null ? wins + losses : num(record.resolvedMarkets);
       const winRate = wins !== null && losses !== null && resolvedMarkets > 0
         ? wins / resolvedMarkets * 100 : num(record.winRate);
+      const hasVerifiedEntryPrice = true; // Position size and entry price are display-only, not qualification rules.
       const periodPnl = num(candidate.pnl); // Display context only; not a qualification input.
       const complete = record.settlementRecordComplete === true;
       const realizedPnlTotal = num(record.realizedPnlTotal);
@@ -1556,7 +1557,7 @@ function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedM
         periodWins: null, periodLosses: null,
         periodResolvedMarkets: null, periodWinRate: null,
         periodRecordComplete: false,        qualified: strongQualified,
-        strongQualified, developingQualified,
+        strongQualified, developingQualified, entryVerified: hasVerifiedEntryPrice,
         recordStatus: !complete ? "Settlement history incomplete" :
           (resolvedMarkets === null || resolvedMarkets < minimumResolvedMarkets ? "Fewer than 20 settled markets in 30 days" :
             (winRate !== null && winRate < MIN_CONSENSUS_WIN_RATE ? "Below 90% settlement accuracy" : "Meets all three qualifications")),
@@ -1634,7 +1635,74 @@ function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedM
   // Publish every market that passes the exact three trader rules and has
   // at least two distinct qualified wallets on one unanimous outcome side.
   const result = strongGroups.sort(sortGroups);
-  return {rows, complete};
+  const unanimousResult = result.filter(group => {
+    const condition = String(group.conditionId || "").trim().toLowerCase();
+    const sides = strongQualifiedSidesByCondition.get(condition);
+    return sides && sides.size === 1 && group.sameSide >= 2;
+  });
+  return unanimousResult;
+}
+// [run-scanner] Conflict suppression and $3 holder discovery are part of this build.
+function parseArrayField(value) {
+  if (Array.isArray(value)) return value;
+  if (typeof value !== "string" || !value.trim()) return [];
+  try { const parsed = JSON.parse(value); return Array.isArray(parsed) ? parsed : []; }
+  catch { return []; }
+}
+function timeMs(value) {
+  if (value === null || value === undefined || value === "") return null;
+  const n = Number(value);
+  const ms = Number.isFinite(n) ? (n < 1e12 ? n * 1000 : n) : Date.parse(String(value));
+  return Number.isFinite(ms) && ms > 0 ? ms : null;
+}
+async function getSettlementStats(wallet, period, nowMs, limit = 250) {
+  const periodDays = String(period?.api || period || "").toUpperCase() === "MONTH" ? 30 : 7;
+  const periodCutoffMs = nowMs - periodDays * 24 * 60 * 60 * 1000;
+  // CLOSED positions are exits, not proof of settlement. Polymarket v2 exposes
+  // unredeemed settled winners as REDEEMABLE and held settled losers as
+  // REDEEMABLE_LOST. Ordinary OPEN holdings are not part of the settlement
+  // denominator and must never be paginated as a substitute for REDEEMABLE.
+  async function fetchPositionCohort(status, maxPages) {
+    const rows = [];
+    let cursor = null;
+    let complete = true;
+    let pagesFetched = 0;
+    do {
+      const params = new URLSearchParams({
+        user: wallet,
+        // v2 supports up to 1,000 rows per page. Larger pages avoid falsely
+        // marking active high-volume traders incomplete after a 1,000-row cap.
+        limit: "1000",
+        status,
+        sort_by: "TIMESTAMP",
+        sort_direction: "DESC"
+      });
+      // CLOSED rows are bounded by their exit event. Held positions must be
+      // fetched without activity bounds because they may have been bought
+      // before the 30-day window but still resolve inside it.
+      if (status === "CLOSED") {
+        params.set("start", String(Math.floor(periodCutoffMs / 1000)));
+        params.set("end", String(Math.floor(nowMs / 1000)));
+      }
+      if (cursor) params.set("cursor", cursor);
+      const response = await getJson(`${API}/v2/positions?${params}`);
+      const page = asArray(response);
+      rows.push(...page.map(row => ({...row, _scanStatus: status})));
+      const pagination = response?.pagination ?? {};
+      pagesFetched++;
+      const nextCursor = pagination.next_cursor ?? pagination.nextCursor ?? null;
+      if (pagination.has_more !== true) {
+        cursor = null;
+        break;
+      }
+      if (!nextCursor || pagesFetched >= maxPages) {
+        complete = false;
+        cursor = null;
+        break;
+      }
+      cursor = String(nextCursor);
+    } while (cursor);
+    return {rows, complete};
   }
 
   // Scan a wider closed-position history for settlement verification.
