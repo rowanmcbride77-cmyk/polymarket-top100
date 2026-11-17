@@ -30,7 +30,7 @@ const RANKING_RECORD_LIMIT = 1000;
 // Publish up to 100 genuine passers; never substitute a raw P&L leaderboard.
 // Positive 30-day realized dollar P&L is a separate profitability gate and may
 // include early exits, but it never contributes to settlement wins, losses, or accuracy.
-const LEADER_QUALIFICATION_AUDIT_LIMIT = 0; // Top 100 is the canonical P&L board; do not waste scan time re-auditing it as a separate qualification list.
+const LEADER_QUALIFICATION_AUDIT_LIMIT = 1000; // Audit the highest selected-period P&L candidates and publish only traders meeting the three agreed settlement rules.
 // Bound closed-position history requests. Records that hit this cap are marked
 // incomplete and withheld rather than presented as complete win/loss stats.
 const CLOSED_POSITION_SCAN_LIMIT = null; // Fully paginate the entire rolling 30-day close history; capped samples cannot qualify.
@@ -2182,20 +2182,10 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
   // 19k-20k discovery pool to avoid tens of thousands of history requests.
   const leaderAuditCandidates = rankCandidates(usableLeaderboardCandidates, {})
     .slice(0, LEADER_QUALIFICATION_AUDIT_LIMIT);
-  const leaderAuditRecords = await attachRecords(
-    leaderAuditCandidates,
-    CONSENSUS_RECORD_PERIOD,
-    nowMs,
-    null,
-    fullRecordCache
-  );
-  const settlementAuditLeaderCandidates = leaderAuditCandidates.filter(candidate => {
-    const record = leaderAuditRecords[String(candidate.wallet || "").toLowerCase()] || {};
-    return record.recordComplete === true &&
-      Number(record.realizedPnlTotal) > 0;
-  });
+  // Apply only the three agreed qualification rules. Do not add a separate
+  // positive-P&L, stake-size, entry-price, or current-value gate.
   const leaderSettlementRows = await attachSettlementStats(
-    settlementAuditLeaderCandidates,
+    leaderAuditCandidates,
     CONSENSUS_RECORD_PERIOD,
     nowMs
   );
@@ -2213,7 +2203,6 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
   const qualifiedLeaderRows = leaderAuditCandidates
     .map(candidate => {
       const wallet = String(candidate.wallet || "").toLowerCase();
-      const closeRecord = leaderAuditRecords[wallet] || {};
       const settlement = leaderSettlementByWallet[wallet] || {};
       // Fail closed: a closed-position profitability record is NOT settlement
       // accuracy. Only the independent market-resolution audit may supply W/L
@@ -2226,7 +2215,6 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
         resolvedMarkets !== null && resolvedMarkets > 0;
       return {
         ...candidate,
-        ...closeRecord,
         ...settlement,
         wins: settlementComplete ? wins : null,
         losses: settlementComplete ? losses : null,
@@ -2250,8 +2238,8 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
         periodResolvedMarkets: null,
         periodWinRate: null,
         periodRecordComplete: false,
-        realizedPnlTotal: closeRecord.realizedPnlTotal,
-        realizedPnlBasis: closeRecord.realizedPnlBasis || "Rolling 30-day closed-position realized dollar P&L; may include early exits; separate profitability measure, never settlement accuracy.",
+        realizedPnlTotal: null,
+        realizedPnlBasis: "Not used for Top 100 qualification.",
         wallet
       };
     })
@@ -2264,8 +2252,8 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
       volume: candidateByWallet.get(String(trader.wallet).toLowerCase())?.volume ?? null
     }));
   const qualifiedRanked = rankCandidates(qualifiedLeaderRows, {});
-  const leaders = ranked.filter(trader => num(trader.pnl) !== null).slice(0, LEADER_COUNT);
-  console.log(`${period.key}: published ${leaders.length} canonical OVERALL P&L leaderboard traders; ${qualifiedRanked.length} independently passed the separate 30-day settlement qualification.`);
+  const leaders = qualifiedRanked.slice(0, LEADER_COUNT);
+  console.log(`${period.key}: published ${leaders.length} qualified Top 100 traders from ${leaderAuditCandidates.length} highest-P&L candidates; qualification uses only complete settlement history, 20+ resolved markets, and >=90% settlement accuracy.`);
   // Reuse the settlement-only audit already performed for this candidate sample.
   const settlementRecords = leaderSettlementByWallet;
   const consensusMinimumResolved = MIN_CONSENSUS_CLOSED_MARKETS;
@@ -2298,9 +2286,7 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     consensusVolumeStats
   );
 
-  // Publish the actual canonical Top 100 P&L board. Settlement records remain
-// explicitly blank until the independent resolution audit verifies them;
-// never stamp an unaudited row as verified.
+  // Publish only traders who passed the three agreed settlement qualifications.
 output.leaders = leaders.map((trader, index) => ({
   ...trader,
   rank: index + 1,
@@ -2323,12 +2309,12 @@ output.leaderQualification = {
   windowDays: 30,
   minimumResolvedMarkets: MIN_CONSENSUS_CLOSED_MARKETS,
   minimumWinRate: MIN_CONSENSUS_WIN_RATE,
-  requirePositiveRealizedPnl: true,
+  requirePositiveRealizedPnl: false,
   eligibleCandidatesAudited: leaderAuditCandidates.length,
   prefilteredCandidates: settlementAuditLeaderCandidates.length,
   qualifiedCandidates: qualifiedRanked.length,
   publishedLeaders: output.leaders.length,
-  basis: "The visible Top 100 is the canonical selected-period OVERALL P&L leaderboard. qualifiedCandidates is a separate subset independently verified for 30-day settlement-only accuracy; early exits never count as settled wins or losses."
+  basis: "The visible Top 100 is ranked by selected-period P&L among traders who pass exactly three rules: complete rolling 30-day settlement-only history (early exits excluded), 20+ settled markets, and >=90% settlement accuracy."
 };
 
 // Count every discovered weekly wallet, not only Top 100 traders or shared-market holders.
