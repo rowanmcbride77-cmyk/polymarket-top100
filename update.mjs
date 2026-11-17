@@ -2017,14 +2017,15 @@ function makeOutput(period, ranked, sportsRanked, activePositions, tradeRows, no
 }
 
 async function writeJsonUnderLimit(filename, output) {
-  const hasLeaders = Array.isArray(output?.leaders) && output.leaders.length > 0;
-  const hasConsensus = Array.isArray(output?.consensus) && output.consensus.length > 0;
-  const allowEmptyConsensus = String(filename).startsWith("consensus-");
-  // Empty qualified lists are valid when no trader passes the settlement-only gate.
-  // Publish the explicit result rather than leaving stale data online.
-  const allowEmptyQualifiedLeaderboard = false; // Never overwrite the live Top 100 with an empty leaderboard.
-  if (!output || (!hasLeaders && !hasConsensus && !allowEmptyConsensus && !allowEmptyQualifiedLeaderboard)) {
-    throw new Error(`${filename}: refusing to write empty or missing leaderboard/consensus data`);
+  const isConsensusFile = String(filename).startsWith("consensus-");
+  const hasExpectedRows = isConsensusFile
+    ? Array.isArray(output?.consensus) && output.consensus.length > 0
+    : Array.isArray(output?.leaders) && output.leaders.length > 0;
+  // A week/month file is not valid merely because it contains consensus rows:
+  // it must contain qualified Top 100 traders. A consensus file must likewise
+  // contain qualified same-side groups. Fail closed before touching the file.
+  if (!output || !hasExpectedRows) {
+    throw new Error(`${filename}: refusing to write an empty ${isConsensusFile ? "consensus" : "qualified Top 100"} dataset; published data must remain untouched`);
   }
   const compact = () => JSON.stringify(output);
 
@@ -2066,10 +2067,11 @@ async function writeJsonUnderLimit(filename, output) {
   }
 
   const parsedCheck = JSON.parse(json);
-  const parsedHasLeaders = Array.isArray(parsedCheck.leaders) && parsedCheck.leaders.length > 0;
-  const parsedHasConsensus = Array.isArray(parsedCheck.consensus) && parsedCheck.consensus.length > 0;
-  if (!parsedHasLeaders && !parsedHasConsensus && !allowEmptyConsensus && !allowEmptyQualifiedLeaderboard) {
-    throw new Error(`${filename}: serialized output failed the non-empty data check`);
+  const parsedHasExpectedRows = isConsensusFile
+    ? Array.isArray(parsedCheck.consensus) && parsedCheck.consensus.length > 0
+    : Array.isArray(parsedCheck.leaders) && parsedCheck.leaders.length > 0;
+  if (!parsedHasExpectedRows) {
+    throw new Error(`${filename}: serialized output failed the file-specific non-empty data check`);
   }
   const tempFilename = `${filename}.tmp`;
   await fs.writeFile(tempFilename, json, "utf8");
