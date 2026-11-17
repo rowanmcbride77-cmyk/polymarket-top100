@@ -2207,7 +2207,7 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
       // Fail closed: a closed-position profitability record is NOT settlement
       // accuracy. Only the independent market-resolution audit may supply W/L
       // counts or qualify a Top 100 trader. Missing/partial settlement rows
-      // must never fall back to the closeRecord's early-exit-inclusive stats.
+      // must never fall back to a close-profitability proxy that includes early exits.
       const wins = num(settlement.settlementWins);
       const losses = num(settlement.settlementLosses);
       const resolvedMarkets = wins !== null && losses !== null ? wins + losses : null;
