@@ -175,7 +175,7 @@ dialog::backdrop{background:#000b}
         <div class="overview-grid">
           <div><div class="metric-label">Total P&amp;L</div><div class="metric-value" id="totalPnl">—</div></div>
           <div><div class="metric-label">Total Volume</div><div class="metric-value" id="totalVolume">—</div></div>
-          <div><div class="metric-label">Avg. Settlement Accuracy</div><div class="metric-value" id="avgWinRate">N/A</div></div>
+          <div><div class="metric-label">Avg. 30-day Close Win Rate</div><div class="metric-value" id="avgWinRate">N/A</div></div>
         </div>
         </section>
       <section class="panel">
@@ -357,7 +357,7 @@ function recordOf(trader) {
   if (wins === null || losses === null || wins < 0 || losses < 0) return null;
   const total = wins + losses;
   if (total <= 0 || (resolved !== null && resolved !== total)) return null;
-  return {wins, losses, total, rate:wins / total * 100, verified:true, basis:"30-day-closed-positions-including-early-exits"};
+  return {wins, losses, total, rate:wins / total * 100, verified:false, basis:"30-day-closed-positions-including-early-exits"};
 }
 
 function recordText(trader) {
@@ -707,10 +707,8 @@ function renderLeaders() {
   const efficiencyMode = mode === "efficiency";
   const baseList = rankedLeaders();
   // The scanner publishes the canonical selected-period P&L Top 100.
-  // Do not apply a second settlement qualification filter here: it hid every
-  // legitimate leaderboard row while the independent settlement audit ran.
-  // Unverified W/L and accuracy remain N/A via recordOf(); early exits are
-  // never counted as settlement wins, losses, or resolved outcomes.
+  // Do not apply a second qualification filter in the browser.
+  // The attached 30-day closed-position record includes early exits.
   const qualifiedLeaderboard = baseList
     .filter(trader => num(trader.pnl ?? trader.profit) !== null)
     .slice(0, 100)
@@ -990,7 +988,7 @@ function renderConsensus() {
         const hasReportedEntry = !buy && reportedAvgPrice !== null;
         const sellCost = sell?._cost;
         return '<div class="member member-compact">' +
-          '<div class="member-identity"><strong>' + profileButton(member, memberName) + favoriteButton(wallet) + '</strong><small class="member-record">' + (Number(consensusData?.qualificationWindowDays) || 7) + "-day settled record: " + (member.recordComplete === true && num(member.wins) !== null && num(member.losses) !== null ? num(member.wins).toLocaleString() + "–" + num(member.losses).toLocaleString() + " · " + (num(member.winRate) !== null ? num(member.winRate).toFixed(1) + "% win rate" : "win rate N/A") + " · " + (num(member.resolvedMarkets) ?? (num(member.wins)+num(member.losses))).toLocaleString() + " closed markets" : "Record incomplete / unavailable") + '</small><small>' + (num(member.weeklyPnl) !== null ? "7-day leaderboard P&L: " + consensusCash(num(member.weeklyPnl)) : "7-day leaderboard P&L unavailable") + '</small><small>' + (hasObservedBuy ? "Observed BUY · "+esc(dateText(buy?.timestamp)) : "Open position confirmed · original BUY timestamp not required") + '</small><small>' + (sell ? "SELL observed · "+esc(dateText(sell.timestamp)) : (!events ? "Checking later SELL trades…" : (member.isStillHolding === true || String(member.positionStatus || "").toUpperCase() === "OPEN" ? "Still listed as an open position; no SELL required" : "No matching SELL found in returned trade history"))) + '</small></div>' +
+          '<div class="member-identity"><strong>' + profileButton(member, memberName) + favoriteButton(wallet) + '</strong><small class="member-record">' + (Number(consensusData?.qualificationWindowDays) || 30) + "-day closed-position record: " + (member.recordComplete === true && num(member.wins) !== null && num(member.losses) !== null ? num(member.wins).toLocaleString() + "–" + num(member.losses).toLocaleString() + " · " + (num(member.winRate) !== null ? num(member.winRate).toFixed(1) + "% win rate" : "win rate N/A") + " · " + (num(member.resolvedMarkets) ?? (num(member.wins)+num(member.losses))).toLocaleString() + " closed markets" : "Record incomplete / unavailable") + '</small><small>' + (num(member.weeklyPnl) !== null ? "7-day leaderboard P&L: " + consensusCash(num(member.weeklyPnl)) : "7-day leaderboard P&L unavailable") + '</small><small>' + (hasObservedBuy ? "Observed BUY · "+esc(dateText(buy?.timestamp)) : "Open position confirmed · original BUY timestamp not required") + '</small><small>' + (sell ? "SELL observed · "+esc(dateText(sell.timestamp)) : (!events ? "Checking later SELL trades…" : (member.isStillHolding === true || String(member.positionStatus || "").toUpperCase() === "OPEN" ? "Still listed as an open position; no SELL required" : "No matching SELL found in returned trade history"))) + '</small></div>' +
           '<div><strong>' + (buyPrice === null ? "N/A" : tokenPrice(buyPrice)) + '</strong><small>' + (hasObservedBuy ? "Observed BUY price" : (reportedAvgPrice !== null ? "Average buy price from open position" : "Average buy price unavailable")) + '</small><small>' + (bought === null || bought === undefined ? (memberEntry !== null ? "Reported position entry value "+consensusCash(memberEntry)+" · exact trade cost unavailable" : "Entry cost unavailable; no matching BUY trade found") : (hasObservedBuy ? "Observed BUY / position entry "+consensusCash(bought) : "Reported position entry "+consensusCash(bought))+(shares !== null ? " · "+shares.toFixed(1)+" shares" : "")) + '</small>' + (bought !== null && memberValue !== null ? '<small>' + (buy ? "Approx. unrealized change: " : "Approx. change vs estimated entry: ") + (memberValue-bought>0?"+":"") + consensusCash(memberValue-bought) + " (" + (bought>0?((memberValue-bought)/bought*100).toFixed(1):"N/A") + "%)" + '</small>' : "") + '</div>' +
           '<div><strong>' + (sell && sell._price !== null ? (sell._price*100).toFixed(1)+"¢" : "—") + '</strong><small>Observed sell price</small><small>' + (sell ? "SELL transaction "+(sellCost === null ? "amount unavailable" : cash(sellCost)) : (!events ? "Loading transaction history" : "No matching SELL found")) + '</small><small>' + (memberValue !== null ? "Position value reported "+consensusCash(memberValue) : "Current held value unavailable") + '</small></div>' +
         '</div>';
