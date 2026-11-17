@@ -42,7 +42,7 @@ const CONSENSUS_WALLET_LIMIT = 20000;
 // leaderboard audit budget to 2,500 actual shared-market holders.
 // Selection is category-balanced; every published Strong Signal holder still
 // needs a complete 30-day settlement audit and the unchanged strict quality gate.
-const CONSENSUS_SETTLEMENT_AUDIT_LIMIT = CONSENSUS_WALLET_LIMIT;
+const CONSENSUS_SETTLEMENT_AUDIT_LIMIT = 12000; // Prioritize the highest-overlap holder set; keep the full 20k live-position discovery scan.
 const MAX_CONSENSUS_POSITION_PAGES_PER_WALLET = 2;
 const MAX_SPORTS_CONSENSUS_POSITION_PAGES_PER_WALLET = 4;
 const LEADER_RECORD_LIMIT = RANKING_RECORD_LIMIT;
@@ -65,7 +65,7 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 // Shared request pacing: 20 requests/second while allowing concurrent responses.
 // Retry-After globally pauses workers if the API pushes back.
-const API_MIN_INTERVAL_MS = 50;
+const API_MIN_INTERVAL_MS = 35; // ~28.5 request starts/sec; Retry-After still globally backs off on API throttling.
 let nextApiRequestAt = 0;
 let apiPauseUntil = 0;
 
