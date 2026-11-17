@@ -1985,6 +1985,10 @@ function makeOutput(period, ranked, sportsRanked, activePositions, tradeRows, no
       ...trader,
       wins: null, losses: null, winRate: null, resolvedMarkets: null,
       sportsWins: null, sportsLosses: null, sportsWinRate: null, sportsResolvedMarkets: null,
+      settlementWins: null, settlementLosses: null, settlementRecordComplete: false,
+      // Any realized close P&L here is a separate dollar diagnostic. It may
+      // include early exits and is never a settlement W/L or accuracy measure.
+      realizedPnlBasis: "Separate realized close P&L diagnostic; may include early exits; not settlement accuracy or a W/L denominator.",
       recordComplete: false, recordVerified: false,
       recordBasis: "Settlement-only record not independently audited for this sports discovery list; early-exit profitability is not published as accuracy."
     })),
@@ -2005,6 +2009,11 @@ function makeOutput(period, ranked, sportsRanked, activePositions, tradeRows, no
       losses: null,
       winRate: null,
       resolvedMarkets: null,
+      settlementWins: null,
+      settlementLosses: null,
+      settlementRecordComplete: false,
+      realizedPnlTotal: null,
+      realizedPnlBasis: "No realized close P&L published for combo discovery; it is separate from settlement accuracy.",
       recordComplete: false,
       recordVerified: false,
       recordBasis: "Settlement-only record not independently audited for combo discovery; early-exit profitability is not published as accuracy."
