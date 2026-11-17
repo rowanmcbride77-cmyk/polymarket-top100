@@ -49,9 +49,6 @@ const LEADER_RECORD_LIMIT = RANKING_RECORD_LIMIT;
 // Retained for dashboard horizon labels only; active sports eligibility is not time-window limited.
 const CONSENSUS_WINDOW_HOURS = 24;
 const CONSENSUS_HOLDERS_PER_MARKET = 1000;
-const MIN_CONSENSUS_DISCOVERY_VALUE = 3; // Discovery feeds Developing/Watchlist; Strong Signals retain the $10 gate.
-const MIN_CONSENSUS_POSITION_VALUE = 10;
-const MIN_CONSENSUS_ENTRY_VALUE = 10; // Exclude tiny/dust entries when verified cost basis is available.
 const CONSENSUS_ENTRY_WINDOW_MINUTES = 90;
 const MIN_TRADER_RESOLVED_MARKETS = 10;
 const MIN_CONSENSUS_CLOSED_MARKETS = 20; // Strong consensus qualification uses a complete rolling 30-day record with 20+ resolved markets.
@@ -773,8 +770,6 @@ async function getMarketConsensus(market, knownNames) {
     status: "OPEN",
     sort_by: "CURRENT_VALUE",
     sort_direction: "DESC",
-    filter_type: "CASH",
-    filter_amount: String(MIN_CONSENSUS_DISCOVERY_VALUE)
   });
 
   let response;
@@ -794,7 +789,7 @@ async function getMarketConsensus(market, knownNames) {
     const wallet = String(position.proxy_wallet ?? position.proxyWallet ?? position.user ?? "").toLowerCase();
     const side = String(position.outcome ?? position.outcome_name ?? "").trim();
     const value = num(position.current_value ?? position.currentValue);
-    if (!wallet || !side || value === null || value < MIN_CONSENSUS_DISCOVERY_VALUE) continue;
+    if (!wallet || !side) continue;
 
     // An open, non-redeemable position is active even if the original entry
     // was made earlier. Do not require a recent add-on trade to count it.
@@ -977,8 +972,7 @@ function hasExpiredEndDate(market, nowMs) {
 
 function isLiveConsensusPosition(position) {
   const size = num(position.size ?? position.current_size ?? position.currentSize);  const currentValue = num(position.current_value ?? position.currentValue);
-  if (size === null || size <= 0) return false;
-  if (currentValue === null || currentValue < MIN_CONSENSUS_DISCOVERY_VALUE) return false;  if (position.closed === true || position.redeemable === true || position.mergeable === true) return false;
+  if (size === null || size <= 0) return false;  if (position.closed === true || position.redeemable === true || position.mergeable === true) return false;
   const status = String(position.status ?? "").toUpperCase();
   return !status || status === "OPEN" || status === "ACTIVE";
 }
