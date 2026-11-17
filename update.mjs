@@ -2291,17 +2291,7 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
   // Publish only traders who passed the three agreed settlement qualifications.
 output.leaders = leaders.map((trader, index) => ({
   ...trader,
-  rank: index + 1,
-  wins: null,
-  losses: null,
-  winRate: null,
-  resolvedMarkets: null,
-  recordComplete: false,
-  recordVerified: false,
-  settlementRecordComplete: false,
-  settlementPositionsChecked: 0,
-  settlementPositionsUnclassified: 0,
-  recordBasis: "Settlement-only audit pending; early exits are excluded from wins, losses, and accuracy."
+  rank: index + 1
 }));
 output.traderActivePositions = Object.fromEntries(output.leaders.map(trader => [
   trader.wallet,
