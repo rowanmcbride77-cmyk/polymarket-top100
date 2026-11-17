@@ -144,7 +144,6 @@ jobs:
                 const invalidTrader = traders.some(row => {
                   const value = Number(row.currentValue);
                   if (!Number.isFinite(value) || value <= 0) return true;
-                  if (tier !== "Watchlist" && value < 3) return true;
                   if (!strong) return false;
                   const wins = Number(row.wins), losses = Number(row.losses), resolved = Number(row.resolvedMarkets);
                   const rate = Number(row.winRate), shares = Number(row.shares ?? row.size);
@@ -167,7 +166,7 @@ jobs:
                     String(row.side || "").trim().toLowerCase() !== side ||
                     !Number.isFinite(Number(row.avgPrice)) || Number(row.avgPrice) <= 0 || Number(row.avgPrice) > 1 ||
                     !Number.isFinite(shares) || shares <= 0 ||
-                    !Number.isFinite(Number(row.entryValue)) || Number(row.entryValue) < 10 || value < 10;
+                    false;
                 });
                 const end = group.endDate ?? group.end_date ?? null;
                 let endMs = end ? Date.parse(String(end)) : NaN;
