@@ -1926,20 +1926,10 @@ async function attachSettlementStats(traders, period, nowMs) {
 }
 
 function makeOutput(period, ranked, sportsRanked, activePositions, tradeRows, nowMs, consensusCandidates, records, leaderRecords, consensusGroups, settlementRecords, consensusRecords, consensusPeriodRecords, consensusVolumeStats) {
-  // Preserve the exact period-scoped record used to rank this list.
-  // Full-history enrichment must never overwrite weekly/monthly wins, losses,
-  // win rate, or resolved-market count, otherwise the displayed numbers no
-  // longer match the sort order.
-  // Keep the general leaderboard populated; the public data cannot prove
-  // that traders never exit early, so don't use a 100% profitable-close
-  // filter as if it were a verified hold-to-settlement guarantee.
-  // The Top 100 is the actual selected-period P&L ranking, not a filtered list
-  // of traders whose separate settlement-history lookup happened to be complete.
-  // Settlement W-L is attached afterward and shown only when independently verified.
-  // Always publish the actual selected-period leaderboard. The expensive
-  // settlement audit is intentionally separate; until a row has a verified
-  // settlement audit, keep W/L and accuracy blank rather than hiding every trader
-  // or treating early exits as wins/losses.
+  // Keep the selected-period P&L ranking separate from the rolling 30-day
+  // closed-position record. The latter includes early exits and is attached
+  // only as a separate profitability statistic; consensus qualification uses
+  // its own complete 30-day record for the 20-market / 90% thresholds.
   const leaders = ranked
     .filter(trader => num(trader.pnl) !== null)
     .slice(0, LEADER_COUNT)
