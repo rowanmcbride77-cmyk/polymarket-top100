@@ -2008,6 +2008,17 @@ function makeOutput(period, ranked, sportsRanked, activePositions, tradeRows, no
       losses: null,
       winRate: null,
       resolvedMarkets: null,
+      // Close-profitability proxies may include early exits; never leak them
+      // into the public settlement-only leaderboard fields.
+      sportsWins: null,
+      sportsLosses: null,
+      sportsWinRate: null,
+      sportsResolvedMarkets: null,
+      periodWins: null,
+      periodLosses: null,
+      periodResolvedMarkets: null,
+      periodWinRate: null,
+      periodRecordComplete: false,
       recordComplete: false,
       recordVerified: false,
       settlementRecordComplete: false,
@@ -2515,6 +2526,16 @@ output.leaderQualification = {
       Number(settlement.settlementPositionsUnclassified || 0) === 0;
     return {
       ...trader,
+      // Never publish the closed-position profitability proxy as settlement accuracy.
+      sportsWins: null,
+      sportsLosses: null,
+      sportsWinRate: null,
+      sportsResolvedMarkets: null,
+      periodWins: null,
+      periodLosses: null,
+      periodResolvedMarkets: null,
+      periodWinRate: null,
+      periodRecordComplete: false,
       wins: verified ? wins : null,
       losses: verified ? losses : null,
       resolvedMarkets: verified ? resolvedMarkets : null,
