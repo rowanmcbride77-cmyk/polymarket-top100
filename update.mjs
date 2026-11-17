@@ -1503,8 +1503,8 @@ function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedM
   const strongQualifiedSidesByCondition = new Map();
   const diagnostics = {
     rawGroupsWithTwoHolders: 0, holdersEvaluated: 0, incompleteRecord: 0,
-    fewerThanMinimumCloses: 0, belowMinimumWinRate: 0, nonPositive30dPnl: 0,
-    missingVerifiedEntry: 0, strongHolders: 0, developingHolders: 0,
+    fewerThanMinimumCloses: 0, belowMinimumWinRate: 0,
+    strongHolders: 0, developingHolders: 0,
     marketsWithTenStrongHolders: 0, marketsWithTenDevelopingHolders: 0
   };
 
@@ -1525,10 +1525,7 @@ function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedM
       const resolvedMarkets = wins !== null && losses !== null ? wins + losses : num(record.resolvedMarkets);
       const winRate = wins !== null && losses !== null && resolvedMarkets > 0
         ? wins / resolvedMarkets * 100 : num(record.winRate);
-      const entryPrice = num(holder.avgPrice), entryShares = num(holder.size ?? holder.shares);
-      const entryCost = num(holder.entryValue), currentValue = num(holder.currentValue);
-      const hasVerifiedEntryPrice = entryPrice !== null && entryPrice > 0 && entryPrice <= 1 &&
-        entryShares !== null && entryShares > 0 && entryCost !== null && entryCost > 0;
+      const hasVerifiedEntryPrice = true; // Position size and entry price are display-only, not qualification rules.
       const periodPnl = num(candidate.pnl); // Display context only; not a qualification input.
       const complete = record.settlementRecordComplete === true;
       const realizedPnlTotal = num(record.realizedPnlTotal);
@@ -1544,10 +1541,6 @@ function buildConsensus(holderGroups, candidates, records = {}, minimumResolvedM
       if (!complete) diagnostics.incompleteRecord++;
       if (resolvedMarkets === null || resolvedMarkets < minimumResolvedMarkets) diagnostics.fewerThanMinimumCloses++;
       if (winRate === null || winRate < MIN_CONSENSUS_WIN_RATE) diagnostics.belowMinimumWinRate++;
-      // Positive realized dollar P&L is a separate profitability gate. It may
-      // include early exits, but never contributes to settlement W/L or accuracy.
-      if (!positiveRealizedPnl) diagnostics.nonPositive30dPnl++;
-      if (!hasStrongEntry) diagnostics.missingVerifiedEntry++;
       if (strongQualified) diagnostics.strongHolders++;
       if (developingQualified) diagnostics.developingHolders++;
 
