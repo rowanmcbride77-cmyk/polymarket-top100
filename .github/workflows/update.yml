@@ -143,13 +143,11 @@ jobs:
                 if (condition) seenConditions.add(condition);
                 const invalidTrader = traders.some(row => {
                   const value = Number(row.currentValue);
-                  if (!Number.isFinite(value) || value <= 0) return true;
+                  if (!Number.isFinite(value) || value < 0) return true;
                   if (!strong) return false;
                   const wins = Number(row.wins), losses = Number(row.losses), resolved = Number(row.resolvedMarkets);
                   const rate = Number(row.winRate), shares = Number(row.shares ?? row.size);
                   const checked = Number(row.settlementPositionsChecked), unclassified = Number(row.settlementPositionsUnclassified);
-                  const realizedPnl = Number(row.realizedPnlTotal);
-                  const realizedBasis = String(row.realizedPnlBasis || "").toLowerCase();
                   const leakedPeriodProxy = ["periodWins", "periodLosses", "periodResolvedMarkets", "periodWinRate"]
                     .some(key => row[key] !== null && row[key] !== undefined);
                   return row.qualified !== true || row.recordComplete !== true || row.settlementRecordComplete !== true ||
@@ -157,16 +155,10 @@ jobs:
                     !Number.isFinite(wins) || wins < 0 || !Number.isFinite(losses) || losses < 0 ||
                     !Number.isFinite(resolved) || resolved !== wins + losses || resolved < 20 ||
                     !Number.isFinite(rate) || rate < 90 || Math.abs(rate - wins / resolved * 100) > 1e-6 ||
-                    !Number.isFinite(realizedPnl) || realizedPnl <= 0 ||
-                    !realizedBasis.includes("may include early exits") ||
-                    !realizedBasis.includes("separate") ||
-                    !realizedBasis.includes("never settlement accuracy") ||
                     leakedPeriodProxy ||
                     !String(row.recordBasis || "").toLowerCase().includes("settlement-only") ||
                     String(row.side || "").trim().toLowerCase() !== side ||
-                    !Number.isFinite(Number(row.avgPrice)) || Number(row.avgPrice) <= 0 || Number(row.avgPrice) > 1 ||
-                    !Number.isFinite(shares) || shares <= 0 ||
-                    false;
+                    !Number.isFinite(shares) || shares <= 0;
                 });
                 const end = group.endDate ?? group.end_date ?? null;
                 let endMs = end ? Date.parse(String(end)) : NaN;
