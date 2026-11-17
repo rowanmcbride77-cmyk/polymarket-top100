@@ -2190,10 +2190,10 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
   // qualify consensus holders, not membership in the general leaderboard.
   output.leaderQualification = {
     windowDays: 30,
-    minimumClosedMarketsForConsensus: MIN_CONSENSUS_CLOSED_MARKETS,
-    minimumWinRateForConsensus: MIN_CONSENSUS_WIN_RATE,
-    earlyExitsIncluded: true,
-    top100MembershipBasis: "Selected-period Polymarket leaderboard P&L."
+    minimumResolvedMarkets: MIN_CONSENSUS_CLOSED_MARKETS,
+    minimumSettlementAccuracy: MIN_CONSENSUS_WIN_RATE,
+    earlyExitsIncluded: false,
+    top100MembershipBasis: "Selected-period Polymarket P&L, restricted to complete settlement-only records with 20+ resolved markets and 90%+ settlement accuracy."
   };
 
 // Count every discovered weekly wallet, not only Top 100 traders or shared-market holders.
@@ -2241,7 +2241,7 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     ...trader,
     pnlBasis: `Polymarket v2 leaderboard P&L for selected ${period.key} period`
   }));
-  output.recordBasis = "Top 100 is ranked by selected-period Polymarket P&L. Rolling 30-day closed-position wins/losses include early exits.";
+  output.recordBasis = "Top 100 is ranked by selected-period Polymarket P&L and restricted to traders with complete settlement-only records, 20+ resolved markets, and 90%+ settlement accuracy. Early exits are excluded.";
 
   // Keep consensus independent of the Top 100 JSON size guard.
   const builtConsensusRows = Array.isArray(output.consensus) ? output.consensus : [];
