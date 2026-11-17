@@ -30,7 +30,7 @@ const RANKING_RECORD_LIMIT = 1000;
 // Publish up to 100 genuine passers; never substitute a raw P&L leaderboard.
 // Positive 30-day realized dollar P&L is a separate profitability gate and may
 // include early exits, but it never contributes to settlement wins, losses, or accuracy.
-const LEADER_QUALIFICATION_AUDIT_LIMIT = 1000;
+const LEADER_QUALIFICATION_AUDIT_LIMIT = 0; // Top 100 is the canonical P&L board; do not waste scan time re-auditing it as a separate qualification list.
 // Bound closed-position history requests. Records that hit this cap are marked
 // incomplete and withheld rather than presented as complete win/loss stats.
 const CLOSED_POSITION_SCAN_LIMIT = null; // Fully paginate the entire rolling 30-day close history; capped samples cannot qualify.
@@ -42,7 +42,7 @@ const CONSENSUS_WALLET_LIMIT = 20000;
 // leaderboard audit budget to 2,500 actual shared-market holders.
 // Selection is category-balanced; every published Strong Signal holder still
 // needs a complete 30-day settlement audit and the unchanged strict quality gate.
-const CONSENSUS_SETTLEMENT_AUDIT_LIMIT = 12000; // Prioritize the highest-overlap holder set; keep the full 20k live-position discovery scan.
+const CONSENSUS_SETTLEMENT_AUDIT_LIMIT = 6000; // Keep full 20k live-position discovery; cap the expensive 30-day settlement audit to fit the 40-minute run.
 const MAX_CONSENSUS_POSITION_PAGES_PER_WALLET = 2;
 const MAX_SPORTS_CONSENSUS_POSITION_PAGES_PER_WALLET = 4;
 const LEADER_RECORD_LIMIT = RANKING_RECORD_LIMIT;
@@ -2026,7 +2026,7 @@ async function writeJsonUnderLimit(filename, output) {
   const allowEmptyConsensus = String(filename).startsWith("consensus-");
   // Empty qualified lists are valid when no trader passes the settlement-only gate.
   // Publish the explicit result rather than leaving stale data online.
-  const allowEmptyQualifiedLeaderboard = filename === "week.json" || filename === "month.json";
+  const allowEmptyQualifiedLeaderboard = false; // Never overwrite the live Top 100 with an empty leaderboard.
   if (!output || (!hasLeaders && !hasConsensus && !allowEmptyConsensus && !allowEmptyQualifiedLeaderboard)) {
     throw new Error(`${filename}: refusing to write empty or missing leaderboard/consensus data`);
   }
@@ -2416,7 +2416,7 @@ output.leaderQualification = {
     qualificationWindowDays: 30,
     minimumWinRate: MIN_CONSENSUS_WIN_RATE,
     minimumResolvedMarkets: MIN_CONSENSUS_CLOSED_MARKETS,
-    qualificationBasis: "Signals are grouped by exact Polymarket condition and outcome, including individual player props. Strong Signals require each holder to have a complete rolling 30-day settlement-only record; 20+ settled markets; 90%+ settlement accuracy; positive 30-day realized P&L; and verified $10+ entry/current value. Early exits are excluded from wins and losses. Seven-day leaderboard P&L is displayed separately.",
+    qualificationBasis: "Signals are grouped by exact Polymarket condition and outcome, including individual player props. Each trader must have a complete rolling 30-day settlement-only record, 20+ settled markets, and 90%+ settlement accuracy. Early exits are excluded from wins and losses. No P&L, stake-size, entry-price, or current-value qualification filters.",
     minimumSameSideTraders: 2,
     candidateCount: ranked.length,
     discoveredCandidateCount: discoveredCandidates.length,
