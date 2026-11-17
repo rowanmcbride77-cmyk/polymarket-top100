@@ -1,6 +1,6 @@
 # [run-scanner] keep corrected Polymarket v2 canonical leaderboard scan queued.
 name: Update Polymarket Scanner
-# Keep full scans running long enough to finish the 20k-wallet discovery pass.
+# Enforce the agreed 40-minute maximum scan runtime.
 # Queue later updates rather than cancelling an in-progress data build.
 
 on:
@@ -27,9 +27,8 @@ jobs:
   update:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    # The previous 35-minute limit was shorter than the observed ~55-minute
-    # scan and was directly causing GitHub to cancel valid runs.
-    timeout-minutes: 120
+    # Hard cap: scanner runs must finish within 40 minutes.
+    timeout-minutes: 40
 
     steps:
       - name: Checkout repository
