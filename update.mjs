@@ -1977,9 +1977,9 @@ function makeOutput(period, ranked, sportsRanked, activePositions, tradeRows, no
     generatedAt: new Date(nowMs).toISOString(),
     period: period.key,
     rankingBasis:
-      "Top 100 is ranked by selected-period Polymarket leaderboard P&L. The displayed record is a separate rolling 30-day closed-position profitability measure.",
+      "Top 100 candidates are ranked by selected-period Polymarket leaderboard P&L, then restricted to complete rolling 30-day settlement records with 20+ resolved markets and 90%+ settlement accuracy. Early exits are excluded.",
     recordBasis: "Rolling 30-day verified settlement-only win/loss record; early exits before resolution are excluded.",
-    realizedPnlBasis: "Rolling 30-day closed-position realized dollar P&L; early exits are included.",
+    realizedPnlBasis: "Separate close-profitability diagnostics may include early exits; not displayed as settlement accuracy and never used for qualification.",
     candidateCount: ranked.length,
     sportsLeaders: sportsRanked.slice(0, LEADER_COUNT).map(trader => ({
       ...trader,
@@ -2148,15 +2148,18 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     {volume: trader.volume ?? null, volumeBasis: trader.volumeBasis || "Unavailable from period user-volume endpoint"}
   ]));
   console.log(period.key + ": loaded rolling 30-day close records for " + Object.keys(consensusRecords).length + " shared-market holders; Top 100 records are audited separately.");
-  // The canonical Top 100 is already selected by period P&L; audit those
-  // 100 records only, while consensus separately audits its highest-overlap holders.
+  // Audit a wider selected-period P&L candidate pool so qualified traders can
+  // backfill the Top 100 instead of leaving empty slots when high-ranked traders
+  // fail the settlement-only gate.
   const leaders = ranked
     .filter(trader => num(trader.pnl) !== null)
     .slice(0, LEADER_COUNT);
-  const leaderAuditCandidates = leaders;
+  const leaderAuditCandidates = ranked
+    .filter(trader => num(trader.pnl) !== null)
+    .slice(0, LEADER_QUALIFICATION_AUDIT_LIMIT);
   const leaderRecords30d = await attachSettlementStats(leaderAuditCandidates, CONSENSUS_RECORD_PERIOD, nowMs);
   const settlementRecords = leaderRecords30d;
-  console.log(`${period.key}: Top 100 is the selected-period P&L leaderboard; settlement-auditing its ${leaderAuditCandidates.length} traders.`);
+  console.log(`${period.key}: auditing up to ${leaderAuditCandidates.length} highest-ranked candidates for Top 100 settlement qualification; only complete 20+ market, 90%+ settlement records can be published.`);
   console.log(`${period.key}: Consensus requires 2+ distinct same-side holders; each trader needs a complete settlement-only record with 20+ resolved markets and >=90% settlement accuracy in the last 30 days. Early exits are excluded.`);
   const leaderRecords = records;
   const tradeRows = await mapLimit(
@@ -2185,9 +2188,8 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
     consensusVolumeStats
   );
 
-  // Top 100 remains the actual selected-period P&L leaderboard. Its 30-day
-  // close record is attached for context; the 20-market / 90% thresholds
-  // qualify consensus holders, not membership in the general leaderboard.
+  // Top 100 membership is selected-period P&L rank among traders who also
+  // pass the complete settlement-only 20-market / 90% accuracy gate.
   output.leaderQualification = {
     windowDays: 30,
     minimumResolvedMarkets: MIN_CONSENSUS_CLOSED_MARKETS,
