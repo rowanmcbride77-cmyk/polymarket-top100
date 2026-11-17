@@ -100,19 +100,18 @@ jobs:
                 if (!row.wallet || row.pnl === null || row.pnl === undefined || !Number.isFinite(Number(row.pnl))) return true;
                 const wins = Number(row.wins), losses = Number(row.losses);
                 const resolved = Number(row.resolvedMarkets), rate = Number(row.winRate);
-                const verified = row.settlementRecordComplete === true && row.recordComplete === true && row.recordVerified === true;
-                const leakedProxyFields = ["sportsWins", "sportsLosses", "sportsWinRate", "sportsResolvedMarkets",
+                const leakedPeriodFields = ["sportsWins", "sportsLosses", "sportsWinRate", "sportsResolvedMarkets",
                   "periodWins", "periodLosses", "periodResolvedMarkets", "periodWinRate"]
                   .some(key => row[key] !== null && row[key] !== undefined);
-                if (leakedProxyFields) return true;
-                if (!verified) {
+                if (leakedPeriodFields) return true;
+                if (row.recordComplete !== true) {
                   return row.wins !== null || row.losses !== null || row.winRate !== null || row.resolvedMarkets !== null;
                 }
-                return !Number.isFinite(wins) || wins < 0 || !Number.isFinite(losses) || losses < 0 ||
-                  !Number.isFinite(resolved) || resolved !== wins + losses || resolved <= 0 ||
-                  !Number.isFinite(rate) || Math.abs(rate - wins / resolved * 100) > 1e-6 ||
-                  Number(row.settlementPositionsUnclassified) !== 0 ||
-                  !String(row.recordBasis || "").toLowerCase().includes("settlement");
+                if (!Number.isFinite(wins) || wins < 0 || !Number.isFinite(losses) || losses < 0 ||
+                    !Number.isFinite(resolved) || resolved !== wins + losses || resolved < 0) return true;
+                if (resolved === 0) return row.winRate !== null;
+                return !Number.isFinite(rate) || Math.abs(rate - wins / resolved * 100) > 1e-6 ||
+                  !String(row.recordBasis || "").toLowerCase().includes("early exits count");
               });
               if (leaders.length === 0) throw new Error(`${file}: Top 100 leaderboard is empty; refusing to publish an empty trader table`);
               if (invalid.length) throw new Error(`${file}: ${invalid.length} leaderboard rows have invalid P&L or expose unverified settlement stats`);
@@ -146,23 +145,18 @@ jobs:
                 const mixedSide = traders.some(row => String(row.side || "").trim().toLowerCase() !== side);
                 if (condition) seenConditions.add(condition);
                 const invalidTrader = traders.some(row => {
-                  const value = Number(row.currentValue);
-                  if (!Number.isFinite(value) || value < 0) return true;
                   if (!strong) return false;
                   const wins = Number(row.wins), losses = Number(row.losses), resolved = Number(row.resolvedMarkets);
-                  const rate = Number(row.winRate), shares = Number(row.shares ?? row.size);
-                  const checked = Number(row.settlementPositionsChecked), unclassified = Number(row.settlementPositionsUnclassified);
+                  const rate = Number(row.winRate);
                   const leakedPeriodProxy = ["periodWins", "periodLosses", "periodResolvedMarkets", "periodWinRate"]
                     .some(key => row[key] !== null && row[key] !== undefined);
-                  return row.qualified !== true || row.recordComplete !== true || row.settlementRecordComplete !== true ||
-                    !Number.isFinite(checked) || checked <= 0 || !Number.isFinite(unclassified) || unclassified !== 0 ||
+                  return row.qualified !== true || row.recordComplete !== true ||
                     !Number.isFinite(wins) || wins < 0 || !Number.isFinite(losses) || losses < 0 ||
                     !Number.isFinite(resolved) || resolved !== wins + losses || resolved < 20 ||
                     !Number.isFinite(rate) || rate < 90 || Math.abs(rate - wins / resolved * 100) > 1e-6 ||
                     leakedPeriodProxy ||
-                    !String(row.recordBasis || "").toLowerCase().includes("settlement-only") ||
-                    String(row.side || "").trim().toLowerCase() !== side ||
-                    !Number.isFinite(shares) || shares <= 0;
+                    !String(row.recordBasis || "").toLowerCase().includes("early exits count") ||
+                    String(row.side || "").trim().toLowerCase() !== side;
                 });
                 const end = group.endDate ?? group.end_date ?? null;
                 let endMs = end ? Date.parse(String(end)) : NaN;
@@ -199,7 +193,7 @@ jobs:
           const docs = await Promise.all(files.map(async file => JSON.parse(await fs.readFile(file, "utf8"))));
           const stamps = docs.map(doc => doc.generatedAt);
           if (!stamps.every(value => value === stamps[0])) throw new Error("Cannot publish status: generatedAt values differ");
-          const status = {startedAt: stamps[0], finishedAt: new Date().toISOString(), ok: true, errors: [], weekLeaders: docs[0].leaders?.length ?? 0, monthLeaders: docs[1].leaders?.length ?? 0, consensusMarkets: docs[2].consensus?.length ?? 0, recordBasis: "Settlement-only: positions exited before actual market resolution are excluded from wins, losses, win rates, and qualification. Incomplete settlement histories are withheld."};
+          const status = {startedAt: stamps[0], finishedAt: new Date().toISOString(), ok: true, errors: [], weekLeaders: docs[0].leaders?.length ?? 0, monthLeaders: docs[1].leaders?.length ?? 0, consensusMarkets: docs[2].consensus?.length ?? 0, recordBasis: "Rolling 30-day closed-position profitability: early exits count as wins or losses; consensus requires 20+ closed markets and 90%+ win rate."};
           await fs.writeFile("status.json", JSON.stringify(status, null, 2) + "\n");
           NODE
           cp status.json /tmp/scanner-status.json
