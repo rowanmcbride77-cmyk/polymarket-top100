@@ -2311,7 +2311,7 @@ output.leaderQualification = {
   minimumWinRate: MIN_CONSENSUS_WIN_RATE,
   requirePositiveRealizedPnl: false,
   eligibleCandidatesAudited: leaderAuditCandidates.length,
-  prefilteredCandidates: settlementAuditLeaderCandidates.length,
+  prefilteredCandidates: leaderAuditCandidates.length,
   qualifiedCandidates: qualifiedRanked.length,
   publishedLeaders: output.leaders.length,
   basis: "The visible Top 100 is ranked by selected-period P&L among traders who pass exactly three rules: complete rolling 30-day settlement-only history (early exits excluded), 20+ settled markets, and >=90% settlement accuracy."
