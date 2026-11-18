@@ -18,10 +18,11 @@ permissions:
   contents: write
 
 concurrency:
-  # New scanner code supersedes older work. Only validated data is committed,
-  # so cancelling an unfinished scan preserves the last known-good publication.
+  # Keep one scanner run active and queue later scheduled/manual runs behind it.
+  # The commit step already rejects stale source revisions, so cancelling a live
+  # data build is unnecessary and can leave the published dashboard stale.
   group: polymarket-scanner-update-v13
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   update:
