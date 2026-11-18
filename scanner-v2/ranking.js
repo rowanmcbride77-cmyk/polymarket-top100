@@ -48,7 +48,7 @@ export async function buildQualifiedLeaderboard(candidates, options = {}) {
       });
       continue;
     }
-    const { trader, record } = result;
+    const { trader, record, pnl } = result;
     if (qualifiesForTop100(record, rules)) {
       qualified.push({
         ...trader,
