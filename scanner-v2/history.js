@@ -209,10 +209,29 @@ export async function getWalletSettlementRecord(wallet, options = {}) {
     resolutionIndex,
     { historyComplete: true }
   );
+  const activityConditions = new Set(conditionActivity.map(row =>
+    key(row.condition_id ?? row.conditionId)
+  ).filter(Boolean));
+  const tokenMetadataConditions = new Set([...resolutionIndex.values()].map(row =>
+    key(row.conditionId ?? row.condition_id)
+  ).filter(Boolean));
+  const conditionsWithoutActivity = candidateConditions.filter(condition =>
+    !activityConditions.has(key(condition))
+  );
+  const conditionsWithoutTokenMetadata = candidateConditions.filter(condition =>
+    !tokenMetadataConditions.has(key(condition))
+  );
+
   const record = buildSettlementRecord(
     reconstructed.positions,
     [...resolutionIndex.values()],
-    { nowMs, windowDays, historyComplete: reconstructed.complete && conditionsWithoutActivity.length === 0 && conditionsWithoutTokenMetadata.length === 0 }
+    {
+      nowMs,
+      windowDays,
+      historyComplete: reconstructed.complete &&
+        conditionsWithoutActivity.length === 0 &&
+        conditionsWithoutTokenMetadata.length === 0
+    }
   );
 
   return {
