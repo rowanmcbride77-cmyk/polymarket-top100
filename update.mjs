@@ -2113,8 +2113,11 @@ async function buildPeriod(period, discoveredCandidates, activePositions, nowMs,
   // Select the actual period-P&L Top 100 first, then fully paginate their
   // selected-period CLOSED-position history. Never spend the record budget
   // on the first 1,000 discovery-order wallets and leave the displayed leaders unaudited.
-  const canonicalCandidates = usableLeaderboardCandidates.filter(trader => trader.canonicalLeaderboard === true);
-  const visibleRankingCandidates = canonicalCandidates.length ? canonicalCandidates : usableLeaderboardCandidates;
+  // Rank the full selected-period candidate pool, not only the 100 wallets
+  // returned by the canonical OVERALL board. The canonical rows are merged into
+  // this pool as high-confidence inputs, but limiting qualification to those 100
+  // prevents the 20k-wallet discovery scan from backfilling genuine Top 100 passers.
+  const visibleRankingCandidates = usableLeaderboardCandidates;
   const rankingRecordCandidates = LEADER_QUALIFICATION_AUDIT_LIMIT > 0
     ? rankCandidates(visibleRankingCandidates, {}).slice(0, Math.min(LEADER_COUNT, LEADER_QUALIFICATION_AUDIT_LIMIT))
     : [];
