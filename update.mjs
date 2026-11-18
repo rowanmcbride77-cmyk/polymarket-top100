@@ -1735,15 +1735,28 @@ async function getSettlementStats(wallet, period, nowMs, limit = 250) {
   for (let i = 0; i < conditions.length; i += 100) conditionChunks.push(conditions.slice(i, i + 100));
   // Settlement metadata pages can be large; limit per-wallet fan-out to avoid heap spikes.
   const marketPages = await mapLimit(conditionChunks, 4, async ids => {
-    const q = new URLSearchParams();
-    // Gamma defaults to closed=false, which silently omits resolved markets.
-    // Settlement verification needs metadata for both live early exits and
-    // actually resolved markets, so explicitly request the complete status set.
-    q.set("closed", "any");
-    q.set("limit", String(Math.min(ids.length, 100)));
-    for (const id of ids) q.append("condition_ids", id);
+    // Gamma's `closed` filter is boolean; the string "any" is not a valid
+    // all-status selector and can silently return no matching markets. Fetch
+    // both states explicitly so resolved outcomes and live early exits can
+    // each be classified. A missing/failed half makes the record incomplete.
+    const fetchState = async closed => {
+      const q = new URLSearchParams({
+        closed: String(closed),
+        limit: String(Math.min(ids.length, 100))
+      });
+      for (const id of ids) q.append("condition_ids", id);
+      const rows = asArray(await getJson(`${GAMMA_API}/markets?${q.toString()}`));
+      return {rows, ok:true};
+    };
     try {
-      return {rows:asArray(await getJson(`${GAMMA_API}/markets?${q.toString()}`)), ok:true};
+      const [openMarkets, closedMarkets] = await Promise.all([
+        fetchState(false),
+        fetchState(true)
+      ]);
+      return {
+        rows: [...openMarkets.rows, ...closedMarkets.rows],
+        ok: openMarkets.ok && closedMarkets.ok
+      };
     } catch (error) {
       console.warn("Settlement market metadata lookup failed:", error.message);
       return {rows:[], ok:false};
