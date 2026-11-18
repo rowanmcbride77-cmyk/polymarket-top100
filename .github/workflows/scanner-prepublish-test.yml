@@ -14,7 +14,7 @@ concurrency:
 jobs:
   top100-smoke:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 2
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -22,6 +22,14 @@ jobs:
           node-version: 22
       - name: Syntax check
         run: node --check top100.mjs
+      - name: Probe Polymarket leaderboard endpoint (15-second hard limit)
+        shell: bash
+        run: |
+          set -o pipefail
+          URL='https://data-api.polymarket.com/v2/leaderboard?category=overall&time_period=week&sort_by=PNL&limit=5'
+          curl --fail-with-body --silent --show-error --max-time 15 --retry 0 --dump-header /tmp/headers.txt "$URL" --output /tmp/leaderboard.json
+          cat /tmp/headers.txt
+          node --input-type=module -e 'import fs from "node:fs"; const x=JSON.parse(fs.readFileSync("/tmp/leaderboard.json","utf8")); console.log("response keys:",Object.keys(x)); console.log("data rows:",Array.isArray(x.data)?x.data.length:"not an array"); console.log("pagination:",x.pagination ?? "missing");'
       - name: Run minimal Top 100 scanner
         run: node top100.mjs
       - name: Validate exact output
