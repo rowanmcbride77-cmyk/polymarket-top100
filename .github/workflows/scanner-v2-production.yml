@@ -1,0 +1,41 @@
+name: Scanner v2 production scan
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17,47 * * * *"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: polymarket-scanner-v2
+  cancel-in-progress: false
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: Run scanner v2
+        env:
+          DISCOVERY_LIMIT: "20000"
+          DISCOVERY_MAX_PAGES: "200"
+          QUALIFICATION_AUDIT_LIMIT: "1000"
+          AUDIT_CONCURRENCY: "6"
+        run: node scanner-v2/run.js
+      - name: Validate generated JSON
+        run: |
+          node -e "for (const f of ['week.json','month.json','consensus-week.json','consensus-month.json','status.json']) JSON.parse(require('fs').readFileSync(f,'utf8'))"
+          node -e "const w=require('./week.json'); const m=require('./month.json'); if(!Array.isArray(w.leaders)||!Array.isArray(m.leaders)) process.exit(1); if(w.leaders.some(x=>x.qualified!==true||x.recordComplete!==true||x.settlementRecordComplete!==true||x.winRate<90||x.resolvedMarkets<20)) process.exit(1)"
+      - name: Publish validated data
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add week.json month.json consensus-week.json consensus-month.json status.json
+          git diff --cached --quiet || git commit -m "Publish validated scanner v2 data"
+          git push
