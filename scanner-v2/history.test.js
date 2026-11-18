@@ -57,3 +57,53 @@ test("a position acquired exactly at resolution is not counted", () => {
   const result = reconstructHeldAtResolution(activity, resolutionIndex, { historyComplete: true });
   assert.equal(result.positions.length, 0);
 });
+
+import { getWalletSettlementRecord } from "./history.js";
+
+test("wallet audit uses recent settlement candidates and reconstructs pre-resolution holdings", async () => {
+  const calls = [];
+  const nowMs = Date.parse("2026-11-18T12:00:00Z");
+  const result = await getWalletSettlementRecord("0xabc", {
+    nowMs,
+    fetchAllPages: async (path, params) => {
+      calls.push({ path, params });
+      if (path === "/v2/activity" && params.type === "REDEEM") {
+        return [{ condition_id: "c1", token_id: "t1", type: "REDEEM", timestamp: 1795000000, size: 10 }];
+      }
+      if (path === "/v2/activity" && params.condition) {
+        return [event("TRADE", "t1", "c1", 1794000000, 10, "BUY")];
+      }
+      return [];
+    },
+    fetchResolutionIndex: async () => new Map([
+      ["t1", { tokenId: "t1", conditionId: "c1", resolved: true, finalPrice: 1, resolvedAt: "2026-11-17T00:00:00Z" }]
+    ])
+  });
+  assert.equal(result.wins, 1);
+  assert.equal(result.resolvedMarkets, 1);
+  assert.equal(result.complete, true);
+  assert.ok(calls.some(call => call.path === "/v2/activity" && call.params.start === 1 && call.params.condition === "c1"));
+});
+
+test("wallet audit does not count a trader who sold before settlement", async () => {
+  const nowMs = Date.parse("2026-11-18T12:00:00Z");
+  const result = await getWalletSettlementRecord("0xabc", {
+    nowMs,
+    fetchAllPages: async (path, params) => {
+      if (path === "/v2/positions" && params.status === "CLOSED") {
+        return [{ condition_id: "c1", token_id: "t1", last_event_at: 1794500000 }];
+      }
+      if (path === "/v2/activity" && params.condition) return [
+        event("TRADE", "t1", "c1", 1794000000, 10, "BUY"),
+        event("TRADE", "t1", "c1", 1794500000, 10, "SELL")
+      ];
+      return [];
+    },
+    fetchResolutionIndex: async () => new Map([
+      ["t1", { tokenId: "t1", conditionId: "c1", resolved: true, finalPrice: 1, resolvedAt: "2026-11-17T00:00:00Z" }]
+    ])
+  });
+  assert.equal(result.wins, 0);
+  assert.equal(result.resolvedMarkets, 0);
+  assert.equal(result.complete, true);
+});
