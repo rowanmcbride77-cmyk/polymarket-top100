@@ -58,6 +58,17 @@ test("a position acquired exactly at resolution is not counted", () => {
   assert.equal(result.positions.length, 0);
 });
 
+test("marks resolved tokens with missing payout or resolution time incomplete", () => {
+  const incompleteIndex = new Map([
+    ["yes", { tokenId: "yes", conditionId: "c1", resolved: true, finalPrice: null, resolvedAt: null }]
+  ]);
+  const activity = [event("TRADE", "yes", "c1", 1794000000, 10, "BUY")];
+  const result = reconstructHeldAtResolution(activity, incompleteIndex, { historyComplete: true });
+  assert.equal(result.positions.length, 0);
+  assert.equal(result.complete, false);
+  assert.equal(result.diagnostics.unverifiedResolutions, 1);
+});
+
 import { getWalletSettlementRecord } from "./history.js";
 
 test("wallet audit uses recent settlement candidates and reconstructs pre-resolution holdings", async () => {

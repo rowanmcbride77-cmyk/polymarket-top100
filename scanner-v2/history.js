@@ -26,32 +26,46 @@ export function reconstructHeldAtResolution(activity, resolutionIndex, options =
   const resolutions = [...(resolutionIndex?.values?.() ?? [])];
   const resolutionByCondition = new Map();
   const tokenToCondition = new Map();
-
-  for (const resolution of resolutions) {
-    const conditionId = key(resolution.conditionId);
-    const tokenId = key(resolution.tokenId);
-    const resolvedAtMs = timestampMs(resolution.resolvedAt);
-    if (!conditionId || !tokenId) continue;
-    tokenToCondition.set(tokenId, conditionId);
-    if (resolution.resolved === true && (resolution.finalPrice === 0 || resolution.finalPrice === 1) &&
-        resolvedAtMs !== null) {
-      if (!resolutionByCondition.has(conditionId)) resolutionByCondition.set(conditionId, {
-        resolvedAtMs,
-        tokens: []
-      });
-      resolutionByCondition.get(conditionId).tokens.push(resolution);
-    }
-  }
-
-  const events = [];
   let complete = options.historyComplete === true;
   const diagnostics = {
     activityRows: (activity ?? []).length,
     unsupportedEvents: 0,
     malformedEvents: 0,
     comboEvents: 0,
-    ignoredAfterResolution: 0
+    ignoredAfterResolution: 0,
+    unverifiedResolutions: 0
   };
+
+  for (const resolution of resolutions) {
+    const conditionId = key(resolution.conditionId);
+    const tokenId = key(resolution.tokenId);
+    const resolvedAtMs = timestampMs(resolution.resolvedAt);
+    if (!conditionId || !tokenId) {
+      if (resolution.resolved === true) {
+        diagnostics.unverifiedResolutions++;
+        complete = false;
+      }
+      continue;
+    }
+    tokenToCondition.set(tokenId, conditionId);
+    if (resolution.resolved === true) {
+      const payout = num(resolution.finalPrice);
+      if ((payout !== 0 && payout !== 1) || resolvedAtMs === null) {
+        // A finality flag without a binary payout and resolution timestamp is
+        // not enough evidence to certify the wallet's settlement history.
+        diagnostics.unverifiedResolutions++;
+        complete = false;
+        continue;
+      }
+      if (!resolutionByCondition.has(conditionId)) resolutionByCondition.set(conditionId, {
+        resolvedAtMs,
+        tokens: []
+      });
+      resolutionByCondition.get(conditionId).tokens.push({...resolution, finalPrice: payout});
+    }
+  }
+
+  const events = [];
 
   for (const row of activity ?? []) {
     const type = String(row.type ?? "").toUpperCase();

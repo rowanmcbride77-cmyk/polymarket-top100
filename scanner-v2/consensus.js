@@ -246,8 +246,24 @@ export async function buildConsensusSignals(qualifiedTraders, options = {}) {
     group.totalEntryUsd += verifiedBuy.entryCostUsd;
   }
 
+  // A condition is directional only when exactly one outcome token has
+  // enough qualified wallets. If both YES and NO reach the holder threshold,
+  // suppress the entire condition rather than publishing two opposing signals.
+  const qualifiedTokensByCondition = new Map();
+  for (const group of groups.values()) {
+    if (group.wallets.size < minimumHolders) continue;
+    const condition = key(group.conditionId);
+    if (!qualifiedTokensByCondition.has(condition)) qualifiedTokensByCondition.set(condition, new Set());
+    qualifiedTokensByCondition.get(condition).add(key(group.tokenId));
+  }
+  const conflictedConditions = new Set(
+    [...qualifiedTokensByCondition.entries()]
+      .filter(([, tokens]) => tokens.size !== 1)
+      .map(([condition]) => condition)
+  );
+
   const signals = [...groups.values()]
-    .filter(group => group.wallets.size >= minimumHolders)
+    .filter(group => group.wallets.size >= minimumHolders && !conflictedConditions.has(key(group.conditionId)))
     .map(group => {
       const traders = [...group.wallets.values()].sort((a, b) => b.currentValueUsd - a.currentValueUsd);
       return {
@@ -279,7 +295,8 @@ export async function buildConsensusSignals(qualifiedTraders, options = {}) {
       excludedResolved,
       excludedCategory,
       excludedHorizon,
-      excludedUnverifiedToken
+      excludedUnverifiedToken,
+      excludedOppositeSideConditions: conflictedConditions.size
     }
   };
 }

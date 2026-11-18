@@ -90,13 +90,24 @@ for (const period of ["WEEK", "MONTH"]) {
 }
 
 const finishedAt = new Date().toISOString();
+// Stamp every published dataset with the same completed-scan timestamp so
+// main-branch and Pages freshness checks can compare the four files exactly.
+for (const file of ["week.json", "month.json", "consensus-week.json", "consensus-month.json"]) {
+  const payload = JSON.parse(await fs.readFile(file, "utf8"));
+  payload.generatedAt = finishedAt;
+  await fs.writeFile(file, JSON.stringify(payload, null, 2) + "\n");
+}
+const weekConsensus = JSON.parse(await fs.readFile("consensus-week.json", "utf8")).consensus;
+const monthConsensus = JSON.parse(await fs.readFile("consensus-month.json", "utf8")).consensus;
 const status = {
-  startedAt, finishedAt, ok: true, errors: [],
+  startedAt, finishedAt, generatedAt: finishedAt, ok: true, errors: [],
   scannerVersion: "v2",
   discoveredWallets: discovery.candidates.length,
   discovery: discovery.diagnostics,
   weekLeaders: outputs.WEEK.qualified.length,
   monthLeaders: outputs.MONTH.qualified.length,
+  weekConsensusSignals: Array.isArray(weekConsensus) ? weekConsensus.length : 0,
+  monthConsensusSignals: Array.isArray(monthConsensus) ? monthConsensus.length : 0,
   weekCandidatesAudited: outputs.WEEK.candidatesAudited,
   monthCandidatesAudited: outputs.MONTH.candidatesAudited,
   weekQualification: outputs.WEEK.diagnostics,
