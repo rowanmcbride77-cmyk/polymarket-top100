@@ -32,8 +32,11 @@ export async function buildQualifiedLeaderboard(candidates, options = {}) {
     .slice(0, auditLimit);
 
   const audit = await mapLimit(rankedPool, concurrency, async trader => {
-    const record = await (options.getRecord ?? getWalletSettlementRecord)(trader.wallet, options);
-    return { trader, record };
+    const [record, pnl] = await Promise.all([
+      (options.getRecord ?? getWalletSettlementRecord)(trader.wallet, options),
+      (options.getPeriodPnl ?? getSelectedPeriodPnl)(trader.wallet, period, options)
+    ]);
+    return { trader, record, pnl };
   });
 
   const qualified = [];
