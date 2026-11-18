@@ -1,0 +1,46 @@
+name: Top 100 isolated smoke test
+on:
+  push:
+    branches: [scanner-prepublish-test]
+    paths:
+      - "top100.mjs"
+      - ".github/workflows/top100-smoke-test.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: top100-isolated-smoke
+  cancel-in-progress: false
+jobs:
+  top100:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: Syntax check
+        run: node --check top100.mjs
+      - name: Fetch canonical Top 100 from Polymarket
+        run: node top100.mjs
+      - name: Validate exact output
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from "node:fs/promises";
+          for (const file of ["top100-week.json", "top100-month.json"]) {
+            const doc = JSON.parse(await fs.readFile(file, "utf8"));
+            if (doc.leaders.length !== 100) throw new Error(file + ": expected 100 leaders");
+            if (new Set(doc.leaders.map(x => x.wallet)).size !== 100) throw new Error(file + ": duplicate wallets");
+            if (doc.leaders.some((x, i) => x.rank !== i + 1 || !Number.isFinite(x.pnl))) throw new Error(file + ": invalid rank or P&L");
+            console.log("PASS", file, doc.leaders.length, "unique traders");
+          }
+          NODE
+      - name: Save smoke-test output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: top100-smoke-output
+          path: top100-*.json
+          if-no-files-found: ignore
+          retention-days: 7
