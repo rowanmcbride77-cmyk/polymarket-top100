@@ -124,7 +124,7 @@ export function buildSettlementRecord(positions, resolutions, options = {}) {
     winRate,
     windowDays,
     cutoff: new Date(cutoffMs).toISOString(),
-    complete: diagnostics.unverifiedExcluded === 0,
+    complete: options.historyComplete === true && diagnostics.unverifiedExcluded === 0,
     basis: "Verified token settlement payout only; CLOSED/early-exited positions excluded; one unambiguous result per condition.",
     diagnostics
   };
