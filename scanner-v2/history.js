@@ -212,7 +212,7 @@ export async function getWalletSettlementRecord(wallet, options = {}) {
   const record = buildSettlementRecord(
     reconstructed.positions,
     [...resolutionIndex.values()],
-    { nowMs, windowDays, historyComplete: reconstructed.complete }
+    { nowMs, windowDays, historyComplete: reconstructed.complete && conditionsWithoutActivity.length === 0 && conditionsWithoutTokenMetadata.length === 0 }
   );
 
   return {
