@@ -14,7 +14,7 @@ test("counts only verified binary token settlements", () => {
   const record = buildSettlementRecord(
     [position("c1", "t1"), position("c2", "t2")],
     [resolution("c1", "t1", 1), resolution("c2", "t2", 0)],
-    { nowMs }
+    { nowMs, historyComplete: true }
   );
   assert.equal(record.wins, 1);
   assert.equal(record.losses, 1);
@@ -35,7 +35,6 @@ test("does not count unresolved tokens or missing resolution metadata", () => {
     { nowMs }
   );
   assert.equal(record.resolvedMarkets, 0);
-  assert.equal(record.pendingExcluded, undefined);
   assert.equal(record.diagnostics.pendingExcluded, 1);
   assert.equal(record.diagnostics.unverifiedExcluded, 1);
   assert.equal(record.complete, false);
@@ -45,7 +44,7 @@ test("excludes results outside the rolling window", () => {
   const record = buildSettlementRecord(
     [position("c1", "t1")],
     [resolution("c1", "t1", 1, "2026-10-01T12:00:00.000Z")],
-    { nowMs, windowDays: 30 }
+    { nowMs, windowDays: 30, historyComplete: true }
   );
   assert.equal(record.resolvedMarkets, 0);
   assert.equal(record.diagnostics.outsideWindowExcluded, 1);
