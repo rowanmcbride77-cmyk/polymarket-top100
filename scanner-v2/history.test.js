@@ -25,7 +25,7 @@ test("counts only tokens held at resolution; later sells do not erase a valid re
 test("excludes early exits made before resolution", () => {
   const activity = [
     event("TRADE", "yes", "c1", 1794000000, 10, "BUY"),
-    event("TRADE", "yes", "c1", 1794500000, 10, "SELL")
+    event("TRADE", "yes", "c1", 1794182400, 10, "SELL")
   ];
   const result = reconstructHeldAtResolution(activity, resolutionIndex, { historyComplete: true });
   assert.equal(result.positions.length, 0);
