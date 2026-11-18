@@ -1,5 +1,5 @@
 import { getWalletSettlementRecord } from "./history.js";
-import { qualifiesForTop100, DEFAULT_QUALIFICATION } from "./settlement.js";
+import { qualifiesForTop100, DEFAULT_QUALIFICATION } from "./settlement.js";\nimport { getSelectedPeriodPnl } from "./pnl.js";
 
 async function mapLimit(items, limit, worker) {
   const output = new Array(items.length);
@@ -53,7 +53,7 @@ export async function buildQualifiedLeaderboard(candidates, options = {}) {
         ...trader,
         ...record,
         period,
-        selectedPeriodPnl: Number(trader.pnl)
+        selectedPeriodPnl: Number(pnl.value),\n        periodPnlBasis: pnl.basis,\n        periodPnlPoints: pnl.points
       });
     } else {
       rejected.push({
@@ -83,7 +83,7 @@ export async function buildQualifiedLeaderboard(candidates, options = {}) {
     qualified: qualified.slice(0, 100).map((row, index) => ({ ...row, rank: index + 1 })),
     rejectedCount: rejected.length,
     diagnostics: {
-      auditFailures: rejected.filter(row => row.reason === "history-fetch-failed").length,
+      auditFailures: rejected.filter(row => row.reason === "history-fetch-failed").length,\n      missingPeriodPnl: rejected.filter(row => row.reason === "missing-period-pnl").length,
       incompleteHistories: rejected.filter(row => row.reason === "incomplete-settlement-history").length,
       belowAccuracy: rejected.filter(row => row.reason === "below-minimum-settlement-accuracy").length,
       belowMarketMinimum: rejected.filter(row => row.reason === "below-minimum-resolved-markets").length
