@@ -137,37 +137,96 @@ export function reconstructHeldAtResolution(activity, resolutionIndex, options =
 export async function getWalletSettlementRecord(wallet, options = {}) {
   const nowMs = Number(options.nowMs ?? Date.now());
   const nowSeconds = Math.floor(nowMs / 1000);
-  const activityFetcher = options.fetchAllPages ?? fetchAllPages;
-  const activity = await activityFetcher("/v2/activity", {
-    user: wallet,
-    type: SUPPORTED_TYPES,
-    start: 1,
-    end: nowSeconds,
-    sort_by: "TIMESTAMP",
-    sort_direction: "ASC",
-    limit: 1000
-  }, { maxPages: options.maxActivityPages ?? 5000 });
+  const windowDays = options.windowDays ?? 30;
+  const cutoffSeconds = Math.floor((nowMs - windowDays * 24 * 60 * 60 * 1000) / 1000);
+  const fetchPages = options.fetchAllPages ?? fetchAllPages;
 
-  const conditionIds = [...new Set(activity.map(row => key(row.condition_id ?? row.conditionId)).filter(Boolean))];
+  // Discover only conditions that could have settled in the scoring window:
+  // recent redemptions, recent closes, and currently-held redeemable positions.
+  const [redeems, recentClosed, redeemable, redeemableLost] = await Promise.all([
+    fetchPages("/v2/activity", {
+      user: wallet, type: "REDEEM", start: cutoffSeconds, end: nowSeconds,
+      sort_by: "TIMESTAMP", sort_direction: "ASC", limit: 1000
+    }, { maxPages: options.maxActivityPages ?? 100 }),
+    fetchPages("/v2/positions", {
+      user: wallet, status: "CLOSED", start: cutoffSeconds, end: nowSeconds,
+      sort_by: "TIMESTAMP", sort_direction: "ASC", limit: 1000
+    }, { maxPages: options.maxPositionPages ?? 100 }),
+    fetchPages("/v2/positions", {
+      user: wallet, status: "REDEEMABLE", sort_by: "TIMESTAMP",
+      sort_direction: "ASC", limit: 1000
+    }, { maxPages: options.maxPositionPages ?? 100 }),
+    fetchPages("/v2/positions", {
+      user: wallet, status: "REDEEMABLE_LOST", sort_by: "TIMESTAMP",
+      sort_direction: "ASC", limit: 1000
+    }, { maxPages: options.maxPositionPages ?? 100 })
+  ]);
+
+  const candidateConditions = [...new Set([
+    ...redeems, ...recentClosed, ...redeemable, ...redeemableLost
+  ].map(row => key(row.condition_id ?? row.conditionId)).filter(Boolean))];
+
+  if (!candidateConditions.length) {
+    return {
+      wins: 0, losses: 0, resolvedMarkets: 0, winRate: null,
+      windowDays, complete: true,
+      basis: "Verified token settlement payout only; positions reconstructed at resolution; early exits excluded.",
+      diagnostics: {
+        positionsSeen: 0, closedExcluded: 0, pendingExcluded: 0,
+        unverifiedExcluded: 0, outsideWindowExcluded: 0,
+        conflictingConditionsExcluded: 0, activityRows: 0,
+        unsupportedEvents: 0, malformedEvents: 0, comboEvents: 0,
+        ignoredAfterResolution: 0, candidateConditions: 0
+      }
+    };
+  }
+
+  // A wallet may have bought a token months before settlement. Fetch the
+  // complete event history only for candidate conditions, not every market
+  // the wallet has ever touched.
+  const conditionActivity = [];
+  for (let i = 0; i < candidateConditions.length; i += 20) {
+    const batch = candidateConditions.slice(i, i + 20);
+    const rows = await fetchPages("/v2/activity", {
+      user: wallet,
+      condition: batch.join(","),
+      type: SUPPORTED_TYPES,
+      start: 1,
+      end: nowSeconds,
+      sort_by: "TIMESTAMP",
+      sort_direction: "ASC",
+      limit: 1000
+    }, { maxPages: options.maxConditionActivityPages ?? 200 });
+    conditionActivity.push(...rows);
+  }
+
   const resolutionIndex = await (options.fetchResolutionIndex ?? fetchTokenResolutionIndex)(
-    conditionIds,
+    candidateConditions,
     options
   );
-
-  const reconstructed = reconstructHeldAtResolution(activity, resolutionIndex, { historyComplete: true });
+  const reconstructed = reconstructHeldAtResolution(
+    conditionActivity,
+    resolutionIndex,
+    { historyComplete: true }
+  );
   const record = buildSettlementRecord(
     reconstructed.positions,
     [...resolutionIndex.values()],
-    {
-      nowMs,
-      windowDays: options.windowDays ?? 30,
-      historyComplete: reconstructed.complete
-    }
+    { nowMs, windowDays, historyComplete: reconstructed.complete }
   );
 
   return {
     ...record,
-    historySource: "Complete Data API v2 activity replay + token finalPrice + condition resolvedAt",
-    diagnostics: { ...record.diagnostics, ...reconstructed.diagnostics, activityConditions: conditionIds.length }
+    historySource: "Candidate-condition activity replay + verified token payout + condition resolution timestamp",
+    diagnostics: {
+      ...record.diagnostics,
+      ...reconstructed.diagnostics,
+      candidateConditions: candidateConditions.length,
+      discoveryRedeems: redeems.length,
+      discoveryRecentClosed: recentClosed.length,
+      discoveryRedeemable: redeemable.length,
+      discoveryRedeemableLost: redeemableLost.length,
+      conditionActivityRows: conditionActivity.length
+    }
   };
 }
