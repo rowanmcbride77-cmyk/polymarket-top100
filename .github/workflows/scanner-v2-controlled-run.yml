@@ -1,0 +1,54 @@
+name: Scanner v2 controlled run
+
+on:
+  workflow_dispatch:
+    inputs:
+      discovery_limit:
+        description: Maximum unique wallets to discover
+        required: true
+        default: "20000"
+        type: string
+      audit_limit:
+        description: Highest-P&L wallets to audit per period
+        required: true
+        default: "1000"
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: scanner-v2-controlled-run
+  cancel-in-progress: false
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: Run unit tests
+        run: node --test scanner-v2/*.test.js
+      - name: Execute replacement scanner (no production publish)
+        env:
+          DISCOVERY_LIMIT: ${{ inputs.discovery_limit }}
+          QUALIFICATION_AUDIT_LIMIT: ${{ inputs.audit_limit }}
+          DISCOVERY_MAX_PAGES: "200"
+          AUDIT_CONCURRENCY: "6"
+        run: node scanner-v2/run.js
+      - name: Upload isolated scanner output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scanner-v2-output-${{ github.run_id }}
+          path: |
+            week.json
+            month.json
+            consensus-week.json
+            consensus-month.json
+            status.json
+          if-no-files-found: warn
+          retention-days: 14
