@@ -22,7 +22,7 @@ test("counts only verified binary token settlements", () => {
   assert.equal(record.winRate, 50);
 });
 
-test("never counts a profitable early exit as a settlement win", () => {
+test("excludes hedged-at-resolution conditions from directional accuracy", () => {\n  const result = classifySettledPosition(position("c1", "t1", "HEDGED_AT_RESOLUTION"), resolution("c1", "t1", 1));\n  assert.equal(result.status, "excluded");\n});\n\ntest("never counts a profitable early exit as a settlement win", () => {
   const result = classifySettledPosition(position("c1", "t1", "CLOSED"), resolution("c1", "t1", 1));
   assert.equal(result.status, "excluded");
   assert.equal(result.reason, "closed-position-may-be-early-exit");
