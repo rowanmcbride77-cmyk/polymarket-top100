@@ -25,7 +25,7 @@ export function classifySettledPosition(position, tokenResolution) {
 
   // A closed position may have been sold at any point. Its realized P&L is
   // deliberately never used as evidence of a settlement result.
-  if (String(position.status ?? "").toUpperCase() === "CLOSED") {
+  if (String(position.status ?? "").toUpperCase() === "HEDGED_AT_RESOLUTION") {\n    return { status: "excluded", reason: "hedged-at-resolution" };\n  }\n  if (String(position.status ?? "").toUpperCase() === "CLOSED") {
     return { status: "excluded", reason: "closed-position-may-be-early-exit" };
   }
 
