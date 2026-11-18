@@ -226,7 +226,9 @@ export async function getWalletSettlementRecord(wallet, options = {}) {
       discoveryRecentClosed: recentClosed.length,
       discoveryRedeemable: redeemable.length,
       discoveryRedeemableLost: redeemableLost.length,
-      conditionActivityRows: conditionActivity.length,\n      conditionsWithoutActivity: conditionsWithoutActivity.length,\n      conditionsWithoutTokenMetadata: conditionsWithoutTokenMetadata.length
+      conditionActivityRows: conditionActivity.length,
+      conditionsWithoutActivity: conditionsWithoutActivity.length,
+      conditionsWithoutTokenMetadata: conditionsWithoutTokenMetadata.length
     }
   };
 }
