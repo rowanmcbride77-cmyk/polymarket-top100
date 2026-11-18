@@ -17,6 +17,22 @@ test("follows opaque cursors and preserves every page filter", async () => {
   assert.equal(calls[1].params.cursor, "opaque-A");
 });
 
+test("stops pagination when the caller's page predicate is satisfied", async () => {
+  let calls = 0;
+  const rows = await fetchAllPages("/v2/leaderboard", {}, {
+    request: async () => {
+      calls++;
+      return {
+        data: [{ id: calls }],
+        pagination: { has_more: true, next_cursor: "cursor-" + calls }
+      };
+    },
+    stopWhen: (_pageRows, allRows) => allRows.length >= 2
+  });
+  assert.deepEqual(rows.map(row => row.id), [1, 2]);
+  assert.equal(calls, 2);
+});
+
 test("refuses to call a truncated cursor walk complete", async () => {
   await assert.rejects(
     fetchAllPages("/v2/activity", {}, {

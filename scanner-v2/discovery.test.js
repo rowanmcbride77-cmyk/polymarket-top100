@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { candidatesForPeriod, discoverWallets } from "./discovery.js";
+import { fetchAllPages as paginate } from "./data-api.js";
 
 const wallet = n => "0x" + String(n).padStart(40, "0");
 
@@ -26,6 +27,36 @@ test("deduplicates wallets across categories and preserves period-specific P&L",
   assert.equal(result.candidates[0].pnlByPeriod.MONTH, 120);
   assert.equal(candidatesForPeriod(result, "WEEK")[0].pnl, 12);
   assert.equal(candidatesForPeriod(result, "MONTH")[0].pnl, 120);
+});
+
+test("stops a leaderboard cursor walk when the category's unique-wallet quota is met", async () => {
+  let calls = 0;
+  const pages = [
+    {
+      data: [
+        { proxyWallet: wallet(11), pnl: 100 },
+        { proxyWallet: wallet(12), pnl: 90 }
+      ],
+      pagination: { has_more: true, next_cursor: "next-page" }
+    },
+    {
+      data: [{ proxyWallet: wallet(13), pnl: 80 }],
+      pagination: { has_more: false, next_cursor: null }
+    }
+  ];
+  const result = await discoverWallets({
+    fetchAllPages: (path, params, options) => paginate(path, params, {
+      ...options,
+      request: async () => {
+        calls++;
+        return pages.shift();
+      }
+    }),
+    categories: ["sports"], periods: ["WEEK"], sorts: ["PNL"],
+    totalLimit: 2, categoryQuotas: { sports: 2 }, pageSize: 2
+  });
+  assert.equal(result.candidates.length, 2);
+  assert.equal(calls, 1);
 });
 
 test("rejects malformed wallet identifiers and zero address", async () => {

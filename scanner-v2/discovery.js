@@ -51,6 +51,7 @@ export async function discoverWallets(options = {}) {
   for (const category of categories) {
     if (wallets.size >= totalLimit) break;
     const categoryStart = new Set(wallets.keys());
+    const discoveredInCategory = new Set();
     const quota = categoryQuotas[category] ?? Math.ceil(totalLimit / categories.length);
 
     for (const period of periods) {
@@ -64,7 +65,17 @@ export async function discoverWallets(options = {}) {
           time_period: period.toLowerCase(),
           sort_by: sortBy,
           limit: pageSize
-        }, { maxPages: options.maxPagesPerStream ?? 200 });
+        }, {
+          maxPages: options.maxPagesPerStream ?? 1000,
+          stopWhen: pageRows => {
+            for (const row of pageRows) {
+              const wallet = walletOf(row);
+              if (wallet && !categoryStart.has(wallet)) discoveredInCategory.add(wallet);
+            }
+            return discoveredInCategory.size >= quota ||
+              categoryStart.size + discoveredInCategory.size >= totalLimit;
+          }
+        });
 
         // fetchAllPages returns all rows but not per-page metadata; each stream
         // is counted explicitly for diagnostics using a conservative page bound.

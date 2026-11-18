@@ -76,6 +76,12 @@ export async function fetchAllPages(path, params = {}, options = {}) {
     if (!Array.isArray(pageRows)) throw new Error(`Expected data[] from ${path}`);
     rows.push(...pageRows);
 
+    // Discovery can stop a leaderboard stream as soon as its unique-wallet
+    // quota is met. Other history callers omit stopWhen and still paginate fully.
+    if (typeof options.stopWhen === "function" && options.stopWhen(pageRows, rows, payload)) {
+      return rows;
+    }
+
     const pagination = payload.pagination ?? {};
     if (pagination.has_more !== true) return rows;
     const next = pagination.next_cursor;
