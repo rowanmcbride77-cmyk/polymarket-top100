@@ -1,0 +1,27 @@
+name: Scanner v2 unit tests
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "scanner-v2/**"
+      - ".github/workflows/scanner-v2-tests.yml"
+  pull_request:
+    paths:
+      - "scanner-v2/**"
+      - ".github/workflows/scanner-v2-tests.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: Run settlement engine tests
+        run: node --test scanner-v2/*.test.js
