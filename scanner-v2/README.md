@@ -1,36 +1,33 @@
 # Clean scanner engine (v2)
 
-This folder is the replacement engine being built alongside the existing dashboard.
-The legacy `update.mjs` is not the source of truth for settlement accuracy.
+This is the replacement Polymarket scanner, developed alongside the existing dashboard. The legacy dashboard and scheduled scanner remain untouched until this engine produces validated output.
 
-## Non-negotiable rules
+## Rules
 
-- Rank candidates by the selected Polymarket leaderboard period P&L.
-- Discover broadly; do not cap qualification to the canonical Top 100.
-- A settlement result must come from explicit token-resolution metadata and an exact binary final payout (0 or 1), joined by both token ID and condition ID.
-- A `CLOSED` position is an exit and is never counted as a settlement result, regardless of realized P&L.
-- A position without matching token + condition resolution metadata is unverified, not a loss or win.
-- Count one unambiguous result per market condition.
-- Qualification: at least 90% verified settlement accuracy and at least 20 resolved markets in the rolling 30-day window.
-- No partial/incomplete history may qualify.
-- Consensus is computed only from currently open positions held on the exact same condition and outcome by at least two qualified wallets.
+- Discover wallets from sports, esports, crypto, and overall leaderboard streams; politics/government markets are excluded from consensus.
+- Rank separately by selected WEEK or MONTH leaderboard P&L.
+- Qualify only with at least 90% verified settlement accuracy and at least 20 resolved markets in the rolling 30-day window.
+- Early exits are excluded from settlement wins, losses, denominator, and accuracy.
+- Incomplete or unverified settlement history cannot qualify.
+- Consensus requires verified current holdings and recent same-token BUY activity on the exact same condition/outcome.
+- Consensus markets must have a verified end time within 24 hours. Groups with fewer than eight qualified holders are watchlist candidates, not strong signals.
+- Replacement output is generated in isolation. It is not automatically published to the live dashboard.
 
-## Verified API building blocks
+## Running locally
 
-- Data API v2 uses the `{ data, pagination }` envelope and opaque `next_cursor` pagination. No offset pagination is used.
-- `/v2/tokens` provides each outcome token's `resolved` flag and `finalPrice`.
-- `/v2/resolutions` provides condition-level finality and `resolvedAt`.
-- `/v2/positions` distinguishes live holdings, redeemable settled positions, losing redeemable positions, and `CLOSED` exits.
-- `/v2/activity` includes explicit `REDEEM` activity. Historical results must be built from verified settlement/redemption evidence, not from closed-position realized P&L.
+Node.js 22 or newer:
 
-## Build order
+```sh
+npm test
+DISCOVERY_LIMIT=20000 QUALIFICATION_AUDIT_LIMIT=1000 npm run scan
+```
 
-1. API client with cursor integrity and retry handling (implemented).
-2. Settlement primitives and qualification tests (implemented; API history adapter still to build).
-3. Verify real activity/token/resolution payload joins with fixtures.
-4. Implement wallet discovery and cursor-safe pagination.
-5. Implement complete per-wallet settlement history with bounded concurrency and caching.
-6. Implement ranking, open-position overlap, and consensus.
-7. Add output schema validation and only then switch the dashboard data feed.
+The scanner writes `week.json`, `month.json`, `consensus-week.json`, `consensus-month.json`, and `status.json` into the current working directory.
 
-The existing dashboard remains in place until the replacement engine produces validated output.
+## Controlled GitHub run
+
+Use **Actions → Scanner v2 controlled run → Run workflow**. The workflow runs unit tests first, executes the replacement scanner, and uploads its output as an artifact. It deliberately does not commit or publish generated data.
+
+## Verification status
+
+The unit-test workflow and isolated execution workflow are in place. The live Polymarket API adapters, settlement-history completeness, and output quality still require a successful controlled run and review before the dashboard can be switched over.
