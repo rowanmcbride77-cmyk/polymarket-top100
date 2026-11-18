@@ -1,0 +1,84 @@
+name: Scanner pre-publish test
+on:
+  push:
+    branches: [scanner-prepublish-test]
+    paths:
+      - "update.mjs"
+      - ".github/workflows/scanner-prepublish-test.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: scanner-prepublish-test
+  cancel-in-progress: false
+jobs:
+  test-live-scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: Syntax check
+        run: node --check update.mjs
+      - name: Run full scanner without publishing
+        run: node update.mjs
+      - name: Validate generated data before publication
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from "node:fs/promises";
+          const specs = [
+            ["week.json", "leaders"],
+            ["month.json", "leaders"],
+            ["consensus-week.json", "consensus"],
+            ["consensus-month.json", "consensus"]
+          ];
+          for (const [file, key] of specs) {
+            const data = JSON.parse(await fs.readFile(file, "utf8"));
+            const rows = data[key];
+            if (!Array.isArray(rows) || rows.length === 0) throw new Error(file + ": empty " + key);
+            console.log(file + ": " + rows.length + " " + key);
+            if (key === "leaders") {
+              if (rows.length > 100) throw new Error(file + ": more than 100 leaders");
+              for (const row of rows) {
+                const n = Number(row.wins) + Number(row.losses);
+                if (row.recordComplete !== true || row.settlementRecordComplete !== true ||
+                    row.recordVerified !== true || !Number.isFinite(n) || n < 20 ||
+                    Number(row.winRate) < 90 || Math.abs(Number(row.winRate) - Number(row.wins) / n * 100) > 1e-6) {
+                  throw new Error(file + ": invalid settlement-qualified leader " + row.wallet);
+                }
+              }
+            } else {
+              const seen = new Set();
+              for (const group of rows) {
+                const condition = String(group.conditionId || "").toLowerCase();
+                const side = String(group.side || "").toLowerCase();
+                const holders = group.traders || [];
+                if (!condition || seen.has(condition)) throw new Error(file + ": duplicate/missing condition " + condition);
+                seen.add(condition);
+                if (holders.length < 2 || new Set(holders.map(t => String(t.wallet).toLowerCase())).size !== holders.length) {
+                  throw new Error(file + ": fewer than two distinct holders in " + condition);
+                }
+                if (holders.some(t => String(t.side || "").toLowerCase() !== side || t.qualified !== true ||
+                    t.recordComplete !== true || t.settlementRecordComplete !== true ||
+                    Number(t.resolvedMarkets) < 20 || Number(t.winRate) < 90)) {
+                  throw new Error(file + ": unqualified or mixed-side holder in " + condition);
+                }
+              }
+            }
+          }
+          console.log("PASS: nonempty leaderboards and combo signals; settlement and same-side qualification validated.");
+          NODE
+      - name: Preserve test output for inspection
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scanner-prepublish-output
+          path: |
+            week.json
+            month.json
+            consensus-week.json
+            consensus-month.json
+          if-no-files-found: ignore
+          retention-days: 7
