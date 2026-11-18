@@ -46,7 +46,7 @@ export async function fetchTokenResolutionIndex(conditionIds, options = {}) {
       conditionId,
       resolved: token.resolved === true && String(finality?.status ?? "").toLowerCase() === "resolved",
       finalPrice: token.finalPrice ?? token.final_price ?? null,
-      resolvedAt: finality?.resolvedAt ?? finality?.resolved_at ?? null,
+      resolvedAt: finality?.resolvedAt ?? finality?.resolved_at ?? finality?.lastUpdateTimestamp ?? finality?.last_update_timestamp ?? null,
       resolutionStatus: finality?.status ?? null
     });
   }
