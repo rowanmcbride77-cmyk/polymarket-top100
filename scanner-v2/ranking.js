@@ -1,6 +1,6 @@
 import { getWalletSettlementRecord } from "./history.js";
 import { qualifiesForTop100, DEFAULT_QUALIFICATION } from "./settlement.js";
-import { getSelectedPeriodPnl } from "./pnl.js";
+
 
 async function mapLimit(items, limit, worker) {
   const output = new Array(items.length);
@@ -32,11 +32,8 @@ export async function buildQualifiedLeaderboard(candidates, options = {}) {
     .slice(0, auditLimit);
 
   const audit = await mapLimit(rankedPool, concurrency, async trader => {
-    const [record, pnl] = await Promise.all([
-      (options.getRecord ?? getWalletSettlementRecord)(trader.wallet, options),
-      (options.getPeriodPnl ?? getSelectedPeriodPnl)(trader.wallet, period, options)
-    ]);
-    return { trader, record, pnl };
+    const record = await (options.getRecord ?? getWalletSettlementRecord)(trader.wallet, options);
+    return { trader, record, pnl: { value: Number(trader.pnl), complete: Number.isFinite(Number(trader.pnl)), basis: "Selected-period Polymarket leaderboard P&L" } };
   });
 
   const qualified = [];
