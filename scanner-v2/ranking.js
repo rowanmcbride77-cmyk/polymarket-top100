@@ -18,6 +18,32 @@ async function mapLimit(items, limit, worker) {
 }
 
 /**
+ * Share a wallet's complete rolling settlement audit between the weekly and
+ * monthly rankings. Both rankings use the same scan-time 30-day window, so
+ * re-fetching identical wallet history twice adds API load without changing
+ * any result or qualification threshold.
+ */
+export function createSettlementRecordCache(getRecord = getWalletSettlementRecord) {
+  const records = new Map();
+  let cacheHits = 0;
+  const getCachedRecord = (wallet, options = {}) => {
+    const walletKey = String(wallet ?? "").trim().toLowerCase();
+    const windowDays = Number(options.windowDays ?? DEFAULT_QUALIFICATION.windowDays);
+    const nowMs = Number(options.nowMs ?? 0);
+    const cacheKey = `${walletKey}|${windowDays}|${nowMs}`;
+    if (records.has(cacheKey)) {
+      cacheHits++;
+      return records.get(cacheKey);
+    }
+    const pending = Promise.resolve().then(() => getRecord(wallet, options));
+    records.set(cacheKey, pending);
+    return pending;
+  };
+  getCachedRecord.stats = () => ({ uniqueRecords: records.size, cacheHits });
+  return getCachedRecord;
+}
+
+/**
  * Audits the highest selected-period P&L candidates, then ranks only complete,
  * verified settlement passers. Failed/incomplete wallet audits never qualify.
  */

@@ -1,9 +1,11 @@
 import fs from "node:fs/promises";
 import { discoverWallets, candidatesForPeriod } from "./discovery.js";
-import { buildQualifiedLeaderboard } from "./ranking.js";
+import { buildQualifiedLeaderboard, createSettlementRecordCache } from "./ranking.js";
 import { buildConsensusSignals } from "./consensus.js";
 
-const startedAt = new Date().toISOString();
+const scanNowMs = Date.now();
+const startedAt = new Date(scanNowMs).toISOString();
+const getSharedSettlementRecord = createSettlementRecordCache();
 const discovery = await discoverWallets({
   totalLimit: Number(process.env.DISCOVERY_LIMIT ?? 20000),
   maxPagesPerStream: Number(process.env.DISCOVERY_MAX_PAGES ?? 200),
@@ -20,6 +22,8 @@ for (const period of ["WEEK", "MONTH"]) {
     auditLimit: Number(process.env.QUALIFICATION_AUDIT_LIMIT ?? 1000),
     concurrency: Number(process.env.AUDIT_CONCURRENCY ?? 6),
     windowDays: 30,
+    nowMs: scanNowMs,
+    getRecord: getSharedSettlementRecord,
     rules: { minimumWinRate: 90, minimumResolvedMarkets: 20, windowDays: 30 }
   });
   outputs[period] = ranking;
@@ -89,6 +93,8 @@ for (const period of ["WEEK", "MONTH"]) {
   await fs.writeFile(`consensus-${prefix}.json`, JSON.stringify(consensusPayload, null, 2) + "\n");
 }
 
+const settlementCacheStats = getSharedSettlementRecord.stats();
+console.log(`Settlement audit cache: ${settlementCacheStats.uniqueRecords} unique wallet/window records; ${settlementCacheStats.cacheHits} duplicate weekly/monthly requests reused.`);
 const finishedAt = new Date().toISOString();
 // Stamp every published dataset with the same completed-scan timestamp so
 // main-branch and Pages freshness checks can compare the four files exactly.
@@ -110,6 +116,8 @@ const status = {
   monthConsensusSignals: Array.isArray(monthConsensus) ? monthConsensus.length : 0,
   weekCandidatesAudited: outputs.WEEK.candidatesAudited,
   monthCandidatesAudited: outputs.MONTH.candidatesAudited,
+  settlementRecordsAudited: settlementCacheStats.uniqueRecords,
+  settlementAuditCacheHits: settlementCacheStats.cacheHits,
   weekQualification: outputs.WEEK.diagnostics,
   monthQualification: outputs.MONTH.diagnostics
 };

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildQualifiedLeaderboard } from "./ranking.js";
+import { buildQualifiedLeaderboard, createSettlementRecordCache } from "./ranking.js";
 
 const passing = (winRate = 90, resolvedMarkets = 20, complete = true) => ({
   wins: Math.round(resolvedMarkets * winRate / 100),
@@ -41,4 +41,31 @@ test("does not audit beyond configured limit", async () => {
   });
   assert.equal(seen.length, 3);
   assert.equal(result.candidatesAudited, 3);
+});
+
+test("reuses the same complete 30-day wallet audit across weekly and monthly rankings", async () => {
+  const calls = [];
+  const cache = createSettlementRecordCache(async (wallet, options) => {
+    calls.push({ wallet, options });
+    return passing(95, 40);
+  });
+  const options = { windowDays: 30, nowMs: Date.parse("2026-11-19T22:00:00Z") };
+  const [weekly, monthly] = await Promise.all([
+    cache("0xABC", options),
+    cache("0xabc", options)
+  ]);
+  assert.equal(calls.length, 1);
+  assert.equal(weekly, monthly);
+  assert.deepEqual(cache.stats(), { uniqueRecords: 1, cacheHits: 1 });
+});
+
+test("does not reuse a settlement audit from a different scoring window", async () => {
+  let calls = 0;
+  const cache = createSettlementRecordCache(async () => {
+    calls++;
+    return passing(95, 40);
+  });
+  await cache("0xabc", { windowDays: 30, nowMs: 123 });
+  await cache("0xabc", { windowDays: 7, nowMs: 123 });
+  assert.equal(calls, 2);
 });
