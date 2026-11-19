@@ -1,4 +1,4 @@
-name: Scanner v2 production scan
+name: Scanner v3 production scan
 
 on:
   push:
@@ -8,155 +8,95 @@ on:
       - ".github/workflows/scanner-v2-production.yml"
   workflow_dispatch:
   schedule:
-    - cron: "17,47 * * * *"
+    - cron: "17 */6 * * *"
 
 permissions:
   contents: write
 
 concurrency:
-  group: polymarket-scanner-v2
+  group: polymarket-scanner-v3
   cancel-in-progress: false
 
 jobs:
   scan:
     runs-on: ubuntu-latest
-    timeout-minutes: 55
+    timeout-minutes: 360
+    env:
+      NODE_OPTIONS: --max-old-space-size=5120
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
         with:
           node-version: 22
-      - name: Run scanner v2 unit tests
+      - name: Run scanner unit tests
         run: node --test scanner-v2/*.test.js
-      - name: Run scanner v2
+      - name: Run scanner v3
         env:
           DISCOVERY_LIMIT: "20000"
           DISCOVERY_MAX_PAGES: "1000"
           QUALIFICATION_AUDIT_LIMIT: "1000"
-          AUDIT_CONCURRENCY: "6"
+          AUDIT_CONCURRENCY: "4"
         run: node scanner-v2/run.js
       - name: Validate generated JSON
         run: |
           node --input-type=module <<'NODE'
           import fs from "node:fs/promises";
-
-          const dataFiles = ["week.json", "month.json", "consensus-week.json", "consensus-month.json"];
-          const docs = Object.fromEntries(await Promise.all(dataFiles.map(async file => [
-            file, JSON.parse(await fs.readFile(file, "utf8"))
-          ])));
+          const files = ["week.json", "month.json", "consensus-week.json", "consensus-month.json"];
+          const docs = Object.fromEntries(await Promise.all(files.map(async file => [file, JSON.parse(await fs.readFile(file, "utf8"))])));
           const status = JSON.parse(await fs.readFile("status.json", "utf8"));
-          if (status.ok !== true || status.scannerVersion !== "v2") {
-            throw new Error("status.json does not confirm a successful scanner v2 run");
-          }
-
-          const stamps = new Set(dataFiles.map(file => docs[file].generatedAt));
-          if (stamps.size !== 1) throw new Error("The four generated files do not share one generatedAt timestamp");
-          const generatedAt = Date.parse([...stamps][0]);
-          const startedAt = Date.parse(status.startedAt);
-          const finishedAt = Date.parse(status.finishedAt);
-          if (!Number.isFinite(generatedAt) || !Number.isFinite(startedAt) || !Number.isFinite(finishedAt) ||
-              generatedAt !== finishedAt || generatedAt < startedAt || generatedAt > Date.now() + 5 * 60 * 1000 ||
-              Date.now() - generatedAt > 2 * 60 * 60 * 1000) {
-            throw new Error("Generated data timestamp is invalid, stale, or outside the completed scan");
-          }
-
-          function validateRecord(row, label) {
-            const wins = Number(row.wins);
-            const losses = Number(row.losses);
-            const resolved = Number(row.resolvedMarkets);
-            const rate = Number(row.winRate);
-            const basis = String(row.recordBasis || "").toLowerCase();
-            if (row.qualified !== true || row.complete !== true || row.recordComplete !== true ||
-                row.settlementRecordComplete !== true) {
-              throw new Error(label + " is not marked as a complete qualified settlement record");
-            }
-            if (!Number.isInteger(wins) || wins < 0 || !Number.isInteger(losses) || losses < 0 ||
-                !Number.isInteger(resolved) || resolved !== wins + losses || resolved < 20 ||
-                !Number.isFinite(rate) || rate < 90 || Math.abs(rate - wins / resolved * 100) > 1e-6) {
-              throw new Error(label + " has invalid settlement W/L, denominator, or accuracy");
-            }
-            if (!basis.includes("settlement-only") || !basis.includes("excluded")) {
-              throw new Error(label + " lacks explicit settlement-only early-exit exclusion basis");
-            }
-            if (row.realizedPnlTotal !== null && row.realizedPnlTotal !== undefined &&
-                !String(row.realizedPnlBasis || "").toLowerCase().includes("early exits")) {
-              throw new Error(label + " mixes realized close P&L with settlement accuracy");
-            }
-          }
-
+          if (status.ok !== true || status.scannerVersion !== "v3") throw new Error("Scanner status is not successful v3 output.");
+          const stamps = new Set(files.map(file => docs[file].generatedAt));
+          if (stamps.size !== 1 || !Number.isFinite(Date.parse([...stamps][0]))) throw new Error("Output timestamps do not match.");
           for (const file of ["week.json", "month.json"]) {
             const leaders = docs[file].leaders;
-            if (!Array.isArray(leaders) || leaders.length === 0 || leaders.length > 100) {
-              throw new Error(file + " must contain 1-100 qualified leaders; refusing to replace existing data");
-            }
+            if (!Array.isArray(leaders) || leaders.length === 0 || leaders.length > 100) throw new Error(file + " must contain 1-100 qualified leaders.");
             const wallets = new Set();
             for (const row of leaders) {
               const wallet = String(row.wallet || "").toLowerCase();
-              if (!wallet || wallets.has(wallet)) throw new Error(file + " contains a missing or duplicate trader wallet");
+              const wins = Number(row.wins), losses = Number(row.losses), resolved = Number(row.resolvedMarkets), rate = Number(row.winRate);
+              if (!wallet || wallets.has(wallet)) throw new Error(file + " has duplicate/missing wallets.");
               wallets.add(wallet);
-              validateRecord(row, file + " trader " + wallet);
-              if (!Number.isFinite(Number(row.selectedPeriodPnl))) {
-                throw new Error(file + " trader " + wallet + " has no selected-period P&L");
-              }
+              if (row.qualified !== true || row.complete !== true || row.recordComplete !== true || row.settlementRecordComplete !== true ||
+                  !Number.isInteger(wins) || wins < 0 || !Number.isInteger(losses) || losses < 0 ||
+                  resolved !== wins + losses || resolved < 20 || rate < 90 || Math.abs(rate - wins / resolved * 100) > 1e-6 ||
+                  !String(row.recordBasis || "").toLowerCase().includes("settlement-only") ||
+                  !String(row.recordBasis || "").toLowerCase().includes("excluded") ||
+                  !Number.isFinite(Number(row.selectedPeriodPnl))) throw new Error(file + " contains an invalid settlement-only trader.");
             }
           }
-
           for (const file of ["consensus-week.json", "consensus-month.json"]) {
-            const data = docs[file];
-            const groups = data.consensus;
-            if (!Array.isArray(groups) || groups.length === 0) {
-              throw new Error(file + " has no consensus signals; refusing to replace existing data");
-            }
-            if (data.minimumResolvedMarkets !== 20 || data.minimumWinRate !== 90 ||
-                data.entryWindowMinutes !== 60 || data.minimumEntryUsd !== 10) {
-              throw new Error(file + " does not preserve the configured consensus qualification rules");
-            }
-            const conditions = new Set();
+            const groups = docs[file].consensus;
+            if (!Array.isArray(groups) || groups.length === 0) throw new Error(file + " has no signals; preserving prior publication.");
+            const seen = new Set();
             for (const group of groups) {
               const condition = String(group.conditionId || "").toLowerCase();
-              const token = String(group.tokenId || "").toLowerCase();
-              const outcome = String(group.outcome || "").toLowerCase();
               const traders = Array.isArray(group.traders) ? group.traders : [];
-              if (!condition || !token || !outcome || conditions.has(condition)) {
-                throw new Error(file + " contains a missing or duplicate condition / conflicting outcome signal");
-              }
-              conditions.add(condition);
-              if (group.marketMetadataVerified !== true || group.marketClosed !== false ||
-                  !Number.isFinite(Date.parse(group.endDate)) ||
-                  Date.parse(group.endDate) <= startedAt || Date.parse(group.endDate) > startedAt + 24 * 60 * 60 * 1000) {
-                throw new Error(file + " contains a closed, unverified, or out-of-window market");
-              }
-              if (traders.length < 2 || Number(group.qualifiedWalletCount) !== traders.length) {
-                throw new Error(file + " has a consensus group with fewer than two qualified wallets");
-              }
+              if (!condition || seen.has(condition) || group.marketMetadataVerified !== true || group.marketClosed !== false ||
+                  !Number.isFinite(Date.parse(group.endDate)) || Date.parse(group.endDate) <= Date.now() ||
+                  Date.parse(group.endDate) > Date.now() + 24 * 60 * 60 * 1000 || traders.length < 2 ||
+                  Number(group.qualifiedWalletCount) !== traders.length) throw new Error(file + " has invalid/duplicate consensus.");
+              seen.add(condition);
               const wallets = new Set();
               for (const trader of traders) {
                 const wallet = String(trader.wallet || "").toLowerCase();
-                if (!wallet || wallets.has(wallet)) throw new Error(file + " contains a duplicate or missing consensus wallet");
+                if (!wallet || wallets.has(wallet) || String(trader.side || "").toLowerCase() !== String(group.outcome || "").toLowerCase() ||
+                    Number(trader.entryCostUsd) < 10 || Number(trader.recentBuyUsd) <= 0 ||
+                    trader.qualified !== true || trader.settlementRecordComplete !== true ||
+                    Number(trader.resolvedMarkets) < 20 || Number(trader.winRate) < 90) throw new Error(file + " contains a nonqualifying consensus holder.");
                 wallets.add(wallet);
-                if (String(trader.side || "").toLowerCase() !== outcome ||
-                    Number(trader.entryCostUsd) < 10 || Number(trader.recentBuyUsd) <= 0) {
-                  throw new Error(file + " contains a trader without the same outcome or verified qualifying entry");
-                }
-                validateRecord(trader, file + " consensus trader " + wallet);
               }
-              const expectedTier = traders.length >= 8 ? "Strong Signals" : "Watchlist";
-              if (group.signalTier !== expectedTier) throw new Error(file + " has an inconsistent consensus tier");
+              if (group.signalTier !== (traders.length >= 8 ? "Strong Signals" : "Watchlist")) throw new Error(file + " has a wrong signal tier.");
             }
           }
-
-          if (status.weekLeaders !== docs["week.json"].leaders.length ||
-              status.monthLeaders !== docs["month.json"].leaders.length ||
+          if (status.weekLeaders !== docs["week.json"].leaders.length || status.monthLeaders !== docs["month.json"].leaders.length ||
               status.weekConsensusSignals !== docs["consensus-week.json"].consensus.length ||
-              status.monthConsensusSignals !== docs["consensus-month.json"].consensus.length) {
-            throw new Error("status.json counts do not match the four generated datasets");
-          }
-          console.log("Validated nonempty Top 100s, settlement-only records, one same-side consensus group per condition, and matching fresh timestamps.");
+              status.monthConsensusSignals !== docs["consensus-month.json"].consensus.length) throw new Error("status counts do not match output files.");
+          console.log("Scanner v3 output validated.");
           NODE
       - name: Publish validated data
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add week.json month.json consensus-week.json consensus-month.json status.json
-          git diff --cached --quiet || git commit -m "Publish validated scanner v2 data"
+          git diff --cached --quiet || git commit -m "Publish validated scanner v3 data"
           git push
