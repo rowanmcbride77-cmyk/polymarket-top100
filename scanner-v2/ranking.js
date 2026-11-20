@@ -57,8 +57,13 @@ export async function buildQualifiedLeaderboard(candidates, options = {}) {
     .sort((a, b) => Number(b.pnl) - Number(a.pnl))
     .slice(0, auditLimit);
 
+  let auditedCount = 0;
   const audit = await mapLimit(rankedPool, concurrency, async trader => {
     const record = await (options.getRecord ?? getWalletSettlementRecord)(trader.wallet, options);
+    auditedCount++;
+    if (auditedCount % 25 === 0 || auditedCount === rankedPool.length) {
+      console.log(`[${period}] settlement audits completed: ${auditedCount}/${rankedPool.length}`);
+    }
     return { trader, record, pnl: { value: Number(trader.pnl), complete: Number.isFinite(Number(trader.pnl)), basis: "Selected-period Polymarket leaderboard P&L" } };
   });
 
