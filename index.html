@@ -164,7 +164,7 @@ dialog::backdrop{background:#000b}
             <tbody id="leadersBody"><tr><td colspan="6" class="loading">Loading traders…</td></tr></tbody>
           </table>
         </div>
-        <div class="source-note">Top 100 is ranked by selected-period Polymarket leaderboard P&L. The displayed 30-day record counts only verified resolved market outcomes. Top 100 and Strong Consensus require complete records with 20+ resolved markets and 90%+ settlement accuracy. Early exits are excluded.</div>
+        <div class="source-note">Top 100 is ranked by selected-period Polymarket leaderboard P&L. The displayed 30-day record counts only verified resolved market outcomes. Top 100 requires 20+ resolved markets; Strong Consensus requires 10+ resolved markets. Both require 90%+ settlement accuracy. Early exits are excluded.</div>
         <button class="link-button" id="leadersMore" onclick="toggleLeaders()">View all traders →</button>
       </section>
 
@@ -541,7 +541,7 @@ function consensus() {
 async function loadConsensusData() {
   const pool = $("consensusPool").value;
   $("consensusBody").innerHTML = `<tr><td colspan="7" class="loading">Loading ${esc(pool)} consensus markets…</td></tr>`;
-  $("consensusPeriod").textContent = "20K-wallet discovery · Strong Signals require 20+ resolved markets and 90%+ settlement accuracy over 30 days; early exits excluded";
+  $("consensusPeriod").textContent = "20K-wallet discovery · Strong Signals require 10+ resolved markets and 90%+ settlement accuracy over 30 days; recent BUY within 60 minutes; early exits excluded";
   const filename = CONSENSUS_FILES[pool];
   try {
     const urls = [filename + "?t=" + Date.now()];
@@ -563,7 +563,7 @@ async function loadConsensusData() {
     if (!loaded) throw lastError || new Error(filename + " is not available yet.");
     consensusData = loaded;
     renderConsensus();
-    $("consensusPeriod").textContent = `Strong Signals: 90%+ 30-day settlement accuracy · ${Number(consensusData?.minimumResolvedMarkets) || 20}+ resolved markets · early exits excluded`;
+    $("consensusPeriod").textContent = `Strong Signals: 90%+ 30-day settlement accuracy · ${Number(consensusData?.minimumResolvedMarkets) || 10}+ resolved markets · early exits excluded`;
   } catch (error) {
     consensusData = {consensus:[]};
     $("consensusBody").innerHTML = `<tr><td colspan="7" class="empty">${esc(error.message)}</td></tr>`;
@@ -875,7 +875,7 @@ async function loadConsensusTradeHistory(wallet, conditionId, outcome) {
 function renderConsensus() {
   const minCount = Number($("minTraders").value || 2);
   const qualificationDays = Number(consensusData?.qualificationWindowDays) || 30;
-  const qualificationCloses = Number(consensusData?.minimumResolvedMarkets) || 20;
+  const qualificationCloses = Number(consensusData?.minimumResolvedMarkets) || 10;
   const filteredSides = consensus().map((market, index) => {
       const endSeconds = marketEndTimestamp(market);
       return {...market, _index:index, _endSeconds:endSeconds};
@@ -939,8 +939,8 @@ function renderConsensus() {
   }).filter(market => market.sideSignals.reduce((sum,side)=>sum+side.count,0) >= minCount);
 
   const tierSections = [
-    {title:"Strong Signals", note:`Every listed trader has 20+ resolved markets and a 90%+ win rate over the last 30 days; early exits excluded.`, rows:filtered.filter(m => m.signalTier === "Strong Signals")},
-    {title:"Developing Signals", note:`Developing Signals are disabled; only holders passing the 20-market / 90% settlement-only threshold are shown as Strong Signals.`, rows:filtered.filter(m => m.signalTier === "Developing Signals")},
+    {title:"Strong Signals", note:`Every listed trader has 10+ resolved markets and a 90%+ win rate over the last 30 days; recent BUY within 60 minutes; early exits excluded.`, rows:filtered.filter(m => m.signalTier === "Strong Signals")},
+    {title:"Developing Signals", note:`Developing Signals are disabled; only holders passing the 10-market / 90% settlement-only threshold are shown as Strong Signals.`, rows:filtered.filter(m => m.signalTier === "Developing Signals")},
     {title:"Watchlist", note:"2+ distinct wallets hold the same outcome, but historical qualification is incomplete or below the Developing threshold.", rows:filtered.filter(m => m.signalTier === "Watchlist")}
   ];
   const visible = tierSections.flatMap(section =>
