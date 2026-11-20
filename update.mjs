@@ -49,9 +49,9 @@ const LEADER_RECORD_LIMIT = RANKING_RECORD_LIMIT;
 // Retained for dashboard horizon labels only; active sports eligibility is not time-window limited.
 const CONSENSUS_WINDOW_HOURS = 24;
 const CONSENSUS_HOLDERS_PER_MARKET = 1000;
-const CONSENSUS_ENTRY_WINDOW_MINUTES = 90;
+const CONSENSUS_ENTRY_WINDOW_MINUTES = 60;
 const MIN_TRADER_RESOLVED_MARKETS = 10;
-const MIN_CONSENSUS_CLOSED_MARKETS = 20; // Strong consensus qualification uses a complete rolling 30-day record with 20+ resolved markets.
+const MIN_CONSENSUS_CLOSED_MARKETS = 10; // Match the agreed 30-day trader qualification: 90%+ across at least 10 resolved markets.
 const CONSENSUS_RECORD_PERIOD = {key: "month", api: "MONTH"};
 const TRADERS_PER_MARKET = 500;
 const TRADE_LIMIT = 10;
