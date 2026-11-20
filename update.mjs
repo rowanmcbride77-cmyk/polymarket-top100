@@ -34,10 +34,11 @@ const LEADER_QUALIFICATION_AUDIT_LIMIT = 1000; // Audit the highest selected-per
 // Bound closed-position history requests. Records that hit this cap are marked
 // incomplete and withheld rather than presented as complete win/loss stats.
 const CLOSED_POSITION_SCAN_LIMIT = null; // Fully paginate the entire rolling 30-day close history; capped samples cannot qualify.
-// Restore the full 20,000-wallet consensus discovery pool. Keep the original
-// 30-day qualification and settlement audit; optimize duplicate history work
-// separately rather than reducing the wallet discovery target.
-const CONSENSUS_WALLET_LIMIT = 20000;
+// Keep the live-position scan to 1,000 balanced wallets so the scheduled run
+// finishes reliably instead of spending 20+ minutes fetching 20k wallets.
+// Leaderboard discovery remains broad; every published holder still must pass
+// the unchanged complete 30-day settlement qualification.
+const CONSENSUS_WALLET_LIMIT = 1000;
 // Keep full 20k-wallet live-position overlap discovery and devote the saved
 // leaderboard audit budget to 2,500 actual shared-market holders.
 // Selection is category-balanced; every published Strong Signal holder still
