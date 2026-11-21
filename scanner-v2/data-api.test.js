@@ -89,16 +89,23 @@ test("applies a default abort timeout to every API request", async () => {
 });
 
 test("allows callers to set a shorter request timeout", async () => {
-  await assert.rejects(
-    requestJson("/v2/tokens", {}, {
-      fetchImpl: async (_url, options) => new Promise((resolve, reject) => {
-        const fail = () => reject(options.signal.reason);
-        if (options.signal.aborted) fail();
-        else options.signal.addEventListener("abort", fail, { once: true });
+  // AbortSignal.timeout uses an unreferenced timer in Node; keep the test
+  // process alive long enough for the abort event to fire.
+  const keepAlive = setTimeout(() => {}, 25);
+  try {
+    await assert.rejects(
+      requestJson("/v2/tokens", {}, {
+        fetchImpl: async (_url, options) => new Promise((resolve, reject) => {
+          const fail = () => reject(options.signal.reason);
+          if (options.signal.aborted) fail();
+          else options.signal.addEventListener("abort", fail, { once: true });
+        }),
+        timeoutMs: 1,
+        attempts: 1
       }),
-      timeoutMs: 1,
-      attempts: 1
-    }),
-    /TimeoutError/
-  );
+      /TimeoutError/
+    );
+  } finally {
+    clearTimeout(keepAlive);
+  }
 });
