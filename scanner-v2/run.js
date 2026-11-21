@@ -61,7 +61,6 @@ for (const period of ["WEEK", "MONTH"]) {
     qualified: true,
     recordComplete: true,
     settlementRecordComplete: true,
-    recordBasis: trader.basis ?? "Settlement-only: positions exited before resolution excluded.",
     settlementWins: trader.wins,
     settlementLosses: trader.losses,
     recordBasis: "Settlement-only: positions exited before actual market resolution are excluded from wins, losses, win rates, and qualification. Incomplete settlement histories are withheld."
@@ -97,7 +96,7 @@ for (const period of ["WEEK", "MONTH"]) {
         settlementLosses: source?.losses ?? null,
         resolvedMarkets: source?.resolvedMarkets ?? null,
         winRate: source?.winRate ?? null,
-        recordBasis: source?.basis ?? source?.recordBasis ?? "Settlement-only; early exits excluded.",
+        recordBasis: source?.recordBasis ?? "Settlement-only; early exits excluded.",
         side: signal.outcome
       };
     })
