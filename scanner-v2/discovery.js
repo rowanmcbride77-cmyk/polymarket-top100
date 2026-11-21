@@ -52,13 +52,21 @@ export async function discoverWallets(options = {}) {
     if (wallets.size >= totalLimit) break;
     const categoryStart = new Set(wallets.keys());
     const discoveredInCategory = new Set();
-    const quota = categoryQuotas[category] ?? Math.ceil(totalLimit / categories.length);
+    const quota = Math.min(
+      categoryQuotas[category] ?? Math.ceil(totalLimit / categories.length),
+      totalLimit - wallets.size
+    );
+    // Split each category's wallet budget across every requested period/sort
+    // stream. Otherwise the first stream can consume the entire budget and
+    // leave the other period's leaderboard empty.
+    const streamQuota = Math.max(1, Math.ceil(quota / (periods.length * sorts.length)));
 
     for (const period of periods) {
       for (const sortBy of sorts) {
         if (wallets.size >= totalLimit) break;
         const categoryCount = [...wallets.keys()].filter(wallet => !categoryStart.has(wallet)).length;
         if (categoryCount >= quota) break;
+        const discoveredInStream = new Set();
 
         const rows = await requestAllPages("/v2/leaderboard", {
           category,
@@ -70,9 +78,12 @@ export async function discoverWallets(options = {}) {
           stopWhen: pageRows => {
             for (const row of pageRows) {
               const wallet = walletOf(row);
-              if (wallet && !categoryStart.has(wallet)) discoveredInCategory.add(wallet);
+              if (wallet && !categoryStart.has(wallet)) {
+                discoveredInCategory.add(wallet);
+                discoveredInStream.add(wallet);
+              }
             }
-            return discoveredInCategory.size >= quota ||
+            return discoveredInStream.size >= streamQuota ||
               categoryStart.size + discoveredInCategory.size >= totalLimit;
           }
         });
