@@ -104,8 +104,11 @@ jobs:
           for (const file of ["consensus-week.json", "consensus-month.json"]) {
             const data = docs[file];
             const groups = data.consensus;
-            if (!Array.isArray(groups) || groups.length === 0) {
-              throw new Error(file + " has no consensus signals; refusing to replace existing data");
+            if (!Array.isArray(groups)) {
+              throw new Error(file + " consensus must be an array");
+            }
+            if (!data.diagnostics || Number(data.diagnostics.signals) !== groups.length) {
+              throw new Error(file + " consensus diagnostics do not match the generated signal count");
             }
             if (data.minimumResolvedMarkets !== 10 || data.minimumWinRate !== 90 ||
                 data.entryWindowMinutes !== 60 || data.minimumEntryUsd !== 10) {
