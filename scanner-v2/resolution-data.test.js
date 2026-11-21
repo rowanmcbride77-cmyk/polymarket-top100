@@ -39,3 +39,19 @@ test("chunks token and resolution queries at their documented limits", async () 
   assert.deepEqual(calls.filter(x => x.path === "/v2/tokens").map(x => x.count), [10, 10, 1]);
   assert.deepEqual(calls.filter(x => x.path === "/v2/resolutions").map(x => x.count), [20, 1]);
 });
+
+
+test("fetches token and resolution batches concurrently", async () => {
+  let active = 0;
+  let maximumActive = 0;
+  const conditions = Array.from({ length: 41 }, (_, i) => `c${i}`);
+  const request = async () => {
+    active++;
+    maximumActive = Math.max(maximumActive, active);
+    await new Promise(resolve => setTimeout(resolve, 5));
+    active--;
+    return { data: [] };
+  };
+  await fetchTokenResolutionIndex(conditions, { request });
+  assert.ok(maximumActive > 1, "metadata batches should overlap");
+});
