@@ -19,7 +19,7 @@ async function getTop100(period) {
     .map((row) => {
       const wallet = String(row.proxy_wallet ?? row.proxyWallet ?? row.user_id ?? row.userId ?? "").toLowerCase();
       const pnl = Number(row.pnl ?? row.profit);
-      const volume = Number(row.volume_usdc ?? row.volumeUsd ?? row.volume_usd ?? row.volume);
+      const volume = Number(row.volume_usdc ?? row.volumeUsd ?? row.volume_usd);
       return {
         wallet,
         name: row.user_name ?? row.userName ?? row.username ?? row.name ?? "Polymarket Trader",
