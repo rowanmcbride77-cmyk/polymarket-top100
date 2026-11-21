@@ -87,6 +87,7 @@ for (const period of ["WEEK", "MONTH"]) {
       return {
         ...trader,
         qualified: true,
+        complete: source?.complete === true,
         recordComplete: true,
         settlementRecordComplete: true,
         wins: source?.wins ?? null,
