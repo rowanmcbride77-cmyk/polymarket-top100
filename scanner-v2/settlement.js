@@ -8,7 +8,7 @@
 
 export const DEFAULT_QUALIFICATION = Object.freeze({
   minimumWinRate: 90,
-  minimumResolvedMarkets: 20,
+  minimumResolvedMarkets: 10,
   windowDays: 30
 });
 
