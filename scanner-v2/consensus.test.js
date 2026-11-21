@@ -83,3 +83,23 @@ test("suppresses a condition when both outcome sides independently reach consens
   assert.equal(result.signals.length, 0);
   assert.equal(result.diagnostics.excludedOppositeSideConditions, 1);
 });
+
+
+test("reports positions excluded because they lack a qualifying recent BUY", async () => {
+  const rows = [pos(wallet(9))];
+  const result = await buildConsensusSignals(
+    rows.map(row => row.trader),
+    {
+      nowMs: Date.parse("2026-11-18T12:00:00Z"),
+      fetchAllPages: async (_path, params) => {
+        if (params.status === "OPEN") return rows.filter(row => row.wallet === params.user).map(row => row.position);
+        return [];
+      },
+      fetchGammaMarkets: async () => [baseMarket],
+      fetchTokenResolutionIndex: async () => tokenResolution
+    }
+  );
+  assert.equal(result.signals.length, 0);
+  assert.equal(result.diagnostics.excludedNoRecentBuy, 1);
+  assert.equal(result.diagnostics.excludedMissingSide, 0);
+});
