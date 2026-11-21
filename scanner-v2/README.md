@@ -6,7 +6,7 @@ This is the replacement Polymarket scanner, developed alongside the existing das
 
 - Discover wallets from sports, esports, crypto, and overall leaderboard streams; politics/government markets are excluded from consensus.
 - Rank separately by selected WEEK or MONTH leaderboard P&L.
-- Qualify only with at least 90% verified settlement accuracy and at least 20 resolved markets in the rolling 30-day window.
+- Qualify only with at least 90% verified settlement accuracy and at least 10 resolved markets in the rolling 30-day window.
 - Early exits are excluded from settlement wins, losses, denominator, and accuracy.
 - Incomplete or unverified settlement history cannot qualify.
 - Consensus requires verified current holdings and recent same-token BUY activity on the exact same condition/outcome.
