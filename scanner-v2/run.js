@@ -11,7 +11,8 @@ const discovery = await discoverWallets({
   maxPagesPerStream: Number(process.env.DISCOVERY_MAX_PAGES ?? 200),
   categories: ["sports", "esports", "crypto", "overall"],
   periods: ["WEEK", "MONTH"],
-  sorts: ["PNL", "VOLUME"]
+  sorts: ["PNL"],
+  categoryQuotas: { sports: 500, esports: 150, crypto: 200, overall: 150 }
 });
 
 const outputs = {};
