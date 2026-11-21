@@ -160,11 +160,11 @@ dialog::backdrop{background:#000b}
         <div id="leaderModeNote" style="display:none"></div>
         <div class="table-wrap">
           <table>
-            <thead><tr id="leaderHeader"><th>#</th><th>Trader</th><th>30-day settled wins–losses</th><th>30-day settlement accuracy</th><th>Period P&amp;L</th><th>Volume</th></tr></thead>
-            <tbody id="leadersBody"><tr><td colspan="6" class="loading">Loading traders…</td></tr></tbody>
+            <thead><tr id="leaderHeader"><th>#</th><th>Trader</th><th>Polymarket rank</th><th>Period P&amp;L</th><th>Volume</th></tr></thead>
+            <tbody id="leadersBody"><tr><td colspan="5" class="loading">Loading traders…</td></tr></tbody>
           </table>
         </div>
-        <div class="source-note">Top 100 is ranked by selected-period Polymarket leaderboard P&L. The displayed 30-day record counts only verified resolved market outcomes. Top 100 and Strong Consensus require 10+ resolved markets. Both require 90%+ settlement accuracy. Early exits are excluded.</div>
+        <div class="source-note">Top 100 is the live Polymarket public leaderboard, ranked by selected-period P&amp;L. This feed does not include verified settlement records; settlement accuracy is not inferred from leaderboard profit.</div>
         <button class="link-button" id="leadersMore" onclick="toggleLeaders()">View all traders →</button>
       </section>
 
@@ -175,7 +175,7 @@ dialog::backdrop{background:#000b}
         <div class="overview-grid">
           <div><div class="metric-label">Total P&amp;L</div><div class="metric-value" id="totalPnl">—</div></div>
           <div><div class="metric-label">Total Volume</div><div class="metric-value" id="totalVolume">—</div></div>
-          <div><div class="metric-label">Avg. 30-day Settlement Accuracy</div><div class="metric-value" id="avgWinRate">N/A</div></div>
+          <div><div class="metric-label">Verified settlement accuracy</div><div class="metric-value" id="avgWinRate">N/A</div></div>
         </div>
         </section>
       <section class="panel">
@@ -563,7 +563,10 @@ async function loadConsensusData() {
     if (!loaded) throw lastError || new Error(filename + " is not available yet.");
     consensusData = loaded;
     renderConsensus();
-    $("consensusPeriod").textContent = `Strong Signals: 90%+ 30-day settlement accuracy · ${Number(consensusData?.minimumResolvedMarkets) || 10}+ resolved markets · early exits excluded`;
+    if (consensusData?.scannerVersion !== "simple-top100-v1" &&
+        !String(consensusData?.source || "").toLowerCase().includes("consensus scan paused")) {
+      $("consensusPeriod").textContent = `Strong Signals: 90%+ 30-day settlement accuracy · ${Number(consensusData?.minimumResolvedMarkets) || 10}+ resolved markets · early exits excluded`;
+    }
   } catch (error) {
     consensusData = {consensus:[]};
     $("consensusBody").innerHTML = `<tr><td colspan="7" class="empty">${esc(error.message)}</td></tr>`;
@@ -792,7 +795,7 @@ function renderLeaders() {
   $("totalPnl").textContent = cash(pnlTotal);
   $("totalPnl").className = "metric-value " + (pnlTotal < 0 ? "negative" : "positive");
   $("totalVolume").textContent = cash(volumeTotal);
-  $("avgWinRate").textContent = comboMode || efficiencyMode ? "N/A" : records.length ? (records.reduce((sum,record)=>sum+record.rate,0)/records.length).toFixed(1)+"%" : "N/A";
+  $("avgWinRate").textContent = comboMode || efficiencyMode || !records.length ? "Not included" : (records.reduce((sum,record)=>sum+record.rate,0)/records.length).toFixed(1)+"%";
 }
 
 function renderSportsLeaders() {
@@ -873,6 +876,12 @@ async function loadConsensusTradeHistory(wallet, conditionId, outcome) {
 }
 
 function renderConsensus() {
+  if (consensusData?.scannerVersion === "simple-top100-v1" ||
+      String(consensusData?.source || "").toLowerCase().includes("consensus scan paused")) {
+    $("consensusPeriod").textContent = "Consensus scanner is not active in this Top 100 data build";
+    $("consensusBody").innerHTML = '<tr><td colspan="7" class="empty">Consensus scanning is paused. The Top 100 leaderboard is live, but no same-side consensus signals are being generated or verified yet.</td></tr>';
+    return;
+  }
   const minCount = Number($("minTraders").value || 2);
   const qualificationDays = Number(consensusData?.qualificationWindowDays) || 30;
   const qualificationCloses = Number(consensusData?.minimumResolvedMarkets) || 10;
@@ -1774,7 +1783,7 @@ async function loadData(forceReload = false) {
   const requestId = ++loadSequence;
   loading = true;
   $("errorBox").innerHTML = "";
-  $("leadersBody").innerHTML = `<tr><td colspan="6" class="loading">Loading traders…</td></tr>`;
+  $("leadersBody").innerHTML = `<tr><td colspan="5" class="loading">Loading traders…</td></tr>`;
   $("consensusBody").innerHTML = `<tr><td colspan="7" class="loading">Loading consensus markets…</td></tr>`;
   $("comboList").innerHTML = `<div class="empty">Combo scanning is paused so the leaderboard and consensus dashboard can load first. Select “Load combo data” to scan trader wallets.</div>`;
 
@@ -1815,7 +1824,7 @@ async function loadData(forceReload = false) {
     if (requestId !== loadSequence) return;
     data = null;
     $("updatedAt").textContent = "Unavailable";
-    $("leadersBody").innerHTML = `<tr><td colspan="4" class="empty">Could not load ${esc(FILES[period])}.</td></tr>`;
+    $("leadersBody").innerHTML = `<tr><td colspan="5" class="empty">Could not load ${esc(FILES[period])}.</td></tr>`;
     $("consensusBody").innerHTML = `<tr><td colspan="6" class="empty">Copy signal data unavailable.</td></tr>`;
     $("comboList").innerHTML = `<div class="empty">Trader data unavailable, so combos cannot be loaded.</div>`;
     const comboButton = $("loadCombosButton");
