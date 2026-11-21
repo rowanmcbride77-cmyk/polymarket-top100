@@ -83,3 +83,15 @@ test("suppresses a condition when both outcome sides independently reach consens
   assert.equal(result.signals.length, 0);
   assert.equal(result.diagnostics.excludedOppositeSideConditions, 1);
 });
+
+
+test("reports an explicit zero-signal count when no open positions exist", async () => {
+  const result = await buildConsensusSignals(
+    [{ wallet: wallet(1), name: "Trader" }],
+    { fetchAllPages: async () => [] }
+  );
+  assert.deepEqual(result.signals, []);
+  assert.equal(result.diagnostics.openPositions, 0);
+  assert.equal(result.diagnostics.conditions, 0);
+  assert.equal(result.diagnostics.signals, 0);
+});
