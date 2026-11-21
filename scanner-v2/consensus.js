@@ -190,6 +190,8 @@ export async function buildConsensusSignals(qualifiedTraders, options = {}) {
   let excludedCategory = 0;
   let excludedHorizon = 0;
   let excludedUnverifiedToken = 0;
+  let excludedNoRecentBuy = 0;
+  let excludedMissingSide = 0;
 
   for (const row of allPositions) {
     const position = row.position;
@@ -210,10 +212,10 @@ export async function buildConsensusSignals(qualifiedTraders, options = {}) {
       continue;
     }
     const verifiedBuy = recentBuys.get(row.wallet + "|" + condition + "|" + token);
-    if (!verifiedBuy) continue;
+    if (!verifiedBuy) { excludedNoRecentBuy++; continue; }
 
     const side = String(position.outcome ?? position.outcome_name ?? "").trim();
-    if (!side) continue;
+    if (!side) { excludedMissingSide++; continue; }
     const groupKey = condition + "|" + token;
     if (!groups.has(groupKey)) {
       groups.set(groupKey, {
@@ -296,6 +298,8 @@ export async function buildConsensusSignals(qualifiedTraders, options = {}) {
       excludedCategory,
       excludedHorizon,
       excludedUnverifiedToken,
+      excludedNoRecentBuy,
+      excludedMissingSide,
       excludedOppositeSideConditions: conflictedConditions.size
     }
   };
