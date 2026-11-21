@@ -73,3 +73,32 @@ test("retries rate limits using Retry-After", async () => {
   assert.deepEqual(delays, [250]);
   assert.equal(calls, 2);
 });
+
+
+test("applies a default abort timeout to every API request", async () => {
+  let capturedSignal;
+  await requestJson("/v2/tokens", {}, {
+    fetchImpl: async (_url, options) => {
+      capturedSignal = options.signal;
+      return { status: 200, ok: true, json: async () => ({ data: [] }) };
+    },
+    attempts: 1
+  });
+  assert.ok(capturedSignal instanceof AbortSignal);
+  assert.equal(capturedSignal.aborted, false);
+});
+
+test("allows callers to set a shorter request timeout", async () => {
+  await assert.rejects(
+    requestJson("/v2/tokens", {}, {
+      fetchImpl: async (_url, options) => new Promise((resolve, reject) => {
+        const fail = () => reject(options.signal.reason);
+        if (options.signal.aborted) fail();
+        else options.signal.addEventListener("abort", fail, { once: true });
+      }),
+      timeoutMs: 1,
+      attempts: 1
+    }),
+    /TimeoutError/
+  );
+});
