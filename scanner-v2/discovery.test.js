@@ -84,3 +84,20 @@ test("only candidates with selected-period P&L enter that period ranking", async
   assert.deepEqual(candidatesForPeriod(result, "WEEK").map(x => x.wallet), [wallet(4)]);
   assert.deepEqual(candidatesForPeriod(result, "MONTH").map(x => x.wallet), [wallet(5)]);
 });
+
+
+test("splits the wallet budget across weekly and monthly streams", async () => {
+  const calls = [];
+  const result = await discoverWallets({
+    fetchAllPages: async (_path, params) => {
+      calls.push(params.time_period);
+      const id = params.time_period === "week" ? 21 : 22;
+      return [{ proxyWallet: wallet(id), pnl: id, rank: 1 }];
+    },
+    categories: ["sports"], periods: ["WEEK", "MONTH"], sorts: ["PNL"],
+    totalLimit: 2, categoryQuotas: { sports: 2 }
+  });
+  assert.deepEqual(calls, ["week", "month"]);
+  assert.deepEqual(candidatesForPeriod(result, "WEEK").map(row => row.wallet), [wallet(21)]);
+  assert.deepEqual(candidatesForPeriod(result, "MONTH").map(row => row.wallet), [wallet(22)]);
+});
