@@ -24,7 +24,7 @@ for (const period of ["WEEK", "MONTH"]) {
     windowDays: 30,
     nowMs: scanNowMs,
     getRecord: getSharedSettlementRecord,
-    rules: { minimumWinRate: 90, minimumResolvedMarkets: 20, windowDays: 30 }
+    rules: { minimumWinRate: 90, minimumResolvedMarkets: 10, windowDays: 30 }
   });
   outputs[period] = ranking;
   const leaders = ranking.qualified.map(trader => ({
@@ -81,7 +81,7 @@ for (const period of ["WEEK", "MONTH"]) {
   const consensusPayload = {
     generatedAt: payload.generatedAt,
     period: period.toLowerCase(),
-    minimumResolvedMarkets: 20,
+    minimumResolvedMarkets: 10,
     minimumWinRate: 90,
     entryWindowMinutes: 60,
     minimumEntryUsd: 10,
