@@ -55,9 +55,9 @@ test("excludes results outside the rolling window", () => {
   assert.equal(record.diagnostics.outsideWindowExcluded, 1);
 });
 
-test("requires 90 percent and at least 20 verified settlements", () => {
-  assert.equal(qualifiesForTop100({ complete: true, winRate: 90, resolvedMarkets: 20 }), true);
+test("requires 90 percent and at least 10 verified settlements", () => {
+  assert.equal(qualifiesForTop100({ complete: true, winRate: 90, resolvedMarkets: 10 }), true);
   assert.equal(qualifiesForTop100({ complete: true, winRate: 89.99, resolvedMarkets: 100 }), false);
-  assert.equal(qualifiesForTop100({ complete: true, winRate: 100, resolvedMarkets: 19 }), false);
+  assert.equal(qualifiesForTop100({ complete: true, winRate: 100, resolvedMarkets: 9 }), false);
   assert.equal(qualifiesForTop100({ complete: false, winRate: 100, resolvedMarkets: 100 }), false);
 });
