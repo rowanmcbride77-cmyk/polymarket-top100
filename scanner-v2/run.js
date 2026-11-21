@@ -54,7 +54,7 @@ for (const [period, leaders] of [["week", weekLeaders], ["month", monthLeaders]]
     source: "Polymarket public Data API v2 leaderboard",
     leaders,
     scannerVersion: "simple-top100-v1"
-  }, null, 2) + "\\n");
+  }, null, 2) + "\n");
 
   await fs.writeFile(`consensus-${period}.json`, JSON.stringify({
     generatedAt: finishedAt,
@@ -63,7 +63,7 @@ for (const [period, leaders] of [["week", weekLeaders], ["month", monthLeaders]]
     consensus: [],
     diagnostics: { signals: 0 },
     scannerVersion: "simple-top100-v1"
-  }, null, 2) + "\\n");
+  }, null, 2) + "\n");
 }
 
 await fs.writeFile("status.json", JSON.stringify({
@@ -77,6 +77,6 @@ await fs.writeFile("status.json", JSON.stringify({
   monthLeaders: monthLeaders.length,
   weekConsensusSignals: 0,
   monthConsensusSignals: 0
-}, null, 2) + "\\n");
+}, null, 2) + "\n");
 
 console.log(`Published-ready Polymarket leaderboard data: week=${weekLeaders.length}, month=${monthLeaders.length}.`);
