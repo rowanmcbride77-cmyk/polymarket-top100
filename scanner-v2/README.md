@@ -1,33 +1,25 @@
-# Clean scanner engine (v2)
+# Polymarket scanner v3
 
-This is the replacement Polymarket scanner, developed alongside the existing dashboard. The legacy dashboard and scheduled scanner remain untouched until this engine produces validated output.
+This scanner builds the weekly and monthly Top 100 leaderboards from verified settlement history and produces same-side consensus signals.
 
-## Rules
+## Qualification rules
 
-- Discover wallets from sports, esports, crypto, and overall leaderboard streams; politics/government markets are excluded from consensus.
-- Rank separately by selected WEEK or MONTH leaderboard P&L.
-- Qualify only with at least 90% verified settlement accuracy and at least 10 resolved markets in the rolling 30-day window.
-- Early exits are excluded from settlement wins, losses, denominator, and accuracy.
-- Incomplete or unverified settlement history cannot qualify.
-- Consensus requires verified current holdings and recent same-token BUY activity on the exact same condition/outcome.
-- Consensus markets must have a verified end time within 24 hours. Groups with fewer than eight qualified holders are watchlist candidates, not strong signals.
-- Replacement output is generated in isolation. It is not automatically published to the live dashboard.
+- Discover candidate wallets from sports, esports, crypto, and overall leaderboard streams.
+- Rank WEEK and MONTH independently by their corresponding Polymarket leaderboard P&L.
+- Require at least **90% verified settlement accuracy** and **10 resolved markets** in the rolling 30-day window.
+- Count only tokens actually held at market resolution. Positions sold before resolution are excluded from wins, losses, the denominator, and accuracy.
+- Incomplete or unverified settlement histories cannot qualify.
+- Consensus requires at least two qualified traders on the exact same outcome token, verified current holdings, recent same-token BUY activity, and at least $10 verified entry cost per trader.
+- Consensus markets must have a verified end time within 24 hours. Politics and government markets are excluded.
 
-## Running locally
+## Controlled production rollout
 
-Node.js 22 or newer:
+The production workflow currently runs a **1,000-wallet proof of concept**. Discovery is category-balanced (50% sports, 15% esports, 20% crypto, 15% overall), and the audit is shared between WEEK and MONTH so the same wallet's settlement history is not fetched twice.
 
-```sh
-npm test
-DISCOVERY_LIMIT=20000 QUALIFICATION_AUDIT_LIMIT=1000 npm run scan
-```
+The workflow runs JavaScript syntax validation and unit tests before the scan, allows up to six hours for execution, and does not cancel an active scan when a newer run is queued. It validates the four data files and status timestamps before publishing. A zero-signal consensus array is valid only when its diagnostics report the same zero count; a missing or inconsistent consensus payload is rejected.
 
-The scanner writes `week.json`, `month.json`, `consensus-week.json`, `consensus-month.json`, and `status.json` into the current working directory.
+Increase `DISCOVERY_LIMIT` from 1,000 toward 20,000 only after the controlled scan has completed and the resulting leaderboard and consensus output have been reviewed.
 
-## Controlled GitHub run
+## Output files
 
-Use **Actions → Scanner v2 controlled run → Run workflow**. The workflow runs unit tests first, executes the replacement scanner, and uploads its output as an artifact. It deliberately does not commit or publish generated data.
-
-## Verification status
-
-The unit-test workflow and isolated execution workflow are in place. The live Polymarket API adapters, settlement-history completeness, and output quality still require a successful controlled run and review before the dashboard can be switched over.
+The scanner writes `week.json`, `month.json`, `consensus-week.json`, `consensus-month.json`, and `status.json` to the repository root. The live dashboard is updated only by a successful, validated publication.
