@@ -5,29 +5,56 @@ import { buildConsensusSignals } from "./consensus.js";
 
 const scanNowMs = Date.now();
 const startedAt = new Date(scanNowMs).toISOString();
-const getSharedSettlementRecord = createSettlementRecordCache();
+const discoveryLimit = Number(process.env.DISCOVERY_LIMIT ?? 1000);
+const auditLimit = Number(process.env.QUALIFICATION_AUDIT_LIMIT ?? 1000);
+const auditConcurrency = Number(process.env.AUDIT_CONCURRENCY ?? 4);
+if (!Number.isInteger(discoveryLimit) || discoveryLimit < 100 || discoveryLimit > 20000) {
+  throw new Error("DISCOVERY_LIMIT must be an integer between 100 and 20000.");
+}
+if (!Number.isInteger(auditLimit) || auditLimit < 100 || auditLimit > 2000) {
+  throw new Error("QUALIFICATION_AUDIT_LIMIT must be an integer between 100 and 2000.");
+}
+if (!Number.isInteger(auditConcurrency) || auditConcurrency < 1 || auditConcurrency > 12) {
+  throw new Error("AUDIT_CONCURRENCY must be an integer between 1 and 12.");
+}
+
+const categoryQuotas = {
+  sports: Math.floor(discoveryLimit * 0.50),
+  esports: Math.floor(discoveryLimit * 0.15),
+  crypto: Math.floor(discoveryLimit * 0.20),
+  overall: discoveryLimit - Math.floor(discoveryLimit * 0.50) -
+    Math.floor(discoveryLimit * 0.15) - Math.floor(discoveryLimit * 0.20)
+};
 const discovery = await discoverWallets({
-  totalLimit: Number(process.env.DISCOVERY_LIMIT ?? 20000),
-  maxPagesPerStream: Number(process.env.DISCOVERY_MAX_PAGES ?? 200),
+  totalLimit: discoveryLimit,
+  maxPagesPerStream: Number(process.env.DISCOVERY_MAX_PAGES ?? 1000),
   categories: ["sports", "esports", "crypto", "overall"],
   periods: ["WEEK", "MONTH"],
   sorts: ["PNL"],
-  categoryQuotas: { sports: 500, esports: 150, crypto: 200, overall: 150 }
+  categoryQuotas
 });
 
+const getSharedSettlementRecord = createSettlementRecordCache();
+const qualificationOptions = period => ({
+  period,
+  auditLimit,
+  concurrency: auditConcurrency,
+  windowDays: 30,
+  nowMs: scanNowMs,
+  getRecord: getSharedSettlementRecord,
+  rules: { minimumWinRate: 90, minimumResolvedMarkets: 10, windowDays: 30 }
+});
+
+// The same wallet's 30-day settlement history is shared across WEEK and MONTH.
+const [weekRanking, monthRanking] = await Promise.all([
+  buildQualifiedLeaderboard(candidatesForPeriod(discovery, "WEEK"), qualificationOptions("WEEK")),
+  buildQualifiedLeaderboard(candidatesForPeriod(discovery, "MONTH"), qualificationOptions("MONTH"))
+]);
+const rankings = { WEEK: weekRanking, MONTH: monthRanking };
 const outputs = {};
+
 for (const period of ["WEEK", "MONTH"]) {
-  const candidates = candidatesForPeriod(discovery, period);
-  const ranking = await buildQualifiedLeaderboard(candidates, {
-    period,
-    auditLimit: Number(process.env.QUALIFICATION_AUDIT_LIMIT ?? 1000),
-    concurrency: Number(process.env.AUDIT_CONCURRENCY ?? 6),
-    windowDays: 30,
-    nowMs: scanNowMs,
-    getRecord: getSharedSettlementRecord,
-    rules: { minimumWinRate: 90, minimumResolvedMarkets: 10, windowDays: 30 }
-  });
-  outputs[period] = ranking;
+  const ranking = rankings[period];
   const leaders = ranking.qualified.map(trader => ({
     ...trader,
     pnl: trader.selectedPeriodPnl,
@@ -38,13 +65,16 @@ for (const period of ["WEEK", "MONTH"]) {
     settlementLosses: trader.losses,
     recordBasis: "Settlement-only: positions exited before actual market resolution are excluded from wins, losses, win rates, and qualification. Incomplete settlement histories are withheld."
   }));
+
   const consensusResult = await buildConsensusSignals(leaders, {
     horizonHours: 24,
     entryWindowMinutes: 60,
     minimumEntryUsd: 10,
     minimumHolders: 2,
-    strongHolders: 8
+    strongHolders: 8,
+    nowMs: scanNowMs
   });
+  const leadersByWallet = new Map(leaders.map(row => [row.wallet.toLowerCase(), row]));
   const consensus = consensusResult.signals.map(signal => ({
     ...signal,
     signalTier: signal.qualifiedWalletCount >= 8 ? "Strong Signals" : "Watchlist",
@@ -53,7 +83,7 @@ for (const period of ["WEEK", "MONTH"]) {
     sameSide: signal.qualifiedWalletCount,
     totalEntry: signal.totalEntryUsd,
     traders: signal.traders.map(trader => {
-      const source = leaders.find(row => row.wallet.toLowerCase() === trader.wallet.toLowerCase());
+      const source = leadersByWallet.get(trader.wallet.toLowerCase());
       return {
         ...trader,
         qualified: true,
@@ -71,56 +101,56 @@ for (const period of ["WEEK", "MONTH"]) {
       };
     })
   }));
-  const payload = {
-    generatedAt: new Date().toISOString(),
-    period: period.toLowerCase(),
-    leaders,
+  outputs[period] = { leaders, ranking, consensus, consensusDiagnostics: consensusResult.diagnostics };
+}
+
+const finishedAt = new Date().toISOString();
+for (const period of ["WEEK", "MONTH"]) {
+  const output = outputs[period];
+  const prefix = period.toLowerCase();
+  const base = {
+    generatedAt: finishedAt,
+    period: prefix,
+    leaders: output.leaders,
     discovery: discovery.diagnostics,
-    qualification: ranking,
-    scannerVersion: "v2"
+    qualification: output.ranking,
+    scannerVersion: "v3"
   };
   const consensusPayload = {
-    generatedAt: payload.generatedAt,
-    period: period.toLowerCase(),
+    generatedAt: finishedAt,
+    period: prefix,
     minimumResolvedMarkets: 10,
     minimumWinRate: 90,
     entryWindowMinutes: 60,
     minimumEntryUsd: 10,
-    consensus,
-    diagnostics: consensusResult.diagnostics,
-    scannerVersion: "v2"
+    consensus: output.consensus,
+    diagnostics: output.consensusDiagnostics,
+    scannerVersion: "v3"
   };
-  const prefix = period.toLowerCase();
-  await fs.writeFile(`${prefix}.json`, JSON.stringify(payload, null, 2) + "\n");
+  await fs.writeFile(`${prefix}.json`, JSON.stringify(base, null, 2) + "\n");
   await fs.writeFile(`consensus-${prefix}.json`, JSON.stringify(consensusPayload, null, 2) + "\n");
 }
 
-const settlementCacheStats = getSharedSettlementRecord.stats();
-console.log(`Settlement audit cache: ${settlementCacheStats.uniqueRecords} unique wallet/window records; ${settlementCacheStats.cacheHits} duplicate weekly/monthly requests reused.`);
-const finishedAt = new Date().toISOString();
-// Stamp every published dataset with the same completed-scan timestamp so
-// main-branch and Pages freshness checks can compare the four files exactly.
-for (const file of ["week.json", "month.json", "consensus-week.json", "consensus-month.json"]) {
-  const payload = JSON.parse(await fs.readFile(file, "utf8"));
-  payload.generatedAt = finishedAt;
-  await fs.writeFile(file, JSON.stringify(payload, null, 2) + "\n");
-}
-const weekConsensus = JSON.parse(await fs.readFile("consensus-week.json", "utf8")).consensus;
-const monthConsensus = JSON.parse(await fs.readFile("consensus-month.json", "utf8")).consensus;
+const cacheStats = getSharedSettlementRecord.stats();
+console.log(`Settlement audit cache: ${cacheStats.uniqueRecords} unique records; ${cacheStats.cacheHits} WEEK/MONTH requests reused.`);
 const status = {
-  startedAt, finishedAt, generatedAt: finishedAt, ok: true, errors: [],
-  scannerVersion: "v2",
+  startedAt,
+  finishedAt,
+  generatedAt: finishedAt,
+  ok: true,
+  errors: [],
+  scannerVersion: "v3",
   discoveredWallets: discovery.candidates.length,
   discovery: discovery.diagnostics,
-  weekLeaders: outputs.WEEK.qualified.length,
-  monthLeaders: outputs.MONTH.qualified.length,
-  weekConsensusSignals: Array.isArray(weekConsensus) ? weekConsensus.length : 0,
-  monthConsensusSignals: Array.isArray(monthConsensus) ? monthConsensus.length : 0,
-  weekCandidatesAudited: outputs.WEEK.candidatesAudited,
-  monthCandidatesAudited: outputs.MONTH.candidatesAudited,
-  settlementRecordsAudited: settlementCacheStats.uniqueRecords,
-  settlementAuditCacheHits: settlementCacheStats.cacheHits,
-  weekQualification: outputs.WEEK.diagnostics,
-  monthQualification: outputs.MONTH.diagnostics
+  settlementRecordsAudited: cacheStats.uniqueRecords,
+  settlementAuditCacheHits: cacheStats.cacheHits,
+  weekLeaders: outputs.WEEK.leaders.length,
+  monthLeaders: outputs.MONTH.leaders.length,
+  weekConsensusSignals: outputs.WEEK.consensus.length,
+  monthConsensusSignals: outputs.MONTH.consensus.length,
+  weekCandidatesAudited: weekRanking.candidatesAudited,
+  monthCandidatesAudited: monthRanking.candidatesAudited,
+  weekQualification: weekRanking.diagnostics,
+  monthQualification: monthRanking.diagnostics
 };
 await fs.writeFile("status.json", JSON.stringify(status, null, 2) + "\n");
