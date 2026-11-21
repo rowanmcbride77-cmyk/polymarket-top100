@@ -101,3 +101,36 @@ test("splits the wallet budget across weekly and monthly streams", async () => {
   assert.deepEqual(candidatesForPeriod(result, "WEEK").map(row => row.wallet), [wallet(21)]);
   assert.deepEqual(candidatesForPeriod(result, "MONTH").map(row => row.wallet), [wallet(22)]);
 });
+
+
+test("overlapping weekly and monthly rows do not consume the next stream's new-wallet quota", async () => {
+  const pages = {
+    week: [{
+      data: [{ proxyWallet: wallet(31), pnl: 31 }, { proxyWallet: wallet(32), pnl: 32 }],
+      pagination: { has_more: false, next_cursor: null }
+    }],
+    month: [
+      {
+        data: [{ proxyWallet: wallet(31), pnl: 310 }, { proxyWallet: wallet(32), pnl: 320 }],
+        pagination: { has_more: true, next_cursor: "month-next" }
+      },
+      {
+        data: [{ proxyWallet: wallet(33), pnl: 330 }, { proxyWallet: wallet(34), pnl: 340 }],
+        pagination: { has_more: false, next_cursor: null }
+      }
+    ]
+  };
+  const result = await discoverWallets({
+    fetchAllPages: (path, params, options) => paginate(path, params, {
+      ...options,
+      request: async (_path, pageParams) => {
+        const stream = pages[pageParams.time_period];
+        return pageParams.cursor ? stream[1] : stream[0];
+      }
+    }),
+    categories: ["sports"], periods: ["WEEK", "MONTH"], sorts: ["PNL"],
+    totalLimit: 4, categoryQuotas: { sports: 4 }, pageSize: 2
+  });
+  assert.equal(result.candidates.length, 4);
+  assert.deepEqual(candidatesForPeriod(result, "MONTH").map(row => row.pnl).sort((a,b) => a-b), [310, 320, 330, 340]);
+});
