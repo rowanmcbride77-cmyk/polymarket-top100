@@ -9,6 +9,20 @@ const num = value => {
   const n = Number(value);
   return Number.isFinite(n) ? n : null;
 };
+async function mapLimit(items, limit, worker) {
+  const output = new Array(items.length);
+  let next = 0;
+  async function run() {
+    while (true) {
+      const index = next++;
+      if (index >= items.length) return;
+      output[index] = await worker(items[index], index);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, run));
+  return output;
+}
+
 const timestampMs = value => {
   const n = num(value);
   if (n !== null) return n < 100_000_000_000 ? n * 1000 : n;
@@ -198,10 +212,17 @@ export async function getWalletSettlementRecord(wallet, options = {}) {
   // A wallet may have bought a token months before settlement. Fetch the
   // complete event history only for candidate conditions, not every market
   // the wallet has ever touched.
-  const conditionActivity = [];
+  const activityBatches = [];
   for (let i = 0; i < candidateConditions.length; i += 20) {
-    const batch = candidateConditions.slice(i, i + 20);
-    const rows = await fetchPages("/v2/activity", {
+    activityBatches.push(candidateConditions.slice(i, i + 20));
+  }
+  // A wallet can have dozens of settled candidate conditions. Fetch its
+  // complete per-condition activity batches concurrently instead of serially
+  // waiting for every batch before starting the next one.
+  const activityResults = await mapLimit(
+    activityBatches,
+    options.conditionActivityConcurrency ?? 4,
+    batch => fetchPages("/v2/activity", {
       user: wallet,
       condition: batch.join(","),
       type: SUPPORTED_TYPES,
@@ -210,9 +231,9 @@ export async function getWalletSettlementRecord(wallet, options = {}) {
       sort_by: "TIMESTAMP",
       sort_direction: "ASC",
       limit: 1000
-    }, { maxPages: options.maxConditionActivityPages ?? 200 });
-    conditionActivity.push(...rows);
-  }
+    }, { maxPages: options.maxConditionActivityPages ?? 200 })
+  );
+  const conditionActivity = activityResults.flat();
 
   const resolutionIndex = await (options.fetchResolutionIndex ?? fetchTokenResolutionIndex)(
     candidateConditions,

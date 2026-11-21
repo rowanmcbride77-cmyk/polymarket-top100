@@ -118,3 +118,29 @@ test("wallet audit does not count a trader who sold before settlement", async ()
   assert.equal(result.resolvedMarkets, 0);
   assert.equal(result.complete, true);
 });
+
+
+test("fetches multiple condition-activity batches concurrently", async () => {
+  let active = 0;
+  let maximumActive = 0;
+  const conditions = Array.from({ length: 41 }, (_, i) => ({ condition_id: `c${i}` }));
+  await getWalletSettlementRecord("0xabc", {
+    nowMs: Date.parse("2026-11-18T12:00:00Z"),
+    fetchAllPages: async (path, params) => {
+      if (path === "/v2/activity" && params.type === "REDEEM") return [];
+      if (path === "/v2/positions" && params.status === "CLOSED") return conditions;
+      if (path === "/v2/positions" && params.status === "REDEEMABLE") return [];
+      if (path === "/v2/positions" && params.status === "REDEEMABLE_LOST") return [];
+      if (path === "/v2/activity" && params.condition) {
+        active++;
+        maximumActive = Math.max(maximumActive, active);
+        await new Promise(resolve => setTimeout(resolve, 5));
+        active--;
+        return [];
+      }
+      return [];
+    },
+    fetchResolutionIndex: async () => new Map()
+  });
+  assert.ok(maximumActive > 1, "condition activity batches should overlap");
+});

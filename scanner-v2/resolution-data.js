@@ -8,6 +8,20 @@ const chunks = (items, size) => {
 
 const key = value => String(value ?? "").trim().toLowerCase();
 
+async function mapLimit(items, limit, worker) {
+  const output = new Array(items.length);
+  let next = 0;
+  async function run() {
+    while (true) {
+      const index = next++;
+      if (index >= items.length) return;
+      output[index] = await worker(items[index], index);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, run));
+  return output;
+}
+
 /**
  * Join Polymarket's token payout facts to condition-level finality.
  * /v2/tokens proves the outcome token's 0/1 payout; /v2/resolutions proves
@@ -19,17 +33,20 @@ export async function fetchTokenResolutionIndex(conditionIds, options = {}) {
   const tokenRows = [];
   const resolutionRows = [];
 
-  for (const batch of chunks(uniqueConditions, 10)) {
+  const concurrency = options.resolutionBatchConcurrency ?? 4;
+  const tokenBatches = await mapLimit(chunks(uniqueConditions, 10), concurrency, async batch => {
     const payload = await request("/v2/tokens", { condition: batch.join(",") }, options);
     if (!Array.isArray(payload.data)) throw new Error("Expected token data[] from /v2/tokens");
-    tokenRows.push(...payload.data);
-  }
+    return payload.data;
+  });
+  tokenRows.push(...tokenBatches.flat());
 
-  for (const batch of chunks(uniqueConditions, 20)) {
+  const resolutionBatches = await mapLimit(chunks(uniqueConditions, 20), concurrency, async batch => {
     const payload = await request("/v2/resolutions", { condition: batch.join(",") }, options);
     if (!Array.isArray(payload.data)) throw new Error("Expected resolution data[] from /v2/resolutions");
-    resolutionRows.push(...payload.data);
-  }
+    return payload.data;
+  });
+  resolutionRows.push(...resolutionBatches.flat());
 
   const finalityByCondition = new Map(
     resolutionRows.map(row => [key(row.conditionId ?? row.condition_id), row])
