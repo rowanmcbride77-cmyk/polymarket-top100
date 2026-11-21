@@ -174,7 +174,7 @@ export async function buildConsensusSignals(qualifiedTraders, options = {}) {
   const walletRows = await fetchQualifiedOpenPositions(qualifiedTraders, options);
   const allPositions = walletRows.flatMap(row => row.positions.map(position => ({ wallet: row.wallet, trader: row.trader, position })));
   const conditionIds = [...new Set(allPositions.map(row => key(row.position.condition_id ?? row.position.conditionId)).filter(Boolean))];
-  if (!conditionIds.length) return { signals: [], diagnostics: { qualifiedWallets: qualifiedTraders.length, openPositions: 0, conditions: 0 } };
+  if (!conditionIds.length) return { signals: [], diagnostics: { qualifiedWallets: qualifiedTraders.length, openPositions: 0, conditions: 0, signals: 0 } };
 
   const [markets, resolutions, recentBuys] = await Promise.all([
     (options.fetchGammaMarkets ?? fetchGammaMarkets)(conditionIds, options),
