@@ -116,8 +116,11 @@ export async function verifyRecentBuys(positionRows, options = {}) {
     byWallet.get(row.wallet).push(row);
   }
 
-  const verified = new Map();
-  for (const [wallet, walletRows] of byWallet) {
+  // Verify recent BUY activity for a small number of wallets concurrently.
+  // Serial wallet-by-wallet pagination made consensus verification a major
+  // avoidable bottleneck on larger qualified leaderboards.
+  const walletResults = await mapLimit([...byWallet.entries()], options.activityConcurrency ?? 4, async ([wallet, walletRows]) => {
+    const walletVerified = [];
     const conditions = [...new Set(walletRows.map(row => key(row.position.condition_id ?? row.position.conditionId)).filter(Boolean))];
     const buyTotals = new Map();
     for (const batch of chunks(conditions, 20)) {
@@ -155,14 +158,15 @@ export async function verifyRecentBuys(positionRows, options = {}) {
           return average !== null && shares !== null ? average * shares : null;
         })();
       if ((buyTotals.get(mapKey) ?? 0) > 0 && entryCost !== null && entryCost >= (options.minimumEntryUsd ?? 10)) {
-        verified.set(mapKey, {
+        walletVerified.push([mapKey, {
           recentBuyUsd: buyTotals.get(mapKey),
           entryCostUsd: entryCost
-        });
+        }]);
       }
     }
-  }
-  return verified;
+    return walletVerified;
+  });
+  return new Map(walletResults.flat());
 }
 
 export async function buildConsensusSignals(qualifiedTraders, options = {}) {
