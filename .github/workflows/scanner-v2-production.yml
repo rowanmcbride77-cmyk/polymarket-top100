@@ -30,7 +30,7 @@ jobs:
         run: node --test scanner-v2/*.test.js
       - name: Run scanner v2
         env:
-          DISCOVERY_LIMIT: "20000"
+          DISCOVERY_LIMIT: "1000"
           DISCOVERY_MAX_PAGES: "1000"
           QUALIFICATION_AUDIT_LIMIT: "1000"
           AUDIT_CONCURRENCY: "8"
@@ -71,7 +71,7 @@ jobs:
               throw new Error(label + " is not marked as a complete qualified settlement record");
             }
             if (!Number.isInteger(wins) || wins < 0 || !Number.isInteger(losses) || losses < 0 ||
-                !Number.isInteger(resolved) || resolved !== wins + losses || resolved < 20 ||
+                !Number.isInteger(resolved) || resolved !== wins + losses || resolved < 10 ||
                 !Number.isFinite(rate) || rate < 90 || Math.abs(rate - wins / resolved * 100) > 1e-6) {
               throw new Error(label + " has invalid settlement W/L, denominator, or accuracy");
             }
@@ -107,7 +107,7 @@ jobs:
             if (!Array.isArray(groups) || groups.length === 0) {
               throw new Error(file + " has no consensus signals; refusing to replace existing data");
             }
-            if (data.minimumResolvedMarkets !== 20 || data.minimumWinRate !== 90 ||
+            if (data.minimumResolvedMarkets !== 10 || data.minimumWinRate !== 90 ||
                 data.entryWindowMinutes !== 60 || data.minimumEntryUsd !== 10) {
               throw new Error(file + " does not preserve the configured consensus qualification rules");
             }
