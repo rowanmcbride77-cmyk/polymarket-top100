@@ -28,8 +28,7 @@ const discovery = await discoverWallets({
 });
 
 // WEEK and MONTH often contain the same wallets. Reuse each wallet's exact
-// settlement audit across both leaderboards instead of fetching its full
-// history twice. Cache promises so concurrent period jobs share in-flight work.
+// settlement audit across both leaderboards, including in-flight requests.
 const settlementCache = new Map();
 async function getSharedSettlementRecord(wallet, options) {
   const key = String(wallet).trim().toLowerCase();
@@ -45,7 +44,7 @@ const qualificationOptions = period => ({
   concurrency: auditConcurrency,
   windowDays: 30,
   getRecord: getSharedSettlementRecord,
-  rules: { minimumWinRate: 90, minimumResolvedMarkets: 20, windowDays: 30 }
+  rules: { minimumWinRate: 90, minimumResolvedMarkets: 10, windowDays: 30 }
 });
 
 const [weekRanking, monthRanking] = await Promise.all([
@@ -127,7 +126,7 @@ for (const period of ["WEEK", "MONTH"]) {
   const consensus = {
     generatedAt: finishedAt,
     period: prefix,
-    minimumResolvedMarkets: 20,
+    minimumResolvedMarkets: 10,
     minimumWinRate: 90,
     entryWindowMinutes: 60,
     minimumEntryUsd: 10,
@@ -135,7 +134,7 @@ for (const period of ["WEEK", "MONTH"]) {
     diagnostics: output.consensusDiagnostics,
     scannerVersion: "v3"
   };
-  await fs.writeFile(${JSON.stringify("week.json")}.replace("week", prefix), JSON.stringify(base, null, 2) + "\n");
+  await fs.writeFile(`${prefix}.json`, JSON.stringify(base, null, 2) + "\n");
   await fs.writeFile(`consensus-${prefix}.json`, JSON.stringify(consensus, null, 2) + "\n");
 }
 
