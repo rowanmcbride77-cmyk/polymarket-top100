@@ -14,7 +14,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: polymarket-scanner-v2
+  group: polymarket-scanner-v2-bounded
   cancel-in-progress: true
 
 jobs:
@@ -162,5 +162,12 @@ jobs:
           # Rebase the generated data commit onto the latest main branch so
           # concurrent dashboard/UI fixes cannot make publication non-fast-forward.
           git fetch origin main:refs/remotes/origin/main
+          # An older concurrent scan must never overwrite a newer published dataset.
+          published_at=$(git show origin/main:status.json | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{process.stdout.write(JSON.parse(s).generatedAt||"")}catch{process.stdout.write("")}})')
+          candidate_at=$(node -e 'const s=JSON.parse(require("fs").readFileSync("status.json","utf8"));process.stdout.write(s.generatedAt||s.finishedAt||"")')
+          if [ -n "$published_at" ] && [ -n "$candidate_at" ] && [ "$(date -u -d "$published_at" +%s)" -ge "$(date -u -d "$candidate_at" +%s)" ]; then
+            echo "Refusing to publish stale scan output ($candidate_at); main already has $published_at."
+            exit 1
+          fi
           git rebase origin/main
           git push origin HEAD:main
