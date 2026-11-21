@@ -79,8 +79,8 @@ export async function discoverWallets(options = {}) {
             for (const row of pageRows) {
               const wallet = walletOf(row);
               if (wallet && !categoryStart.has(wallet)) {
+                if (!discoveredInCategory.has(wallet)) discoveredInStream.add(wallet);
                 discoveredInCategory.add(wallet);
-                discoveredInStream.add(wallet);
               }
             }
             return discoveredInStream.size >= streamQuota ||
