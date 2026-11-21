@@ -25,9 +25,13 @@ export async function requestJson(path, params = {}, options = {}) {
   let lastError;
   for (let attempt = 0; attempt < attempts; attempt++) {
     try {
+      // Every network request must be bounded. Without a default timeout,
+      // one stalled Polymarket response can hold a worker forever and prevent
+      // the scan from ever reaching JSON validation or publication.
+      const signal = options.signal ?? AbortSignal.timeout(options.timeoutMs ?? 30_000);
       const response = await fetchImpl(url, {
         headers: { Accept: "application/json", "User-Agent": "PolymarketScannerV2/1.0" },
-        signal: options.signal
+        signal
       });
       if (response.status === 429 || response.status === 503 || response.status >= 500) {
         const delay = retryDelay(response, attempt);
