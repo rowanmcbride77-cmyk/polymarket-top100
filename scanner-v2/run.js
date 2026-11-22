@@ -6,9 +6,9 @@ const startedAt = new Date().toISOString();
 const WINDOW_DAYS = 30;
 const MIN_MARKETS = 10;
 const MIN_WIN_RATE = 90;
-const CANDIDATES_PER_PERIOD = 250;
+const CANDIDATES_PER_PERIOD = 500;
 const POSITION_PAGE_SIZE = 1000;
-const MAX_POSITION_PAGES = 10;
+const MAX_POSITION_PAGES = 5;
 const CONCURRENCY = 18;
 const REQUEST_GAP_MS = 55; // stay below the public API's documented 20 req/s ceiling
 let nextRequestAt = 0;
@@ -130,6 +130,7 @@ async function fetchCohort(wallet, status, cutoffSec, nowSec) {
   const out = [];
   let cursor = null;
   let complete = true;
+  let exhausted = false;
   let pages = 0;
   while (pages < MAX_POSITION_PAGES) {
     const q = new URLSearchParams({
@@ -146,13 +147,13 @@ async function fetchCohort(wallet, status, cutoffSec, nowSec) {
     out.push(...pageRows.map(row => ({...row, _cohort: status})));
     pages++;
     const pagination = payload?.pagination ?? {};
-    if (pagination.has_more !== true) break;
+    if (pagination.has_more !== true) { exhausted = true; break; }
     const next = pagination.next_cursor;
     if (!next) { complete = false; break; }
     cursor = String(next);
   }
-  if (pages >= MAX_POSITION_PAGES) {
-    // If the last page still has a cursor, this wallet is not fully audited.
+  if (!exhausted) {
+    // Hitting the page cap or receiving a malformed cursor is incomplete.
     // Fail closed rather than presenting a partial record as accurate.
     complete = false;
   }
