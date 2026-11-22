@@ -21,7 +21,7 @@ concurrency:
 jobs:
   refresh:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -36,7 +36,7 @@ jobs:
           node --input-type=module <<'NODE'
           import fs from "node:fs/promises";
           const status = JSON.parse(await fs.readFile("status.json", "utf8"));
-          if (status.ok !== true || status.scannerVersion !== "simple-top100-v1") throw new Error("Scanner status failed");
+          if (status.ok !== true || status.scannerVersion !== "settlement-v2") throw new Error("Scanner status failed");
           for (const period of ["week", "month"]) {
             const data = JSON.parse(await fs.readFile(period + ".json", "utf8"));
             if (!Array.isArray(data.leaders) || data.leaders.length < 1 || data.leaders.length > 100) {
@@ -60,5 +60,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add week.json month.json consensus-week.json consensus-month.json status.json
-          git commit -m "Publish Polymarket Top 100 leaderboard" || echo "No data changes"
+          git commit -m "Publish settlement-qualified Polymarket Top 100" || echo "No data changes"
           git push origin HEAD:main
