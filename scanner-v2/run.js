@@ -92,7 +92,7 @@ async function getLeaderboard(period) {
   const all = [];
   let cursor = null;
   const seen = new Set();
-  for (let page = 0; page < 8 && all.length < CANDIDATES_PER_PERIOD; page++) {
+  for (let page = 0; page < 10 && all.length < CANDIDATES_PER_PERIOD; page++) {
     const q = new URLSearchParams({
       category: "overall", time_period: period, sort_by: "PNL", limit: "50"
     });
@@ -167,18 +167,21 @@ async function auditWallet(wallet, cutoffSec, nowSec) {
     fetchCohort(wallet, "REDEEMABLE_LOST", cutoffSec, nowSec)
   ]);
   const byPosition = new Map();
+  let invalidRows = 0;
   const priority = { CLOSED: 1, REDEEMABLE_LOST: 2, REDEEMABLE: 3 };
   for (const cohort of cohorts) for (const row of cohort.rows) {
     const condition = String(row.condition_id ?? row.conditionId ?? "").toLowerCase();
     const raw = row.outcome_index ?? row.outcomeIndex ?? row.outcome ?? "";
-    if (!condition) continue;
-    const key = condition + "|" + String(raw).toLowerCase();
+    if (!condition) { invalidRows++; continue; }
+    const token = String(row.token_id ?? row.tokenId ?? "").toLowerCase();
+    const key = condition + "|" + (token || String(raw).toLowerCase());
     const prior = byPosition.get(key);
     if (!prior || priority[row._cohort] > priority[prior._cohort]) byPosition.set(key, row);
   }
   return {
     wallet, positions: [...byPosition.values()],
-    complete: cohorts.every(c => c.complete),
+    complete: cohorts.every(c => c.complete) && invalidRows === 0,
+    invalidRows,
     pages: cohorts.reduce((s,c) => s + c.pages, 0),
     rows: cohorts.reduce((s,c) => s + c.rows.length, 0)
   };
@@ -206,7 +209,7 @@ async function fetchMarketMetadata(conditionIds) {
 }
 
 function classifyAudit(audit, markets, cutoffMs, nowMs) {
-  let wins = 0, losses = 0, earlyExitPositions = 0, unclassified = 0;
+  let wins = 0, losses = 0, earlyExitPositions = 0, unclassified = audit.invalidRows || 0;
   const settled = new Map();
   for (const position of audit.positions) {
     const condition = String(position.condition_id ?? position.conditionId ?? "").toLowerCase();
