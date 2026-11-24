@@ -6,10 +6,11 @@ on:
     paths:
       - "scanner-v2/run.js"
       - "scanner-v2/data-api.js"
+      - "scanner-v2/settlement.js"
+      - "scanner-v2/position-projection.js"
       - "scanner-v2/consensus.js"
       - "scanner-v2/resolution-data.js"
       - "scanner-v2/gamma-api.js"
-      - ".github/workflows/scanner-v2-production.yml"
   workflow_dispatch:
   schedule:
     - cron: "17 */6 * * *"
@@ -24,7 +25,7 @@ concurrency:
 jobs:
   refresh:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -37,37 +38,157 @@ jobs:
       - name: Fetch Polymarket Top 100
         run: node scanner-v2/run.js
       - name: Validate leaderboard files
+        id: validate
         run: |
           node --input-type=module <<'NODE'
           import fs from "node:fs/promises";
-          const status = JSON.parse(await fs.readFile("status.json", "utf8"));
+
+          const read = async file => JSON.parse(await fs.readFile(file, "utf8"));
+          const finite = value => Number.isFinite(Number(value));
+          const close = (a, b) => Math.abs(Number(a) - Number(b)) <= 0.01;
+          const hasSettlementBasis = row => {
+            const basis = String(row.recordBasis ?? "").toLowerCase();
+            return basis.includes("settlement-only") && basis.includes("excluded");
+          };
+          const validateRecord = (row, label) => {
+            const wins = Number(row.wins);
+            const losses = Number(row.losses);
+            const resolved = Number(row.resolvedMarkets);
+            const rate = Number(row.winRate);
+            if (row.recordComplete !== true || row.settlementRecordComplete !== true ||
+                !finite(wins) || !finite(losses) || !finite(resolved) || !finite(rate) ||
+                resolved !== wins + losses || resolved < 10 || rate < 90 ||
+                !close(rate, wins / resolved * 100) || !hasSettlementBasis(row)) {
+              throw new Error(label + " is not a complete verified 60-day settlement record");
+            }
+          };
+
+          const status = await read("status.json");
           if (status.ok !== true || status.scannerVersion !== "settlement-v2") throw new Error("Scanner status failed");
-          if (status.windowDays !== 60 || status.consensusBuiltFromQualifiedTradersOnly !== true) throw new Error("Scanner must use the 60-day window and build consensus from qualified traders only.");
+          if (status.windowDays !== 60 || status.minimumResolvedMarkets !== 10 ||
+              status.minimumWinRate !== 90 || status.consensusBuiltFromQualifiedTradersOnly !== true) {
+            throw new Error("Scanner did not use the required 60-day / 90% / 10-market qualification.");
+          }
+          if (status.earlyExitsExcluded !== true || status.earlyExitRealizedPnlPublished !== false ||
+              !String(status.settlementVerification ?? "").includes("finalPrice") ||
+              !String(status.settlementVerification ?? "").includes("resolvedAt") ||
+              !String(status.settlementVerification ?? "").includes("status=resolved")) {
+            throw new Error("Settlement verification or early-exit exclusion is not proven by scanner status.");
+          }
+          const generatedAt = Date.parse(status.generatedAt);
+          const startedAt = Date.parse(status.startedAt);
+          if (!Number.isFinite(generatedAt) || !Number.isFinite(startedAt) || generatedAt <= startedAt) {
+            throw new Error("Invalid scanner timestamps");
+          }
+
           for (const period of ["week", "month"]) {
-            const data = JSON.parse(await fs.readFile(period + ".json", "utf8"));
-            if (data.qualification?.windowDays !== 60) throw new Error(period + ".json does not use the required 60-day qualification window");
+            const data = await read(period + ".json");
+            if (data.generatedAt !== status.generatedAt) throw new Error(period + ".json timestamp does not match status.json");
+            if (data.scannerVersion !== "settlement-v2" || data.qualification?.windowDays !== 60 ||
+                data.qualification?.minimumResolvedMarkets !== 10 || data.qualification?.minimumWinRate !== 90 ||
+                data.qualification?.earlyExitsIncluded !== false) {
+              throw new Error(period + ".json does not use the required verified-settlement rules");
+            }
+            if (!String(data.source ?? "").includes("/v2/tokens") || !String(data.source ?? "").includes("/v2/resolutions")) {
+              throw new Error(period + ".json does not identify the token-resolution source");
+            }
             if (!Array.isArray(data.leaders) || data.leaders.length < 1 || data.leaders.length > 100) {
               throw new Error(period + ".json must contain 1-100 real Polymarket traders");
             }
-            const wallets = data.leaders.map(row => row.wallet);
+            const wallets = data.leaders.map(row => String(row.wallet ?? "").toLowerCase());
             if (wallets.some(wallet => !/^0x[a-f0-9]{40}$/.test(wallet)) || new Set(wallets).size !== wallets.length) {
               throw new Error(period + ".json has missing or duplicate wallet addresses");
             }
-            if (data.leaders.some(row => !Number.isFinite(row.pnl))) throw new Error(period + ".json has a trader without P&L");
-            const unqualified = data.leaders.filter(row => row.recordComplete !== true || row.settlementRecordComplete !== true || !Number.isFinite(Number(row.wins)) || !Number.isFinite(Number(row.losses)) || !Number.isFinite(Number(row.resolvedMarkets)) || Number(row.resolvedMarkets) !== Number(row.wins) + Number(row.losses) || Number(row.resolvedMarkets) < 10 || !Number.isFinite(Number(row.winRate)) || Number(row.winRate) < 90);
-            if (unqualified.length) throw new Error(period + ".json contains " + unqualified.length + " rows without complete 60-day settlement qualification");
-            const consensus = JSON.parse(await fs.readFile("consensus-" + period + ".json", "utf8"));
-            if (!Array.isArray(consensus.consensus) || Number(consensus.diagnostics?.signals) !== consensus.consensus.length || !consensus.source?.includes("settlement-qualified leaderboard traders")) {
-              throw new Error("Consensus output is malformed or not built from qualified traders");
+            for (const row of data.leaders) {
+              if (!finite(row.pnl)) throw new Error(period + ".json has a trader without P&L");
+              validateRecord(row, period + " trader " + row.wallet);
             }
           }
-          if (Date.parse(status.generatedAt) <= Date.parse(status.startedAt)) throw new Error("Invalid generated timestamp");
-          console.log("Validated real Polymarket Top 100 data for week and month.");
+
+          // Consensus is optional for this publication: if it is empty, stale,
+          // or invalid, preserve the last published consensus files unchanged.
+          let publishConsensus = true;
+          let consensusReason = "";
+          const consensusFiles = {};
+          try {
+            for (const period of ["week", "month"]) {
+              const data = await read("consensus-" + period + ".json");
+              if (data.generatedAt !== status.generatedAt ||
+                  data.qualificationWindowDays !== 60 ||
+                  data.minimumResolvedMarkets !== 10 ||
+                  !Array.isArray(data.consensus) ||
+                  Number(data.diagnostics?.signals) !== data.consensus.length ||
+                  !String(data.source ?? "").includes("settlement-qualified leaderboard traders")) {
+                throw new Error(period + " consensus is stale or malformed");
+              }
+              if (data.consensus.length === 0) throw new Error(period + " consensus has no same-side groups");
+              const seenConditions = new Set();
+              let hasStrongSignal = false;
+              for (const group of data.consensus) {
+                const condition = String(group.conditionId ?? "").toLowerCase();
+                const side = String(group.side ?? group.outcome ?? "").trim().toLowerCase();
+                const traders = Array.isArray(group.traders) ? group.traders : [];
+                if (!condition || seenConditions.has(condition)) throw new Error(period + " consensus has duplicate/missing conditions");
+                seenConditions.add(condition);
+                const endMs = Date.parse(group.endDate);
+                if (!side || String(group.outcome ?? "").trim().toLowerCase() !== side ||
+                    !String(group.tokenId ?? "").trim() ||
+                    group.marketMetadataVerified !== true || group.marketClosed !== false ||
+                    !["sports", "esports", "crypto"].includes(String(group.category ?? "").toLowerCase()) ||
+                    !Number.isFinite(endMs) || endMs <= generatedAt || endMs > generatedAt + 24 * 60 * 60 * 1000 ||
+                    !Array.isArray(traders) || traders.length < 2 ||
+                    Number(group.sameSide) !== traders.length ||
+                    Number(group.qualifiedWalletCount) !== traders.length) {
+                  throw new Error(period + " consensus group is not a verified single-side open-market group");
+                }
+                if (group.signalTier === "Strong Signals") {
+                  if (traders.length < 8 || group.signalStrength !== "strong") {
+                    throw new Error(period + " strong signal has fewer than 8 distinct wallets or incorrect strength");
+                  }
+                  hasStrongSignal = true;
+                } else if (group.signalTier !== "Watchlist" || traders.length >= 8 || group.signalStrength !== "watch") {
+                  throw new Error(period + " consensus group has an invalid signal tier");
+                }
+                const traderWallets = traders.map(trader => String(trader.wallet ?? "").toLowerCase());
+                if (traderWallets.some(wallet => !/^0x[a-f0-9]{40}$/.test(wallet)) ||
+                    new Set(traderWallets).size !== traderWallets.length) {
+                  throw new Error(period + " consensus group has missing or duplicate wallets");
+                }
+                for (const trader of traders) {
+                  if (String(trader.side ?? "").trim().toLowerCase() !== side || trader.qualified !== true) {
+                    throw new Error(period + " consensus contains an unqualified or opposite-side trader");
+                  }
+                  validateRecord(trader, period + " consensus trader " + trader.wallet);
+                }
+              }
+              if (!hasStrongSignal) throw new Error(period + " consensus has no displayable Strong Signals group");
+              consensusFiles[period] = data;
+            }
+          } catch (error) {
+            publishConsensus = false;
+            consensusReason = String(error?.message ?? error);
+          }
+
+          status.consensusPublished = publishConsensus;
+          status.consensusPreserved = !publishConsensus;
+          status.consensusPublishReason = publishConsensus ? null : consensusReason;
+          await fs.writeFile("status.json", JSON.stringify(status, null, 2) + "\n");
+          await fs.appendFile(process.env.GITHUB_OUTPUT, "consensus_publish=" + String(publishConsensus) + "\n");
+          console.log(publishConsensus
+            ? "Validated Top 100 and both fresh, verified consensus files."
+            : "Top 100 validated; preserving existing consensus files: " + consensusReason);
           NODE
       - name: Publish website data
+        env:
+          CONSENSUS_PUBLISH: ${{ steps.validate.outputs.consensus_publish }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add week.json month.json consensus-week.json consensus-month.json status.json
+          git add week.json month.json status.json
+          if [ "$CONSENSUS_PUBLISH" = "true" ]; then
+            git add consensus-week.json consensus-month.json
+          else
+            echo "Skipping consensus files so existing published consensus is preserved."
+          fi
           git commit -m "Publish settlement-qualified Polymarket Top 100" || echo "No data changes"
           git push origin HEAD:main

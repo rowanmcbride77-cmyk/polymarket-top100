@@ -1,9 +1,10 @@
 import fs from "node:fs/promises";
 import { buildConsensusSignals } from "./consensus.js";
 import { projectSettlementPosition } from "./position-projection.js";
+import { buildSettlementRecord } from "./settlement.js";
+import { fetchTokenResolutionIndex } from "./resolution-data.js";
 
 const DATA = "https://data-api.polymarket.com";
-const GAMMA = "https://gamma-api.polymarket.com";
 const startedAt = new Date().toISOString();
 const WINDOW_DAYS = 60;
 const MIN_MARKETS = 10;
@@ -57,6 +58,16 @@ async function getJson(url) {
   }
   throw last || new Error("API request failed");
 }
+
+async function requestDataApi(path, params = {}) {
+  const url = new URL(path, DATA);
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined && value !== null && value !== "") url.searchParams.set(key, String(value));
+  }
+  // Reuse the scanner's global request pacing and retry policy for the
+  // settlement-resolution endpoints as well.
+  return getJson(url.toString());
+}
 function rowsOf(payload) {
   if (Array.isArray(payload)) return payload;
   if (Array.isArray(payload?.data)) return payload.data;
@@ -66,17 +77,6 @@ function n(v) {
   if (v === null || v === undefined || v === "") return null;
   const x = Number(v);
   return Number.isFinite(x) ? x : null;
-}
-function ms(v) {
-  if (v === null || v === undefined || v === "") return null;
-  const x = Number(v);
-  const out = Number.isFinite(x) ? (x < 1e12 ? x * 1000 : x) : Date.parse(String(v));
-  return Number.isFinite(out) ? out : null;
-}
-function arrayField(v) {
-  if (Array.isArray(v)) return v;
-  if (typeof v !== "string") return [];
-  try { const parsed = JSON.parse(v); return Array.isArray(parsed) ? parsed : []; } catch { return []; }
 }
 async function mapLimit(items, limit, fn) {
   const out = new Array(items.length);
@@ -127,7 +127,7 @@ async function getLeaderboard(period) {
 }
 
 // Pull only the three lifecycle cohorts that can prove a settled prediction.
-// CLOSED is bounded to the last 30 days; redeemable cohorts are unbounded because
+// CLOSED is bounded to the last 60 days; redeemable cohorts are unbounded because
 // a position may have been entered earlier and still resolve inside the window.
 async function fetchCohort(wallet, status, cutoffSec, nowSec) {
   const out = [];
@@ -190,89 +190,6 @@ async function auditWallet(wallet, cutoffSec, nowSec) {
   };
 }
 
-async function fetchMarketMetadata(conditionIds) {
-  const unique = [...new Set(conditionIds)].filter(Boolean);
-  const chunks = [];
-  for (let i = 0; i < unique.length; i += 100) chunks.push(unique.slice(i, i + 100));
-  const results = await mapLimit(chunks, 8, async ids => {
-    const q = new URLSearchParams({ closed: "true", limit: String(ids.length) });
-    for (const id of ids) q.append("condition_ids", id);
-    const closed = rowsOf(await getJson(GAMMA + "/markets?" + q));
-    const qOpen = new URLSearchParams({ closed: "false", limit: String(ids.length) });
-    for (const id of ids) qOpen.append("condition_ids", id);
-    const open = rowsOf(await getJson(GAMMA + "/markets?" + qOpen));
-    return [...closed, ...open];
-  });
-  const map = new Map();
-  for (const batch of results) for (const market of batch) {
-    const id = String(market.conditionId ?? market.condition_id ?? "").toLowerCase();
-    if (id) map.set(id, market);
-  }
-  return map;
-}
-
-function classifyAudit(audit, markets, cutoffMs, nowMs) {
-  let wins = 0, losses = 0, earlyExitPositions = 0, unclassified = audit.invalidRows || 0;
-  const settled = new Map();
-  for (const position of audit.positions) {
-    const condition = String(position.condition_id ?? position.conditionId ?? "").toLowerCase();
-    const market = markets.get(condition);
-    const cohort = String(position._cohort || "").toUpperCase();
-    const lastEvent = ms(position.last_event_at ?? position.lastEventAt ?? position.timestamp ?? position.updated_at ?? position.updatedAt);
-    if (!market) { unclassified++; continue; }
-    const isClosed = market.closed === true || String(market.closed).toLowerCase() === "true";
-    if (!isClosed) {
-      if (cohort === "CLOSED" && lastEvent !== null) { earlyExitPositions++; continue; }
-      unclassified++;
-      continue;
-    }
-    const outcomes = arrayField(market.outcomes);
-    const prices = arrayField(market.outcomePrices).map(n);
-    const winner = prices.findIndex(price => price !== null && price >= 0.999);
-    const resolvedAt = ms(market.closedTime ?? market.closed_time ?? market.resolvedAt ?? market.resolved_at);
-    if (winner < 0 || resolvedAt === null) { unclassified++; continue; }
-    if (resolvedAt < cutoffMs || resolvedAt > nowMs) continue;
-
-    let index = Number(position.outcome_index ?? position.outcomeIndex);
-    if (!Number.isInteger(index) || index < 0 || index === 999 || index >= outcomes.length) {
-      const label = String(position.outcome ?? "").trim().toLowerCase();
-      index = outcomes.findIndex(x => String(x).trim().toLowerCase() === label);
-    }
-    if (index < 0 || index >= outcomes.length) { unclassified++; continue; }
-
-    // A CLOSED position sold before actual market resolution is an early exit,
-    // not a settlement prediction. REDEEMABLE cohorts represent held-to-settlement.
-    if (cohort === "CLOSED" && (lastEvent === null || lastEvent < resolvedAt)) {
-      earlyExitPositions++;
-      continue;
-    }
-    if (!settled.has(condition)) settled.set(condition, { winner, indexes: new Set() });
-    settled.get(condition).indexes.add(index);
-  }
-  let hedged = 0;
-  for (const item of settled.values()) {
-    if (item.indexes.size !== 1) { hedged++; continue; }
-    if ([...item.indexes][0] === item.winner) wins++;
-    else losses++;
-  }
-  const resolvedMarkets = wins + losses;
-  const complete = audit.complete && unclassified === 0;
-  return {
-    wins: complete ? wins : null,
-    losses: complete ? losses : null,
-    resolvedMarkets: complete ? resolvedMarkets : null,
-    winRate: complete && resolvedMarkets ? wins / resolvedMarkets * 100 : null,
-    recordComplete: complete,
-    settlementRecordComplete: complete,
-    earlyExitPositions,
-    hedgedMarkets: hedged,
-    positionsChecked: audit.rows,
-    positionsPages: audit.pages,
-    unclassifiedPositions: unclassified,
-    recordBasis: "Verified Gamma settlement outcomes only; pre-resolution exits excluded; held redeemable positions included; hedged markets excluded."
-  };
-}
-
 const [weekCandidates, monthCandidates] = await Promise.all([
   getLeaderboard("week"), getLeaderboard("month")
 ]);
@@ -291,14 +208,14 @@ const nowSec = Math.floor(nowMs / 1000);
 console.log("Settlement audit: " + candidates.length + " unique wallets sourced only from the top 500 weekly and top 500 monthly Polymarket P&L leaderboards; rolling 60-day window; max " + MAX_POSITION_PAGES + " pages per lifecycle cohort.");
 
 // Process wallets in bounded batches. Keeping every wallet's raw position history
-// and the complete Gamma metadata map alive together exceeded the hosted runner's
+// and the complete settlement-resolution map alive together exceeded the hosted runner's
 // ~4 GB Node heap. Each batch is fully classified before its raw rows are released.
 const records = new Map();
 let completeAudits = 0;
 let incompleteAudits = 0;
 let positionsChecked = 0;
 let positionPages = 0;
-let marketMetadataConditions = 0;
+let resolutionConditionLookups = 0;
 
 for (let offset = 0; offset < candidates.length; offset += AUDIT_BATCH_SIZE) {
   const batch = candidates.slice(offset, offset + AUDIT_BATCH_SIZE);
@@ -313,8 +230,6 @@ for (let offset = 0; offset < candidates.length; offset += AUDIT_BATCH_SIZE) {
   });
   const allConditions = new Set();
   for (const audit of audits) {
-    if (audit.complete) completeAudits++;
-    else incompleteAudits++;
     positionsChecked += audit.rows;
     positionPages += audit.pages;
     for (const position of audit.positions) {
@@ -322,10 +237,39 @@ for (let offset = 0; offset < candidates.length; offset += AUDIT_BATCH_SIZE) {
       if (condition) allConditions.add(condition);
     }
   }
-  const marketMetadata = await fetchMarketMetadata(allConditions);
-  marketMetadataConditions += allConditions.size;
+  const resolutionIndex = await fetchTokenResolutionIndex([...allConditions], {
+    request: requestDataApi,
+    resolutionBatchConcurrency: 4
+  });
+  resolutionConditionLookups += allConditions.size;
   for (const audit of audits) {
-    records.set(audit.wallet, classifyAudit(audit, marketMetadata, cutoffMs, nowMs));
+    const record = buildSettlementRecord(audit.positions, resolutionIndex.values(), {
+      nowMs,
+      windowDays: WINDOW_DAYS,
+      historyComplete: audit.complete
+    });
+    const diagnostics = record.diagnostics || {};
+    const complete = record.complete === true;
+    if (complete) completeAudits++;
+    else incompleteAudits++;
+    records.set(audit.wallet, {
+      wins: complete ? record.wins : null,
+      losses: complete ? record.losses : null,
+      settlementWins: complete ? record.wins : null,
+      settlementLosses: complete ? record.losses : null,
+      resolvedMarkets: complete ? record.resolvedMarkets : null,
+      winRate: complete ? record.winRate : null,
+      recordComplete: complete,
+      settlementRecordComplete: complete,
+      earlyExitPositions: Number(diagnostics.closedExcluded || 0),
+      hedgedMarkets: Number(diagnostics.conflictingConditionsExcluded || 0),
+      positionsChecked: audit.rows,
+      positionsPages: audit.pages,
+      unclassifiedPositions: Number(diagnostics.unverifiedExcluded || 0),
+      pendingPositions: Number(diagnostics.pendingExcluded || 0),
+      outsideWindowPositions: Number(diagnostics.outsideWindowExcluded || 0),
+      recordBasis: record.basis
+    });
     // Drop the large per-wallet position arrays as soon as classification is done.
     audit.positions = [];
   }
@@ -336,8 +280,15 @@ function qualify(candidatesForPeriod) {
   return candidatesForPeriod
     .map(row => ({ ...row, ...(records.get(row.wallet) || {}) }))
     .filter(row => row.recordComplete === true &&
+      row.settlementRecordComplete === true &&
+      Number.isFinite(Number(row.wins)) &&
+      Number.isFinite(Number(row.losses)) &&
+      Number(row.resolvedMarkets) === Number(row.wins) + Number(row.losses) &&
       Number(row.resolvedMarkets) >= MIN_MARKETS &&
-      Number(row.winRate) >= MIN_WIN_RATE)
+      Number.isFinite(Number(row.winRate)) &&
+      Number(row.winRate) >= MIN_WIN_RATE &&
+      String(row.recordBasis || "").toLowerCase().includes("settlement-only") &&
+      String(row.recordBasis || "").toLowerCase().includes("excluded"))
     .sort((a,b) => b.pnl - a.pnl)
     .slice(0, 100)
     .map((row, index) => ({ ...row, rank: index + 1, period: row.period }));
@@ -368,34 +319,46 @@ const finishedAt = new Date().toISOString();
 for (const [period, leaders, consensusResult] of [["week", weekLeaders, weekConsensus], ["month", monthLeaders, monthConsensus]]) {
   await fs.writeFile(period + ".json", JSON.stringify({
     generatedAt: finishedAt, period,
-    source: "Polymarket Data API v2 leaderboard + verified Gamma settlement outcomes",
+    source: "Polymarket Data API v2 leaderboard + verified token payouts and condition resolution finality",
     leaders, scannerVersion: "settlement-v2",
-    qualification: { windowDays: WINDOW_DAYS, minimumResolvedMarkets: MIN_MARKETS, minimumWinRate: MIN_WIN_RATE, earlyExitsIncluded: false }
+    qualification: { windowDays: WINDOW_DAYS, minimumResolvedMarkets: MIN_MARKETS, minimumWinRate: MIN_WIN_RATE, earlyExitsIncluded: false, settlementBasis: "Verified token payout and condition resolution time; pre-resolution exits excluded." }
   }, null, 2) + "\n");
   await fs.writeFile("consensus-" + period + ".json", JSON.stringify({
     generatedAt: finishedAt, period,
     source: "Open Polymarket positions held by settlement-qualified leaderboard traders; same-token agreement; recent BUY activity verified; active sports, esports and crypto markets only.",
     consensus: consensusResult.signals,
     diagnostics: consensusResult.diagnostics,
-    qualification: { minimumHolders: 2, strongHolders: 8, horizonHours: 24, minimumEntryUsd: 10 },
+    qualificationWindowDays: WINDOW_DAYS,
+    minimumResolvedMarkets: MIN_MARKETS,
+    qualification: {
+      windowDays: WINDOW_DAYS,
+      minimumResolvedMarkets: MIN_MARKETS,
+      minimumWinRate: MIN_WIN_RATE,
+      minimumHolders: 2,
+      strongHolders: 8,
+      horizonHours: 24,
+      minimumEntryUsd: 10
+    },
     scannerVersion: "settlement-v2"
   }, null, 2) + "\n");
 }
 const status = {
   ok: true, scannerVersion: "settlement-v2", startedAt, finishedAt, generatedAt: finishedAt,
-  source: "Polymarket public Data API v2 leaderboard + Gamma resolved market metadata",
+  source: "Polymarket public Data API v2 leaderboard + /v2/tokens final payouts + /v2/resolutions finality",
   windowDays: WINDOW_DAYS, minimumResolvedMarkets: MIN_MARKETS, minimumWinRate: MIN_WIN_RATE,
   candidates: candidates.length, completeAudits,
   incompleteAudits,
   positionsChecked,
   positionPages,
-  marketMetadataConditions,
+  resolutionConditionLookups,
   weekCandidates: weekCandidates.length, monthCandidates: monthCandidates.length,
   weekQualified: weekLeaders.length, monthQualified: monthLeaders.length,
   weekConsensusSignals: weekConsensus.signals.length,
   monthConsensusSignals: monthConsensus.signals.length,
   consensusBuiltFromQualifiedTradersOnly: true,
-  earlyExitsExcluded: true
+  earlyExitsExcluded: true,
+  earlyExitRealizedPnlPublished: false,
+  settlementVerification: "Exact binary token finalPrice joined to condition status=resolved and resolvedAt from Polymarket Data API v2"
 };
 await fs.writeFile("status.json", JSON.stringify(status, null, 2) + "\n");
 await fs.writeFile("settlement-audit-status.json", JSON.stringify(status, null, 2) + "\n");

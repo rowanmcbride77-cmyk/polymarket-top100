@@ -28,21 +28,21 @@ test("excludes hedged-at-resolution conditions from directional accuracy", () =>
 });
 
 test("never counts a profitable pre-resolution exit as a settlement win", () => {
-  const closed = { ...position("c1", "t1", "CLOSED"), last_event_at: "2026-11-16T12:00:00.000Z" };
+  const closed = { condition_id: "c1", token_id: "t1", _cohort: "CLOSED", last_event_at: "2026-11-16T12:00:00.000Z" };
   const result = classifySettledPosition(closed, resolution("c1", "t1", 1));
   assert.equal(result.status, "excluded");
   assert.equal(result.reason, "closed-before-resolution-early-exit");
 });
 
 test("counts a closed position only when its last event is at or after verified resolution", () => {
-  const closed = { ...position("c1", "t1", "CLOSED"), last_event_at: "2026-11-18T12:00:00.000Z" };
+  const closed = { condition_id: "c1", token_id: "t1", _cohort: "CLOSED", last_event_at: "2026-11-18T12:00:00.000Z" };
   const result = classifySettledPosition(closed, resolution("c1", "t1", 1));
   assert.equal(result.status, "settled");
   assert.equal(result.result, "win");
 });
 
 test("fails closed when a closed position has no verifiable close timestamp", () => {
-  const result = classifySettledPosition(position("c1", "t1", "CLOSED"), resolution("c1", "t1", 1));
+  const result = classifySettledPosition({ condition_id: "c1", token_id: "t1", _cohort: "CLOSED" }, resolution("c1", "t1", 1));
   assert.equal(result.status, "unverified");
   assert.equal(result.reason, "missing-close-time");
 });

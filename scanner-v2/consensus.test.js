@@ -12,9 +12,16 @@ const tokenResolution = new Map([
   ["t1", { tokenId: "t1", conditionId: "c1", resolved: false, finalPrice: null }],
   ["t2", { tokenId: "t2", conditionId: "c1", resolved: false, finalPrice: null }]
 ]);
+const qualifiedTrader = walletId => ({
+  wallet: walletId, name: "Trader", rank: 1, selectedPeriodPnl: 100, pnl: 100,
+  wins: 90, losses: 10, settlementWins: 90, settlementLosses: 10,
+  resolvedMarkets: 100, winRate: 90, recordComplete: true,
+  settlementRecordComplete: true, qualified: true,
+  recordBasis: "Verified settlement-only token payout and condition finality; pre-resolution exits excluded."
+});
 const pos = (walletId, token = "t1", outcome = "Yes") => ({
   wallet: walletId,
-  trader: { wallet: walletId, name: "Trader", rank: 1, selectedPeriodPnl: 100 },
+  trader: qualifiedTrader(walletId),
   position: {
     condition_id: "c1", token_id: token, outcome, status: "OPEN",
     current_size: 20, current_value: 12, entry_cost_usdc: 10
@@ -55,7 +62,15 @@ test("groups only same outcome token held by multiple qualified wallets", async 
   );
   assert.equal(result.signals.length, 1);
   assert.equal(result.signals[0].qualifiedWalletCount, 2);
+  assert.equal(result.signals[0].sameSide, 2);
   assert.equal(result.signals[0].outcome, "Yes");
+  assert.equal(result.signals[0].marketMetadataVerified, true);
+  assert.equal(result.signals[0].marketClosed, false);
+  assert.equal(result.signals[0].traders[0].wins, 90);
+  assert.equal(result.signals[0].traders[0].losses, 10);
+  assert.equal(result.signals[0].traders[0].winRate, 90);
+  assert.equal(result.signals[0].traders[0].side, "Yes");
+  assert.equal(result.signals[0].traders[0].qualified, true);
 });
 
 test("suppresses a condition when both outcome sides independently reach consensus", async () => {
@@ -84,6 +99,24 @@ test("suppresses a condition when both outcome sides independently reach consens
   assert.equal(result.diagnostics.excludedOppositeSideConditions, 1);
 });
 
+
+test("excludes closed markets from active consensus", async () => {
+  const rows = [pos(wallet(1)), pos(wallet(2))];
+  const result = await buildConsensusSignals(
+    rows.map(row => row.trader),
+    {
+      nowMs: Date.parse("2026-11-18T12:00:00Z"),
+      fetchAllPages: async (_path, params) => {
+        if (params.status === "OPEN") return rows.filter(row => row.wallet === params.user).map(row => row.position);
+        return [{ condition_id: "c1", token_id: "t1", usdc_size: 12 }];
+      },
+      fetchGammaMarkets: async () => [{ ...baseMarket, closed: true }],
+      fetchTokenResolutionIndex: async () => tokenResolution
+    }
+  );
+  assert.equal(result.signals.length, 0);
+  assert.equal(result.diagnostics.excludedClosedMarket, 2);
+});
 
 test("reports an explicit zero-signal count when no open positions exist", async () => {
   const result = await buildConsensusSignals(

@@ -15,6 +15,21 @@ const asMs = value => {
   const parsed = Date.parse(value);
   return Number.isFinite(parsed) ? parsed : null;
 };
+function isSettlementQualified(trader) {
+  const wins = num(trader?.settlementWins ?? trader?.wins);
+  const losses = num(trader?.settlementLosses ?? trader?.losses);
+  const resolved = num(trader?.resolvedMarkets);
+  const rate = num(trader?.winRate);
+  const basis = String(trader?.recordBasis ?? "").toLowerCase();
+  return trader?.recordComplete === true &&
+    trader?.settlementRecordComplete === true &&
+    wins !== null && losses !== null && resolved !== null &&
+    resolved === wins + losses && resolved >= 10 &&
+    rate !== null && rate >= 90 &&
+    Math.abs(rate - wins / resolved * 100) <= 1e-6 &&
+    basis.includes("settlement-only") && basis.includes("excluded");
+}
+
 const chunks = (values, size) => {
   const result = [];
   for (let i = 0; i < values.length; i += size) result.push(values.slice(i, i + size));
@@ -175,10 +190,11 @@ export async function buildConsensusSignals(qualifiedTraders, options = {}) {
   const minimumHolders = options.minimumHolders ?? 2;
   const strongHolders = options.strongHolders ?? 8;
 
-  const walletRows = await fetchQualifiedOpenPositions(qualifiedTraders, options);
+  const trustedTraders = qualifiedTraders.filter(isSettlementQualified);
+  const walletRows = await fetchQualifiedOpenPositions(trustedTraders, options);
   const allPositions = walletRows.flatMap(row => row.positions.map(position => ({ wallet: row.wallet, trader: row.trader, position })));
   const conditionIds = [...new Set(allPositions.map(row => key(row.position.condition_id ?? row.position.conditionId)).filter(Boolean))];
-  if (!conditionIds.length) return { signals: [], diagnostics: { qualifiedWallets: qualifiedTraders.length, openPositions: 0, conditions: 0, signals: 0 } };
+  if (!conditionIds.length) return { signals: [], diagnostics: { qualifiedWallets: trustedTraders.length, openPositions: 0, conditions: 0, signals: 0 } };
 
   const [markets, resolutions, recentBuys] = await Promise.all([
     (options.fetchGammaMarkets ?? fetchGammaMarkets)(conditionIds, options),
@@ -194,6 +210,7 @@ export async function buildConsensusSignals(qualifiedTraders, options = {}) {
   let excludedCategory = 0;
   let excludedHorizon = 0;
   let excludedUnverifiedToken = 0;
+  let excludedClosedMarket = 0;
 
   for (const row of allPositions) {
     const position = row.position;
@@ -205,6 +222,8 @@ export async function buildConsensusSignals(qualifiedTraders, options = {}) {
       excludedUnverifiedToken++;
       continue;
     }
+    const marketClosed = market.closed === true || String(market.closed).toLowerCase() === "true";
+    if (marketClosed) { excludedClosedMarket++; continue; }
     if (resolution.resolved === true) { excludedResolved++; continue; }
     const category = classifyMarket(market);
     if (category === "excluded") { excludedCategory++; continue; }
@@ -237,6 +256,13 @@ export async function buildConsensusSignals(qualifiedTraders, options = {}) {
     const group = groups.get(groupKey);
     if (group.wallets.has(row.wallet)) continue;
     const currentValue = num(position.current_value ?? position.currentValue) ?? 0;
+    const wins = num(row.trader.settlementWins ?? row.trader.wins);
+    const losses = num(row.trader.settlementLosses ?? row.trader.losses);
+    const resolvedMarkets = num(row.trader.resolvedMarkets);
+    const winRate = num(row.trader.winRate);
+    const recordBasis = String(row.trader.recordBasis ?? "");
+    const recordComplete = row.trader.recordComplete === true;
+    const settlementRecordComplete = row.trader.settlementRecordComplete === true;
     group.wallets.set(row.wallet, {
       wallet: row.wallet,
       name: row.trader.name ?? position.name ?? null,
@@ -244,7 +270,19 @@ export async function buildConsensusSignals(qualifiedTraders, options = {}) {
       selectedPeriodPnl: row.trader.selectedPeriodPnl ?? row.trader.pnl ?? null,
       currentValueUsd: currentValue,
       entryCostUsd: verifiedBuy.entryCostUsd,
-      recentBuyUsd: verifiedBuy.recentBuyUsd
+      recentBuyUsd: verifiedBuy.recentBuyUsd,
+      side: group.side,
+      wins,
+      losses,
+      settlementWins: wins,
+      settlementLosses: losses,
+      resolvedMarkets,
+      winRate,
+      recordComplete,
+      settlementRecordComplete,
+      qualified: isSettlementQualified(row.trader),
+      recordBasis,
+      earlyExitPositions: Number(row.trader.earlyExitPositions ?? 0)
     });
     group.totalCurrentValueUsd += currentValue;
     group.totalEntryUsd += verifiedBuy.entryCostUsd;
@@ -279,10 +317,19 @@ export async function buildConsensusSignals(qualifiedTraders, options = {}) {
         sport: group.sport,
         endDate: group.endDate,
         outcome: group.side,
+        side: group.side,
+        marketId: group.conditionId,
+        marketMetadataVerified: true,
+        marketClosed: false,
+        sameSide: traders.length,
+        traderCount: traders.length,
         qualifiedWalletCount: traders.length,
         signalStrength: traders.length >= strongHolders ? "strong" : "watch",
+        signalTier: traders.length >= strongHolders ? "Strong Signals" : "Watchlist",
         totalCurrentValueUsd: group.totalCurrentValueUsd,
         totalEntryUsd: group.totalEntryUsd,
+        totalValue: group.totalCurrentValueUsd,
+        totalEntry: group.totalEntryUsd,
         traders
       };
     })
@@ -300,6 +347,7 @@ export async function buildConsensusSignals(qualifiedTraders, options = {}) {
       excludedCategory,
       excludedHorizon,
       excludedUnverifiedToken,
+      excludedClosedMarket,
       excludedOppositeSideConditions: conflictedConditions.size
     }
   };
