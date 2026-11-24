@@ -207,7 +207,7 @@ const cutoffSec = Math.floor(cutoffMs / 1000);
 const nowSec = Math.floor(nowMs / 1000);
 console.log("Settlement audit: " + candidates.length + " unique wallets sourced only from the top 500 weekly and top 500 monthly Polymarket P&L leaderboards; rolling 60-day window; max " + MAX_POSITION_PAGES + " pages per lifecycle cohort.");
 
-// Process wallets in bounded batches. Keeping every wallet's raw position history
+// Settlement W/L come only from /v2/tokens finalPrice joined to /v2/resolutions status/resolvedAt.\n// Process wallets in bounded batches. Keeping every wallet's raw position history
 // and the complete settlement-resolution map alive together exceeded the hosted runner's
 // ~4 GB Node heap. Each batch is fully classified before its raw rows are released.
 const records = new Map();
