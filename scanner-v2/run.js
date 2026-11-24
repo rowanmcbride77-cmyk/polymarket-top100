@@ -285,7 +285,7 @@ const cutoffMs = Date.now() - WINDOW_DAYS * 86400000;
 const nowMs = Date.now();
 const cutoffSec = Math.floor(cutoffMs / 1000);
 const nowSec = Math.floor(nowMs / 1000);
-console.log("Settlement audit: " + candidates.length + " unique candidates; rolling 30-day window; max " + MAX_POSITION_PAGES + " pages per lifecycle cohort.");
+console.log("Settlement audit: " + candidates.length + " unique candidates; rolling 60-day window; max " + MAX_POSITION_PAGES + " pages per lifecycle cohort.");
 
 const audits = await mapLimit(candidates, CONCURRENCY, async trader => {
   try { return await auditWallet(trader.wallet, cutoffSec, nowSec); }
