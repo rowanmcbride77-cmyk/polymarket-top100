@@ -19,19 +19,21 @@ const numberOrNull = value => {
 };
 
 const keyOf = value => String(value ?? "").trim().toLowerCase();
+const timestampMs = value => {
+  if (value === null || value === undefined || value === "") return null;
+  const numeric = Number(value);
+  if (Number.isFinite(numeric)) return numeric < 1_000_000_000_000 ? numeric * 1000 : numeric;
+  const parsed = Date.parse(String(value));
+  return Number.isFinite(parsed) ? parsed : null;
+};
 
 export function classifySettledPosition(position, tokenResolution) {
   if (!position || !tokenResolution) return { status: "unverified", reason: "missing-position-or-resolution" };
 
-  // A closed position may have been sold at any point. Its realized P&L is
-  // deliberately never used as evidence of a settlement result.
-  if (String(position.status ?? "").toUpperCase() === "HEDGED_AT_RESOLUTION") {
+  const positionStatus = String(position.status ?? position._cohort ?? "").toUpperCase();
+  if (positionStatus === "HEDGED_AT_RESOLUTION") {
     return { status: "excluded", reason: "hedged-at-resolution" };
   }
-  if (String(position.status ?? "").toUpperCase() === "CLOSED") {
-    return { status: "excluded", reason: "closed-position-may-be-early-exit" };
-  }
-
   if (tokenResolution.resolved !== true) {
     return { status: "pending", reason: "token-not-resolved" };
   }
@@ -54,12 +56,29 @@ export function classifySettledPosition(position, tokenResolution) {
     return { status: "unverified", reason: "token-mismatch" };
   }
 
+  const resolvedAt = tokenResolution.resolvedAt ?? tokenResolution.resolved_at ?? null;
+  const resolvedAtMs = timestampMs(resolvedAt);
+  if (resolvedAtMs === null) return { status: "unverified", reason: "missing-resolution-time" };
+
+  // A CLOSED position is countable only if its last event is at/after the
+  // token's verified resolution time. Earlier exits never become wins/losses.
+  if (positionStatus === "CLOSED") {
+    const lastEvent = position.last_event_at ?? position.lastEventAt ??
+      position.timestamp ?? position.updated_at ?? position.updatedAt ?? null;
+    const lastEventMs = timestampMs(lastEvent);
+    if (lastEventMs === null) return { status: "unverified", reason: "missing-close-time" };
+    if (lastEventMs < resolvedAtMs) {
+      return { status: "excluded", reason: "closed-before-resolution-early-exit" };
+    }
+  }
+
   return {
     status: "settled",
     result: payout === 1 ? "win" : "loss",
     conditionId: positionCondition,
     tokenId: positionToken,
-    resolvedAt: tokenResolution.resolvedAt ?? tokenResolution.resolved_at ?? null,
+    resolvedAt,
+    resolvedAtMs,
     finalPrice: payout
   };
 }
@@ -98,8 +117,8 @@ export function buildSettlementRecord(positions, resolutions, options = {}) {
     if (classified.status === "pending") { diagnostics.pendingExcluded++; continue; }
     if (classified.status !== "settled") { diagnostics.unverifiedExcluded++; continue; }
 
-    const resolvedAt = classified.resolvedAt ? Date.parse(classified.resolvedAt) : NaN;
-    if (!Number.isFinite(resolvedAt)) { diagnostics.unverifiedExcluded++; continue; }
+    const resolvedAt = classified.resolvedAtMs ?? timestampMs(classified.resolvedAt);
+    if (resolvedAt === null) { diagnostics.unverifiedExcluded++; continue; }
     if (resolvedAt < cutoffMs || resolvedAt > nowMs) { diagnostics.outsideWindowExcluded++; continue; }
 
     const prior = byCondition.get(classified.conditionId);
@@ -128,7 +147,7 @@ export function buildSettlementRecord(positions, resolutions, options = {}) {
     windowDays,
     cutoff: new Date(cutoffMs).toISOString(),
     complete: options.historyComplete === true && diagnostics.unverifiedExcluded === 0,
-    basis: "Verified token settlement payout only; CLOSED/early-exited positions excluded; one unambiguous result per condition.",
+    basis: "Verified settlement-only token payout and condition finality; pre-resolution exits excluded; one unambiguous result per condition.",
     diagnostics
   };
 }
