@@ -230,8 +230,6 @@ for (let offset = 0; offset < candidates.length; offset += AUDIT_BATCH_SIZE) {
   });
   const allConditions = new Set();
   for (const audit of audits) {
-    if (audit.complete) completeAudits++;
-    else incompleteAudits++;
     positionsChecked += audit.rows;
     positionPages += audit.pages;
     for (const position of audit.positions) {
@@ -252,6 +250,8 @@ for (let offset = 0; offset < candidates.length; offset += AUDIT_BATCH_SIZE) {
     });
     const diagnostics = record.diagnostics || {};
     const complete = record.complete === true;
+    if (complete) completeAudits++;
+    else incompleteAudits++;
     records.set(audit.wallet, {
       wins: complete ? record.wins : null,
       losses: complete ? record.losses : null,
