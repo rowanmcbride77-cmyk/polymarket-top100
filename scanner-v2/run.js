@@ -208,7 +208,7 @@ const nowSec = Math.floor(nowMs / 1000);
 console.log("Settlement audit: " + candidates.length + " unique wallets sourced only from the top 500 weekly and top 500 monthly Polymarket P&L leaderboards; rolling 60-day window; max " + MAX_POSITION_PAGES + " pages per lifecycle cohort.");
 
 // Process wallets in bounded batches. Keeping every wallet's raw position history
-// and the complete Gamma metadata map alive together exceeded the hosted runner's
+// and the complete settlement-resolution map alive together exceeded the hosted runner's
 // ~4 GB Node heap. Each batch is fully classified before its raw rows are released.
 const records = new Map();
 let completeAudits = 0;
@@ -280,8 +280,15 @@ function qualify(candidatesForPeriod) {
   return candidatesForPeriod
     .map(row => ({ ...row, ...(records.get(row.wallet) || {}) }))
     .filter(row => row.recordComplete === true &&
+      row.settlementRecordComplete === true &&
+      Number.isFinite(Number(row.wins)) &&
+      Number.isFinite(Number(row.losses)) &&
+      Number(row.resolvedMarkets) === Number(row.wins) + Number(row.losses) &&
       Number(row.resolvedMarkets) >= MIN_MARKETS &&
-      Number(row.winRate) >= MIN_WIN_RATE)
+      Number.isFinite(Number(row.winRate)) &&
+      Number(row.winRate) >= MIN_WIN_RATE &&
+      String(row.recordBasis || "").toLowerCase().includes("settlement-only") &&
+      String(row.recordBasis || "").toLowerCase().includes("excluded"))
     .sort((a,b) => b.pnl - a.pnl)
     .slice(0, 100)
     .map((row, index) => ({ ...row, rank: index + 1, period: row.period }));
@@ -321,7 +328,17 @@ for (const [period, leaders, consensusResult] of [["week", weekLeaders, weekCons
     source: "Open Polymarket positions held by settlement-qualified leaderboard traders; same-token agreement; recent BUY activity verified; active sports, esports and crypto markets only.",
     consensus: consensusResult.signals,
     diagnostics: consensusResult.diagnostics,
-    qualification: { minimumHolders: 2, strongHolders: 8, horizonHours: 24, minimumEntryUsd: 10 },
+    qualificationWindowDays: WINDOW_DAYS,
+    minimumResolvedMarkets: MIN_MARKETS,
+    qualification: {
+      windowDays: WINDOW_DAYS,
+      minimumResolvedMarkets: MIN_MARKETS,
+      minimumWinRate: MIN_WIN_RATE,
+      minimumHolders: 2,
+      strongHolders: 8,
+      horizonHours: 24,
+      minimumEntryUsd: 10
+    },
     scannerVersion: "settlement-v2"
   }, null, 2) + "\n");
 }
