@@ -6,7 +6,7 @@ This scanner builds the weekly and monthly Top 100 leaderboards from verified se
 
 - Discover candidate wallets from sports, esports, crypto, and overall leaderboard streams.
 - Rank WEEK and MONTH independently by their corresponding Polymarket leaderboard P&L.
-- Require at least **90% verified settlement accuracy** and **10 resolved markets** in the rolling 30-day window.
+- Require at least **90% verified settlement accuracy** and **10 resolved markets** in the rolling 60-day window.
 - Count only tokens actually held at market resolution. Positions sold before resolution are excluded from wins, losses, the denominator, and accuracy.
 - Incomplete or unverified settlement histories cannot qualify.
 - Consensus requires at least two qualified traders on the exact same outcome token, verified current holdings, recent same-token BUY activity, and at least $10 verified entry cost per trader.
