@@ -165,7 +165,7 @@ export function reconstructHeldAtResolution(activity, resolutionIndex, options =
 export async function getWalletSettlementRecord(wallet, options = {}) {
   const nowMs = Number(options.nowMs ?? Date.now());
   const nowSeconds = Math.floor(nowMs / 1000);
-  const windowDays = options.windowDays ?? 30;
+  const windowDays = options.windowDays ?? 60;
   const cutoffSeconds = Math.floor((nowMs - windowDays * 24 * 60 * 60 * 1000) / 1000);
   const fetchPages = options.fetchAllPages ?? fetchAllPages;
 
