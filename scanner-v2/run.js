@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import { buildConsensusSignals } from "./consensus.js";
+import { projectSettlementPosition } from "./position-projection.js";
 
 const DATA = "https://data-api.polymarket.com";
 const GAMMA = "https://gamma-api.polymarket.com";
@@ -145,7 +146,7 @@ async function fetchCohort(wallet, status, cutoffSec, nowSec) {
     if (cursor) q.set("cursor", cursor);
     const payload = await getJson(DATA + "/v2/positions?" + q);
     const pageRows = rowsOf(payload);
-    out.push(...pageRows.map(row => ({...row, _cohort: status})));
+    out.push(...pageRows.map(row => projectSettlementPosition(row, status)));
     pages++;
     const pagination = payload?.pagination ?? {};
     if (pagination.has_more !== true) { exhausted = true; break; }
@@ -202,7 +203,7 @@ async function fetchMarketMetadata(conditionIds) {
     return [...closed, ...open];
   });
   const map = new Map();
-  for (const market of results.flat()) {
+  for (const batch of results) for (const market of batch) {
     const id = String(market.conditionId ?? market.condition_id ?? "").toLowerCase();
     if (id) map.set(id, market);
   }
@@ -295,7 +296,11 @@ const audits = await mapLimit(candidates, CONCURRENCY, async trader => {
     return { wallet: trader.wallet, positions: [], complete: false, pages: 0, rows: 0 };
   }
 });
-const allConditions = audits.flatMap(a => a.positions.map(p => String(p.condition_id ?? p.conditionId ?? "").toLowerCase()));
+const allConditions = new Set();
+for (const audit of audits) for (const position of audit.positions) {
+  const condition = String(position.condition_id ?? position.conditionId ?? "").toLowerCase();
+  if (condition) allConditions.add(condition);
+}
 const marketMetadata = await fetchMarketMetadata(allConditions);
 const records = new Map(audits.map(a => [
   a.wallet, classifyAudit(a, marketMetadata, cutoffMs, nowMs)
@@ -357,7 +362,7 @@ const status = {
   incompleteAudits: audits.filter(a => !a.complete).length,
   positionsChecked: audits.reduce((s,a) => s + a.rows, 0),
   positionPages: audits.reduce((s,a) => s + a.pages, 0),
-  marketMetadataConditions: allConditions.length,
+  marketMetadataConditions: allConditions.size,
   weekCandidates: weekCandidates.length, monthCandidates: monthCandidates.length,
   weekQualified: weekLeaders.length, monthQualified: monthLeaders.length,
   weekConsensusSignals: weekConsensus.signals.length,
