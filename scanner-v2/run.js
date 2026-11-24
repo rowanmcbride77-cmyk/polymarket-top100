@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 const DATA = "https://data-api.polymarket.com";
 const GAMMA = "https://gamma-api.polymarket.com";
 const startedAt = new Date().toISOString();
-const WINDOW_DAYS = 30;
+const WINDOW_DAYS = 60;
 const MIN_MARKETS = 10;
 const MIN_WIN_RATE = 90;
 const CANDIDATES_PER_PERIOD = 500;
