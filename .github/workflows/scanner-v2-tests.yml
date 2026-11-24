@@ -30,7 +30,7 @@ jobs:
           node --input-type=module <<'NODE'
           import fs from "node:fs/promises";
           const html = await fs.readFile("index.html", "utf8");
-          const scripts = [...html.matchAll(/<script(?:\\s[^>]*)?>([\\s\\S]*?)<\\/script>/gi)].map(match => match[1]);
+          const scripts = [...html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/gi)].map(match => match[1]);
           if (!scripts.length) throw new Error("Dashboard has no script block");
           for (const [index, script] of scripts.entries()) {
             try { new Function(script); }
