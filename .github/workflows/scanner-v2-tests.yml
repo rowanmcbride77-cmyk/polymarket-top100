@@ -25,5 +25,18 @@ jobs:
           node-version: 22
       - name: Check scanner entrypoint syntax
         run: node --check scanner-v2/run.js
+      - name: Check dashboard JavaScript syntax
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from "node:fs/promises";
+          const html = await fs.readFile("index.html", "utf8");
+          const scripts = [...html.matchAll(/<script(?:\\s[^>]*)?>([\\s\\S]*?)<\\/script>/gi)].map(match => match[1]);
+          if (!scripts.length) throw new Error("Dashboard has no script block");
+          for (const [index, script] of scripts.entries()) {
+            try { new Function(script); }
+            catch (error) { throw new Error("Dashboard script " + (index + 1) + ": " + error.message); }
+          }
+          console.log("Validated " + scripts.length + " dashboard script block(s).");
+          NODE
       - name: Run scanner unit tests
         run: node --test scanner-v2/*.test.js
