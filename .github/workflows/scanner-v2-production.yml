@@ -6,6 +6,9 @@ on:
     paths:
       - "scanner-v2/run.js"
       - "scanner-v2/data-api.js"
+      - "scanner-v2/consensus.js"
+      - "scanner-v2/resolution-data.js"
+      - "scanner-v2/gamma-api.js"
       - ".github/workflows/scanner-v2-production.yml"
   workflow_dispatch:
   schedule:
@@ -27,6 +30,8 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: 22
+      - name: Run scanner unit tests
+        run: node --test scanner-v2/*.test.js
       - name: Check scanner syntax
         run: node --check scanner-v2/run.js
       - name: Fetch Polymarket Top 100
@@ -37,8 +42,10 @@ jobs:
           import fs from "node:fs/promises";
           const status = JSON.parse(await fs.readFile("status.json", "utf8"));
           if (status.ok !== true || status.scannerVersion !== "settlement-v2") throw new Error("Scanner status failed");
+          if (status.windowDays !== 60 || status.consensusBuiltFromQualifiedTradersOnly !== true) throw new Error("Scanner must use the 60-day window and build consensus from qualified traders only.");
           for (const period of ["week", "month"]) {
             const data = JSON.parse(await fs.readFile(period + ".json", "utf8"));
+            if (data.qualification?.windowDays !== 60) throw new Error(period + ".json does not use the required 60-day qualification window");
             if (!Array.isArray(data.leaders) || data.leaders.length < 1 || data.leaders.length > 100) {
               throw new Error(period + ".json must contain 1-100 real Polymarket traders");
             }
@@ -48,10 +55,10 @@ jobs:
             }
             if (data.leaders.some(row => !Number.isFinite(row.pnl))) throw new Error(period + ".json has a trader without P&L");
             const unqualified = data.leaders.filter(row => row.recordComplete !== true || row.settlementRecordComplete !== true || !Number.isFinite(Number(row.wins)) || !Number.isFinite(Number(row.losses)) || !Number.isFinite(Number(row.resolvedMarkets)) || Number(row.resolvedMarkets) !== Number(row.wins) + Number(row.losses) || Number(row.resolvedMarkets) < 10 || !Number.isFinite(Number(row.winRate)) || Number(row.winRate) < 90);
-            if (unqualified.length) throw new Error(period + ".json contains " + unqualified.length + " rows without complete 30-day settlement qualification");
+            if (unqualified.length) throw new Error(period + ".json contains " + unqualified.length + " rows without complete 60-day settlement qualification");
             const consensus = JSON.parse(await fs.readFile("consensus-" + period + ".json", "utf8"));
-            if (!Array.isArray(consensus.consensus) || Number(consensus.diagnostics?.signals) !== consensus.consensus.length) {
-              throw new Error("Consensus placeholder is malformed");
+            if (!Array.isArray(consensus.consensus) || Number(consensus.diagnostics?.signals) !== consensus.consensus.length || !consensus.source?.includes("settlement-qualified leaderboard traders")) {
+              throw new Error("Consensus output is malformed or not built from qualified traders");
             }
           }
           if (Date.parse(status.generatedAt) <= Date.parse(status.startedAt)) throw new Error("Invalid generated timestamp");
