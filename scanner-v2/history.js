@@ -159,7 +159,7 @@ export function reconstructHeldAtResolution(activity, resolutionIndex, options =
 
 /**
  * Complete all-time activity is required to reconstruct pre-window inventory:
- * a token bought before the 30-day scoring window may still be held at a
+ * a token bought before the 60-day scoring window may still be held at a
  * resolution that occurred inside the window.
  */
 export async function getWalletSettlementRecord(wallet, options = {}) {
