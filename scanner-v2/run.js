@@ -1,9 +1,10 @@
 import fs from "node:fs/promises";
+import { buildConsensusSignals } from "./consensus.js";
 
 const DATA = "https://data-api.polymarket.com";
 const GAMMA = "https://gamma-api.polymarket.com";
 const startedAt = new Date().toISOString();
-const WINDOW_DAYS = 30;
+const WINDOW_DAYS = 60;
 const MIN_MARKETS = 10;
 const MIN_WIN_RATE = 90;
 const CANDIDATES_PER_PERIOD = 500;
@@ -285,7 +286,7 @@ const cutoffMs = Date.now() - WINDOW_DAYS * 86400000;
 const nowMs = Date.now();
 const cutoffSec = Math.floor(cutoffMs / 1000);
 const nowSec = Math.floor(nowMs / 1000);
-console.log("Settlement audit: " + candidates.length + " unique candidates; rolling 30-day window; max " + MAX_POSITION_PAGES + " pages per lifecycle cohort.");
+console.log("Settlement audit: " + candidates.length + " unique wallets sourced only from the top 500 weekly and top 500 monthly Polymarket P&L leaderboards; rolling 60-day window; max " + MAX_POSITION_PAGES + " pages per lifecycle cohort.");
 
 const audits = await mapLimit(candidates, CONCURRENCY, async trader => {
   try { return await auditWallet(trader.wallet, cutoffSec, nowSec); }
@@ -326,8 +327,13 @@ if (!weekLeaders.length || !monthLeaders.length) {
   throw new Error("Settlement qualification did not produce a non-empty Top 100 for both periods; previous published files preserved.");
 }
 
+const [weekConsensus, monthConsensus] = await Promise.all([
+  buildConsensusSignals(weekLeaders, { minimumHolders: 2, strongHolders: 8, horizonHours: 24, minimumEntryUsd: 10 }),
+  buildConsensusSignals(monthLeaders, { minimumHolders: 2, strongHolders: 8, horizonHours: 24, minimumEntryUsd: 10 })
+]);
+
 const finishedAt = new Date().toISOString();
-for (const [period, leaders] of [["week", weekLeaders], ["month", monthLeaders]]) {
+for (const [period, leaders, consensusResult] of [["week", weekLeaders, weekConsensus], ["month", monthLeaders, monthConsensus]]) {
   await fs.writeFile(period + ".json", JSON.stringify({
     generatedAt: finishedAt, period,
     source: "Polymarket Data API v2 leaderboard + verified Gamma settlement outcomes",
@@ -336,8 +342,10 @@ for (const [period, leaders] of [["week", weekLeaders], ["month", monthLeaders]]
   }, null, 2) + "\n");
   await fs.writeFile("consensus-" + period + ".json", JSON.stringify({
     generatedAt: finishedAt, period,
-    source: "Consensus scan is intentionally separate from settlement-qualified leaderboard",
-    consensus: [], diagnostics: { signals: 0 },
+    source: "Open Polymarket positions held by settlement-qualified leaderboard traders; same-token agreement; recent BUY activity verified; active sports, esports and crypto markets only.",
+    consensus: consensusResult.signals,
+    diagnostics: consensusResult.diagnostics,
+    qualification: { minimumHolders: 2, strongHolders: 8, horizonHours: 24, minimumEntryUsd: 10 },
     scannerVersion: "settlement-v2"
   }, null, 2) + "\n");
 }
@@ -352,6 +360,9 @@ const status = {
   marketMetadataConditions: allConditions.length,
   weekCandidates: weekCandidates.length, monthCandidates: monthCandidates.length,
   weekQualified: weekLeaders.length, monthQualified: monthLeaders.length,
+  weekConsensusSignals: weekConsensus.signals.length,
+  monthConsensusSignals: monthConsensus.signals.length,
+  consensusBuiltFromQualifiedTradersOnly: true,
   earlyExitsExcluded: true
 };
 await fs.writeFile("status.json", JSON.stringify(status, null, 2) + "\n");
