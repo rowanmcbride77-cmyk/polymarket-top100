@@ -1,0 +1,1889 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Polymarket Consensus Scanner</title>
+<style>
+:root {
+  color-scheme: dark;
+  --bg:#050b12; --panel:#091521; --border:#1b2b3b;
+  --text:#edf5ff; --muted:#8fa5bb; --blue:#2995ff;
+  --green:#00dfa0; --red:#ff637b;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:14px -apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif}
+button,select,input{font:inherit}
+button{cursor:pointer}
+header{display:flex;justify-content:space-between;align-items:center;gap:18px;padding:20px 28px;background:#070e17;border-bottom:1px solid var(--border)}
+.brand{display:flex;align-items:center;gap:13px}
+.logo{font-size:32px;color:var(--blue);font-weight:800}
+h1{margin:0;font-size:25px}
+h1 span{color:var(--blue)}
+h2{font-size:18px;margin:0}
+.subtitle{margin-top:5px;color:var(--muted)}
+.header-right{display:flex;align-items:center;gap:20px}
+.tabs{display:flex;gap:4px;padding:4px;background:#111e2c;border-radius:24px}
+.tabs button{border:0;background:transparent;color:#c5d4e5;padding:10px 22px;border-radius:22px}
+.tabs button.active{background:var(--blue);color:#fff}
+.updated{text-align:right;color:var(--muted);font-size:12px;line-height:1.7}
+.refresh-actions{display:flex;align-items:center;gap:7px;flex-wrap:wrap;justify-content:flex-end}
+.refresh-button{border:1px solid #275174;background:#10263a;color:#d9edff;padding:9px 12px;border-radius:8px;font-weight:650;white-space:nowrap;text-decoration:none}
+.refresh-button:hover{background:#163650;border-color:var(--blue)}
+.refresh-help{font-size:11px;color:var(--muted);max-width:220px;line-height:1.35;text-align:right}
+main{max-width:1900px;margin:auto;padding:22px 18px}
+.layout{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.4fr) minmax(0,.95fr);gap:18px;align-items:start}
+.column{display:flex;flex-direction:column;gap:18px;min-width:0}
+.panel{background:linear-gradient(145deg,#0a1521,#07101a);border:1px solid var(--border);border-radius:10px;padding:17px;min-width:0;overflow:hidden}
+.panel-heading{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:16px}
+.heading-left{display:flex;align-items:center;gap:9px;min-width:0}
+.heading-icon{font-size:21px}
+.pill{background:#142334;color:#c5d7eb;border-radius:20px;padding:6px 11px;font-size:12px;white-space:nowrap}
+.table-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;text-align:left}
+th{color:#9bb0c5;font-size:12px;font-weight:500;padding:9px 6px 12px;white-space:nowrap}
+td{padding:11px 6px;border-top:1px solid #142433;vertical-align:middle}
+.rank{color:#dce9f8}
+.trader-name{display:flex;align-items:center;gap:8px;min-width:0}
+.avatar{display:grid;place-items:center;flex-shrink:0;width:31px;height:31px;border-radius:50%;background:#142a40;color:#83c7ff;font-weight:800}
+.name-text{max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.trader-link{color:var(--text);background:none;border:0;padding:0;text-align:left}
+.trader-link:hover{color:var(--blue);text-decoration:underline}
+.positive{color:var(--green);font-weight:650;white-space:nowrap}
+.negative{color:var(--red);font-weight:650;white-space:nowrap}
+.money,.record{white-space:nowrap;font-variant-numeric:tabular-nums}
+.record{font-weight:650}
+.link-button{margin-top:12px;padding:5px 0;background:none;border:0;color:#36a7ff;font-weight:600}
+.link-button:hover{text-decoration:underline}
+.overview-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.metric-label{color:var(--muted);font-size:12px;margin-bottom:8px}
+.metric-value{font-size:18px;font-weight:750;overflow-wrap:anywhere}
+.source-note{margin-top:17px;color:var(--muted);font-size:12px;line-height:1.6}
+.filters{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 14px}
+.filters label{display:flex;align-items:center;gap:6px;color:var(--muted);font-size:12px}
+select,input{background:#101f2e;color:var(--text);border:1px solid #263c50;border-radius:7px;padding:8px}
+select{max-width:155px}
+.market-name{display:flex;align-items:center;gap:9px;min-width:170px}
+.market-symbol{flex-shrink:0;width:33px;height:33px;border-radius:50%;background:#142a40;display:grid;place-items:center;font-size:16px}
+.market-title{line-height:1.4;min-width:0}
+.side-tag{display:inline-block;padding:5px 8px;border-radius:7px;background:#07543f;color:#7df5c7;font-weight:700;font-size:12px}
+.side-tag.no{background:#55232f;color:#ffb4c1}
+.signal-section td{background:#102235;border-top:2px solid #31506b;padding:13px 8px;color:#e9f4ff}.signal-section strong{display:block;font-size:14px}.signal-section small{display:block;color:var(--muted);font-weight:400;margin-top:4px;line-height:1.45}.click-row{cursor:pointer}
+.click-row:hover td{background:#0e1c2a}
+.expand-row td{background:#0b1825;padding:14px}
+.expand-title{font-weight:700;margin-bottom:12px}
+.member-list{display:flex;flex-direction:column;gap:0}
+.member{display:grid;grid-template-columns:minmax(150px,1.6fr) minmax(90px,1fr) minmax(90px,1fr) minmax(100px,1fr);gap:14px;align-items:center;padding:10px 0;border-bottom:1px solid #203346}
+.member:last-child{border-bottom:0}
+.member-compact{grid-template-columns:minmax(150px,1.2fr) minmax(130px,1fr) minmax(130px,1fr)}
+.member-compact .member-identity{overflow-wrap:anywhere}
+.member small{display:block;color:var(--muted);margin-top:4px}
+.recent-list{display:flex;flex-direction:column}
+.trade{display:grid;grid-template-columns:32px minmax(0,1fr);gap:10px;padding:12px 0;border-bottom:1px solid #142433}
+.trade:last-child{border-bottom:0}
+.trade-title{line-height:1.45;margin-bottom:7px;overflow-wrap:anywhere}
+.trade-details{display:flex;flex-wrap:wrap;align-items:center;gap:7px}
+.trade-amount{font-size:15px;font-weight:750}
+.trade-user{color:var(--muted);font-size:12px;margin-top:5px}
+.trade-time{color:var(--muted);font-size:11px}
+.favorite-star{border:1px solid #34516b;background:#102131;color:#fbbf24;border-radius:7px;padding:2px 7px;margin-left:6px;cursor:pointer;font-size:14px;line-height:1.5;flex:0 0 auto}.favorite-star[aria-pressed="true"]{background:#473713;border-color:#d6a632}.favorite-trade{padding:10px 0;border-bottom:1px solid #203346;overflow-wrap:anywhere}.favorite-trade:last-child{border-bottom:0}.favorite-panel{min-width:0}.combo-card{padding:12px 0;border-bottom:1px solid #142433;cursor:pointer;min-width:0;max-width:100%;overflow-wrap:anywhere}.combo-card:last-child{border-bottom:0}.combo-title{font-weight:700;line-height:1.4;margin-bottom:6px;overflow-wrap:anywhere;word-break:normal;min-width:0;max-width:100%}.combo-meta{display:flex;flex-wrap:wrap;gap:7px;align-items:center;margin-top:7px;min-width:0;max-width:100%}.combo-legs{margin-top:10px;padding:10px;background:#0b1825;border-radius:8px;max-width:100%;min-width:0;overflow-wrap:anywhere}.combo-leg{padding:8px 0;border-bottom:1px solid #203346;line-height:1.45;overflow-wrap:anywhere}.combo-leg:last-child{border-bottom:0}.panel,.column,.layout{min-width:0}.panel *{max-width:100%}.combo-title,.combo-leg{white-space:normal}
+.empty,.loading{text-align:center;color:var(--muted);padding:22px 5px;line-height:1.6}
+.error{color:#ffb4c1;background:#321a24;border:1px solid #663344;padding:12px;border-radius:8px;margin-bottom:16px;line-height:1.5}
+footer{text-align:center;color:#71869b;font-size:12px;padding:25px}
+.combo-title{max-width:300px;white-space:normal;min-width:180px;font-size:12px;line-height:1.45}.combo-title{overflow-wrap:anywhere}
+.compact-details summary{cursor:pointer;font-weight:750;font-size:15px;list-style:none}.compact-details summary::-webkit-details-marker{display:none}.compact-details summary:after{content:"＋";float:right;color:var(--muted)}.compact-details[open] summary{margin-bottom:14px}.compact-details[open] summary:after{content:"−"}
+dialog{width:min(600px,calc(100% - 28px));max-height:85vh;overflow:auto;background:#091521;color:var(--text);border:1px solid #284158;border-radius:13px;padding:22px}
+dialog::backdrop{background:#000b}
+.profile-top{display:flex;align-items:center;gap:13px;margin-bottom:18px}
+.profile-top .avatar{width:48px;height:48px;font-size:18px}
+.profile-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.profile-stat{padding:13px;background:#102031;border-radius:8px;overflow-wrap:anywhere}
+.profile-stat small{display:block;color:var(--muted);margin-bottom:7px}
+.profile-trades{margin-top:18px}
+.profile-trade{padding:11px 0;border-top:1px solid var(--border);line-height:1.5}
+.close-button{float:right;border:0;background:#1b2c3c;color:white;padding:8px 12px;border-radius:7px}
+@media(max-width:1250px){.layout{grid-template-columns:1fr 1fr}.right-column{grid-column:1/-1}.right-column .recent-list{display:grid;grid-template-columns:1fr 1fr;column-gap:18px}}
+@media(max-width:760px){
+ header{padding:15px;align-items:flex-start;flex-direction:column}
+ .header-right{width:100%;justify-content:space-between;gap:8px}
+ main{padding:12px 9px}
+ .layout{grid-template-columns:1fr;gap:14px}
+ .right-column{grid-column:auto}
+ .right-column .recent-list{display:flex}
+ .panel{padding:13px}
+ .overview-grid{gap:7px}
+ .metric-value{font-size:15px}
+ .name-text{max-width:100px}
+ .member{grid-template-columns:minmax(90px,1fr) auto;gap:8px}
+ .member-compact{grid-template-columns:1fr 1fr;gap:8px}
+ .member-compact .member-identity{grid-column:1/-1}
+}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">
+    <div class="logo">◇</div>
+    <div>
+      <h1>Polymarket <span>Consensus Scanner</span></h1>
+      <div class="subtitle">Track the top traders. Follow the smart money.</div>
+    </div>
+  </div>
+  <div class="header-right">
+    <div class="tabs">
+      <button id="weekTab" class="active" onclick="selectPeriod('week')">Week</button>
+      <button id="monthTab" onclick="selectPeriod('month')">Month</button>
+    </div>
+    <div class="refresh-actions"><a class="refresh-button" href="https://github.com/rowanmcbride77-cmyk/polymarket-top100/actions/workflows/scanner-v2-production.yml" target="_blank" rel="noopener noreferrer" title="Opens GitHub Actions. Click Run workflow there to start a new data update.">↻ Run updater ↗</a><button class="refresh-button" id="reloadData" onclick="loadData(true)">Reload data</button><div><div class="updated">● Last updated<div id="updatedAt">Loading…</div></div></div></div>
+  </div>
+</header>
+
+<main>
+  <div id="errorBox"></div>
+
+  <div class="layout">
+    <div class="column">
+      <section class="panel favorite-panel">
+        <div class="panel-heading"><div class="heading-left"><span class="heading-icon">⭐</span><h2>Favorite Trader Activity</h2></div><span class="pill" id="favoriteCount">0 saved</span></div>
+        <div class="source-note">Star traders below. This feed checks recent BUY prints for up to 20 saved wallets about once a minute while this page is open. It is an alert feed, not automatic trade copying.</div>
+        <div id="favoriteFeed" class="recent-list"><div class="empty">Star a trader to start tracking new buys.</div></div>
+      </section>
+      <section class="panel">
+        <div class="panel-heading">
+          <div class="heading-left"><span class="heading-icon">🏆</span><h2>Top 100 Traders</h2></div>
+          <span class="pill" id="leaderPeriod">Week</span>
+        </div>
+        <div class="filters" style="margin:0 0 12px">
+          <label>Leaderboard <select id="leaderMode" onchange="renderLeaders()"><option value="all">All traders</option><option value="efficiency">High-return combos</option><option value="combos">Top weekly combo P&amp;L traders</option></select></label>
+        </div>
+        <div id="leaderModeNote" style="display:none"></div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr id="leaderHeader"><th>#</th><th>Trader</th><th>60-day settled wins–losses</th><th>60-day settlement accuracy</th><th>Period P&amp;L</th><th>Volume</th></tr></thead>
+            <tbody id="leadersBody"><tr><td colspan="6" class="loading">Loading traders…</td></tr></tbody>
+          </table>
+        </div>
+        <div class="source-note">Top 100 is ranked by selected-period Polymarket leaderboard P&L. The displayed 60-day record counts only verified resolved market outcomes. Top 100 and Strong Consensus require 10+ resolved markets. Both require 90%+ settlement accuracy. Early exits are excluded.</div>
+        <button class="link-button" id="leadersMore" onclick="toggleLeaders()">View all traders →</button>
+      </section>
+
+      <section class="panel">
+        <div class="panel-heading">
+          <div class="heading-left"><span class="heading-icon">▥</span><h2>Top 100 Overview</h2></div>
+        </div>
+        <div class="overview-grid">
+          <div><div class="metric-label">Total P&amp;L</div><div class="metric-value" id="totalPnl">—</div></div>
+          <div><div class="metric-label">Total Volume</div><div class="metric-value" id="totalVolume">—</div></div>
+          <div><div class="metric-label">Avg. 60-day Settlement Accuracy</div><div class="metric-value" id="avgWinRate">N/A</div></div>
+        </div>
+        </section>
+      <section class="panel">
+        <div class="panel-heading">
+          <div class="heading-left"><span class="heading-icon">🧪</span><h2>Copy-Signal Paper Test</h2></div>
+          <span class="pill" id="paperTestUpdated">Loading…</span>
+        </div>
+        <div class="overview-grid paper-test-grid">
+          <div><div class="metric-label">Tracked signals</div><div class="metric-value" id="paperSignals">—</div></div>
+          <div><div class="metric-label">Open / pending</div><div class="metric-value" id="paperPending">—</div></div>
+          <div><div class="metric-label">Resolved</div><div class="metric-value" id="paperResolved">—</div></div>
+          <div><div class="metric-label">Resolved win rate</div><div class="metric-value" id="paperWinRate">—</div></div>
+          <div><div class="metric-label">Hypothetical P&amp;L</div><div class="metric-value" id="paperPnl">—</div></div>
+          <div><div class="metric-label">New in 24 hours</div><div class="metric-value" id="paperFresh">—</div></div>
+        </div>
+        <div class="table-wrap" style="margin-top:12px">
+          <table>
+            <thead><tr><th>Category</th><th>Resolved</th><th>Win rate</th><th>Paper P&amp;L</th></tr></thead>
+            <tbody id="paperCategoryRows"><tr><td colspan="4" class="empty">Waiting for paper-test data…</td></tr></tbody>
+          </table>
+        </div>
+        <div class="source-note" id="paperTestNote">Tracks a hypothetical $10 entry at the first observed market price after qualifying trader activity. Unresolved signals are not counted as wins or losses; this is a research test, not verified live-trading performance.</div>
+      </section>
+    </div>
+
+    <div class="column">
+      <section class="panel">
+        <div class="panel-heading">
+          <div class="heading-left"><span class="heading-icon">👥</span><h2>Consensus Signals</h2></div>
+          <span class="pill" id="consensusPeriod">7-day records · open holdings</span>
+        </div>
+        
+        <div class="filters">
+          <label>Trader pool
+            <select id="consensusPool" onchange="loadConsensusData()">
+              <option value="month">Monthly traders</option>
+              <option value="week" selected>7-day trader records</option>
+            </select>
+          </label>
+          <label>Min. traders
+            <select id="minTraders" onchange="renderConsensus()">
+              <option value="2" selected>2+</option>
+              <option value="3">3+</option>
+              <option value="5">5+</option>
+              <option value="10">10+</option>
+              <option value="20">20+</option>
+              <option value="50">50+</option>
+              <option value="100">100+</option>
+            </select>
+          </label>
+          <label>Market window
+            <select id="recency" onchange="renderConsensus()">
+              <option value="48h" selected>Next 48 hours (sports) / 24 hours (other)</option>
+              
+              
+            </select>
+          </label>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>#</th><th>Market / Prop</th><th>Side</th><th>Traders</th><th>Combined Entry</th><th>Resolves</th></tr></thead>
+            <tbody id="consensusBody"><tr><td colspan="6" class="loading">Loading consensus markets…</td></tr></tbody>
+          </table>
+        </div>
+        <button class="link-button" id="consensusMore" onclick="toggleConsensus()">View all consensus markets →</button>
+      </section>
+    </div>
+
+    <div class="column right-column">
+      <section class="panel">
+        <div class="panel-heading"><div class="heading-left"><span class="heading-icon">🧩</span><h2>Polymarket Combos</h2></div><span class="pill">Live API</span></div>
+        
+        <div class="filters">
+          <label>Entry range <select id="minComboEntry" onchange="renderCombos()"><option value="25">$5–$25</option><option value="50">$5–$50</option><option value="100" selected>$5–$100</option></select></label>
+          <label>Minimum multiplier <select id="comboMultiplier" onchange="renderCombos()"><option value="5">5×+</option><option value="10" selected>10×+</option><option value="20">20×+</option><option value="50">50×+</option><option value="100">100×+</option><option value="200">200×+</option></select></label>
+          <label>Position <select id="comboStatus" disabled><option value="held" selected>Active only</option></select></label>
+          <label>Event timing <select id="comboTiming" onchange="renderCombos()"><option value="all" selected>Any timing</option><option value="upcoming">Not started yet</option><option value="unknown">Timing unknown</option><option value="started">Already started</option></select></label>
+        </div>
+        <button class="refresh-button" id="loadCombosButton" onclick="loadComboPositions()">Load combo data (separate scan)</button>
+        <div id="comboList" class="recent-list"><div class="empty">Combo scanning is paused so the leaderboard and consensus dashboard can load first. Select “Load combo data” to scan trader wallets.</div></div>
+        <button class="link-button" id="comboMore" onclick="toggleCombos()" style="display:none">View more combos →</button>
+      </section>
+    </div>
+  </div>
+  <footer>Polymarket Consensus Scanner · Data from Polymarket public APIs</footer>
+</main>
+
+<dialog id="profileDialog">
+  <button class="close-button" onclick="closeProfile()">Close ✕</button>
+  <div id="profileContent"></div>
+</dialog>
+
+<script>
+"use strict";
+
+const FILES = { week: "week.json", month: "month.json" };
+const CONSENSUS_FILES = { week: "consensus-week.json", month: "consensus-month.json" };
+let period = "week";
+let data = null;
+let consensusData = null;
+let allLeaders = true;
+let allMarkets = true;
+let allCombos = false;
+let comboRows = [];
+let comboLoadFinished = false;
+let comboLoadStarted = false;
+let forwardTradesByMarket = new Map();
+const expandedCombos = new Set();
+const comboActivityCache = new Map();
+const traderAliases = new Map();
+let loading = false;
+let loadSequence = 0;
+const expandedMarkets = new Set();
+const consensusMemberCache = new Map();
+const closedPositionState = new Map();
+const expandedClosedMarkets = new Set();
+
+const $ = id => document.getElementById(id);
+
+function num(value) {
+  if (value === null || value === undefined || value === "") return null;
+  const result = Number(value);
+  return Number.isFinite(result) ? result : null;
+}
+
+function esc(value) {
+  return String(value ?? "").replace(/[&<>"']/g, char => ({
+    "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;"
+  })[char]);
+}
+
+function cash(value) {
+  const n = num(value);
+  if (n === null) return "N/A";
+  return new Intl.NumberFormat("en-US", {
+    style:"currency",
+    currency:"USD",
+    notation:Math.abs(n) >= 1000000 ? "compact" : "standard",
+    maximumFractionDigits:Math.abs(n) < 100 ? 2 : 0
+  }).format(n);
+}
+function consensusCash(value) {
+  const n = num(value);
+  if (n === null) return "N/A";
+  if (n > 0 && n < 0.01) return "$" + n.toFixed(4);
+  if (n > 0 && n < 1) return "$" + n.toFixed(3);
+  return cash(n);
+}
+function tokenPrice(value) {
+  const n = num(value);
+  if (n === null || n <= 0 || n > 1) return "N/A";
+  return (n * 100).toFixed(2) + "¢";
+}
+
+function nameOf(trader) {
+  const raw = String(trader?.name || trader?.username || trader?.userName || trader?.pseudonym || "").trim();
+  if (!raw) return "Unknown Trader";
+  // Only replace wallet/code-like IDs; preserve normal usernames.
+  const compact = raw.replace(/^@/, "").replace(/[^a-z0-9]/gi, "");
+  const codeLike = /^0x[a-f0-9]{40}$/i.test(raw) ||
+    (/^[a-f0-9]{18,}$/i.test(compact) && /[0-9]/.test(compact) && /[a-f]/i.test(compact)) ||
+    (/^[a-z0-9_-]{20,}$/i.test(raw) && /[0-9]/.test(raw) && /[a-z]/i.test(raw));
+  if (!codeLike) return raw;
+  const wallet = walletOf(trader);
+  const index = rankedLeaders().findIndex(item => wallet && walletOf(item) === wallet);
+  return index >= 0 ? "Trader " + (index + 1) : "Trader";
+}
+function walletOf(trader) {
+  return String(trader?.wallet || trader?.proxyWallet || "").toLowerCase();
+}
+
+function recordOf(trader) {
+  // Only the current 60-day verified-settlement dataset may be shown as W/L or accuracy.
+  // Positions exited before resolution are excluded from this settlement record.
+  if (Number(data?.qualification?.windowDays) !== 60) return null;
+  if (trader?.recordComplete !== true || trader?.settlementRecordComplete !== true) return null;
+  const wins = num(trader?.settlementWins ?? trader?.wins);
+  const losses = num(trader?.settlementLosses ?? trader?.losses);
+  const resolved = num(trader?.resolvedMarkets);
+  const publishedRate = num(trader?.winRate);
+  const basis = String(trader?.recordBasis || "").toLowerCase();
+  if (wins === null || losses === null || resolved === null || wins < 0 || losses < 0 ||
+      resolved !== wins + losses || resolved < 10 ||
+      !basis.includes("settlement-only") || !basis.includes("excluded")) return null;
+  const rate = wins / resolved * 100;
+  if (publishedRate === null || Math.abs(publishedRate - rate) > 1e-6 || rate < 90) return null;
+  return {wins, losses, total:resolved, rate, verified:true, basis:"verified-settlement-only"};
+}
+
+function recordText(trader) {
+  const record = recordOf(trader);
+  return record ? `${record.wins}–${record.losses}` : "N/A";
+}
+
+function avatar(trader) {
+  const initials = nameOf(trader).replace(/^@/, "").slice(0, 2).toUpperCase();
+  return `<span class="avatar">${esc(initials)}</span>`;
+}
+
+function favoriteWallets() {
+  try { const v=JSON.parse(localStorage.getItem("polymarketFavoriteWallets")||"[]"); return [...new Set((Array.isArray(v)?v:[]).map(x=>String(x).toLowerCase()).filter(x=>/^0x[a-f0-9]{40}$/i.test(x)))].slice(0,20); } catch { return []; }
+}
+function isFavorite(wallet) { return favoriteWallets().includes(String(wallet||"").toLowerCase()); }
+function favoriteButton(wallet) {
+  const w=String(wallet||"").toLowerCase(); if(!/^0x[a-f0-9]{40}$/i.test(w)) return "";
+  const saved=isFavorite(w);
+  return '<button class="favorite-star" title="'+(saved?"Remove favorite":"Favorite trader")+'" aria-pressed="'+saved+'" onclick="event.stopPropagation();toggleFavorite(\''+w+'\')">'+(saved?"★":"☆")+'</button>';
+}
+function toggleFavorite(wallet) {
+  const w=String(wallet||"").toLowerCase(); if(!/^0x[a-f0-9]{40}$/i.test(w)) return;
+  let a=favoriteWallets(); if(a.includes(w)) a=a.filter(x=>x!==w); else if(a.length<20) a.push(w); else { alert("You can save up to 20 favorite traders."); return; }
+  try { localStorage.setItem("polymarketFavoriteWallets",JSON.stringify(a)); } catch {}
+  renderLeaders(); renderConsensus(); renderCombos(); renderFavoriteFeed();
+}
+function profileButton(trader, label = nameOf(trader), walletOverride = "") {
+  const wallet = walletOf(trader) || String(walletOverride || "").toLowerCase();
+  if (!/^0x[a-f0-9]{40}$/i.test(wallet)) return `<span>${esc(label)}</span>`;
+  return `<button class="trader-link" onclick="openProfile('${wallet}')">${esc(label)}</button>`;
+}
+
+function timestamp(value) {
+  let n = num(value);
+  if (n === null && typeof value === "string") {
+    const parsed = Date.parse(value);
+    if (Number.isFinite(parsed)) n = parsed / 1000;
+  }
+  if (n === null || n <= 0) return null;
+  if (n > 1e12) n /= 1000;
+  return n;
+}
+
+function relative(value) {
+  const n = timestamp(value);
+  if (!n) return "Time unavailable";
+  const seconds = Math.max(0, Math.floor(Date.now() / 1000 - n));
+  if (seconds < 60) return `${seconds}s ago`;
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+  return `${Math.floor(seconds / 86400)}d ago`;
+}
+function timeUntil(value) {
+  const n = typeof value === "number" ? value : timestamp(value);
+  if (!n) return "Time unavailable";
+  const delta = Math.floor(n - Date.now() / 1000);
+  if (delta >= 0) {
+    if (delta < 60) return "in under 1m";
+    if (delta < 3600) return `in ${Math.ceil(delta / 60)}m`;
+    if (delta < 86400) return `in ${Math.ceil(delta / 3600)}h`;
+    return `in ${Math.ceil(delta / 86400)}d`;
+  }
+  const elapsed = -delta;
+  if (elapsed < 60) return "under 1m overdue";
+  if (elapsed < 3600) return `${Math.floor(elapsed / 60)}m overdue`;
+  if (elapsed < 86400) return `${Math.floor(elapsed / 3600)}h overdue`;
+  return `${Math.floor(elapsed / 86400)}d overdue`;
+}
+
+function dateText(value) {
+  const n = timestamp(value);
+  return n ? new Date(n * 1000).toLocaleString() : "Unavailable";
+}
+
+function leaders() {
+  return Array.isArray(data?.leaders) ? data.leaders : [];
+}
+
+function activePositions(trader) {
+  const direct = trader?.activePositions || trader?.positions;
+  if (Array.isArray(direct)) return direct;
+
+  const wallet = walletOf(trader);
+  const mapped = wallet && data?.traderActivePositions
+    ? data.traderActivePositions[wallet]
+    : null;
+  return Array.isArray(mapped) ? mapped : [];
+}
+
+function trades() {
+  const list = Array.isArray(data?.recentBuys) ? data.recentBuys :
+    Array.isArray(data?.recentTrades) ? data.recentTrades : null;
+  if (list) return list;
+
+  const activity = data?.traderActiveTrades;
+  if (!activity || typeof activity !== "object") return [];
+
+  const names = new Map(leaders().map(trader => [
+    walletOf(trader),
+    nameOf(trader)
+  ]));
+  const ranks = new Map(leaders().map(trader => [
+    walletOf(trader),
+    trader.rank
+  ]));
+
+  return Object.entries(activity).flatMap(([wallet, rows]) =>
+    (Array.isArray(rows) ? rows : []).map(trade => ({
+      ...trade,
+      wallet,
+      traderName: names.get(wallet) || "Top trader",
+      traderRank: ranks.get(wallet),
+      timestamp: trade.buyTime ?? trade.timestamp ?? trade.createdAt ?? trade.time,
+      amount: trade.amount ?? trade.usdcSize ?? trade.value ?? trade.size,
+      title: trade.title || trade.market || trade.question || "Untitled market",
+      side: trade.outcome || trade.side || "BUY"
+    }))
+  ).sort((a, b) =>
+    (timestamp(b.timestamp) ?? 0) - (timestamp(a.timestamp) ?? 0)
+  );
+}
+
+function consensus() {
+  const rows = Array.isArray(consensusData?.consensus) ? consensusData.consensus :
+    Array.isArray(consensusData?.consensusMarkets) ? consensusData.consensusMarkets : [];
+  const valid = rows.map(market => {
+    const traders = Array.isArray(market.traders) ? market.traders :
+      Array.isArray(market.members) ? market.members : [];
+    const condition = String(market.conditionId || "").trim().toLowerCase();
+    const side = String(market.side || market.outcome || "").trim().toLowerCase();
+    const wallets = traders.map(trader => walletOf(trader)).filter(Boolean);
+    const uniqueWallets = new Set(wallets);
+    const qualificationWindowDays = Number(consensusData?.qualificationWindowDays ?? consensusData?.qualification?.windowDays);
+    const verifiedTraders = traders.every(trader => {
+      const wins = num(trader?.settlementWins ?? trader?.wins);
+      const losses = num(trader?.settlementLosses ?? trader?.losses);
+      const resolved = num(trader?.resolvedMarkets);
+      const rate = num(trader?.winRate);
+      const basis = String(trader?.recordBasis || "").toLowerCase();
+      return trader?.qualified === true &&
+        trader?.recordComplete === true &&
+        trader?.settlementRecordComplete === true &&
+        String(trader?.side || "").trim().toLowerCase() === side &&
+        wins !== null && losses !== null && resolved === wins + losses && resolved >= 10 &&
+        rate !== null && rate >= 90 && Math.abs(rate - wins / resolved * 100) <= 1e-6 &&
+        basis.includes("settlement-only") && basis.includes("excluded");
+    });
+    const sameSide = num(market?.sameSide) ?? traders.length;
+    return {
+      ...market, traders, sameSide,
+      qualifiedTraders:traders.filter(trader => trader?.qualified === true).length,
+      _validatedCondition:condition, _validatedSide:side,
+      _settlementValid:qualificationWindowDays === 60 && market.signalTier === "Strong Signals" &&
+        market.marketMetadataVerified === true && market.marketClosed === false &&
+        Boolean(condition && side) && traders.length >= 2 &&
+        uniqueWallets.size === traders.length && sameSide === traders.length &&
+        wallets.length === traders.length && verifiedTraders
+    };
+  }).filter(market => market._settlementValid);
+  // Fail closed if a condition has duplicate groups or qualified holders on
+  // more than one outcome side. The dashboard never counts either side then.
+  const byCondition = new Map();
+  for (const market of valid) {
+    const group = byCondition.get(market._validatedCondition) || [];
+    group.push(market);
+    byCondition.set(market._validatedCondition, group);
+  }
+  return valid.filter(market => {
+    const groups = byCondition.get(market._validatedCondition) || [];
+    return groups.length === 1 && groups[0]._validatedSide === market._validatedSide;
+  }).map(market => {
+    const {_validatedCondition, _validatedSide, _settlementValid, ...clean} = market;
+    return clean;
+  });
+}
+
+async function loadConsensusData() {
+  const pool = $("consensusPool").value;
+  $("consensusBody").innerHTML = `<tr><td colspan="7" class="loading">Loading ${esc(pool)} consensus markets…</td></tr>`;
+  $("consensusPeriod").textContent = "1K-wallet discovery · Strong Signals require 10+ resolved markets and 90%+ settlement accuracy over 60 days; recent BUY within 60 minutes; early exits excluded";
+  const filename = CONSENSUS_FILES[pool];
+  try {
+    const urls = [filename + "?t=" + Date.now()];
+    // Read the deployed Pages copy so the visible dashboard timestamp matches
+    // the data actually served to visitors.
+    let loaded = null;
+    let lastError = null;
+    for (const url of urls) {
+      try {
+        const response = await fetch(url, {cache:"no-store", signal:AbortSignal.timeout(20000)});
+        if (!response.ok) throw new Error("HTTP " + response.status);
+        const parsed = await response.json();
+        if (parsed && Array.isArray(parsed.consensus) && Number.isFinite(Date.parse(parsed.generatedAt || ""))) {
+          loaded = parsed;
+          break;
+        }
+      } catch (error) { lastError = error; }
+    }
+    if (!loaded) throw lastError || new Error(filename + " is not available yet.");
+    consensusData = loaded;
+    renderConsensus();
+    $("consensusPeriod").textContent = `Strong Signals: 90%+ 60-day settlement accuracy · ${Number(consensusData?.minimumResolvedMarkets) || 10}+ resolved markets · early exits excluded`;
+  } catch (error) {
+    consensusData = {consensus:[]};
+    $("consensusBody").innerHTML = `<tr><td colspan="7" class="empty">${esc(error.message)}</td></tr>`;
+  }
+}
+
+function traderCount(market) {
+  const members = market?.traders || market?.members || [];
+  return num(market?.sameSide) ?? num(market?.traderCount ?? market?.tradersCount ?? market?.count) ??
+    (Array.isArray(members) ? members.length : 0);
+}
+
+function marketTitle(market) {
+  return market?.title || market?.market || market?.question || market?.name || "Untitled market";
+}
+
+function marketSide(market) {
+  return market?.side || market?.outcome || market?.position || "Unknown";
+}
+
+function marketAmount(market) {
+  const entry = num(market?.totalEntry);
+  return entry !== null && entry > 0 ? entry : null;
+}
+
+function marketTime(market) {
+  return market?.latestBuyAt ?? market?.latestActivityAt ?? market?.newestBuy ?? market?.lastEventAt ??
+    market?.timestamp ?? market?.updatedAt ?? null;
+}
+
+function marketEndTime(market) {
+  return market?.endDate ?? market?.end_date ?? market?.endDateIso ?? market?.endDateISO ?? market?.end_date_iso ?? market?.resolveTime ?? market?.resolve_time ?? market?.endTime ?? market?.end_time ?? null;
+}
+
+function marketEndTimestamp(market) {
+  const value = marketEndTime(market);
+  // The scanner treats date-only Polymarket end dates as the end of that UTC
+  // calendar day. Match that rule here instead of Date.parse("YYYY-MM-DD"),
+  // which incorrectly interprets the date as midnight and hides live markets.
+  if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value.trim())) {
+    const parsed = Date.parse(value.trim() + "T23:59:59.999Z");
+    return Number.isFinite(parsed) ? parsed / 1000 : null;
+  }
+  return timestamp(value);
+}
+
+function marketKey(market, index) {
+  return String(market?.conditionId || market?.marketId || market?.slug ||
+    `${marketTitle(market)}-${marketSide(market)}-${index}`);
+}
+
+function rankedLeaders() {
+  return [...leaders()]
+    // Enforce the requested period-profit ranking in the browser too. Never
+    // trust a stale API rank or a close-count sort when actual P&L is present.
+    .sort((a, b) => {
+      const ap = num(a.pnl), bp = num(b.pnl);
+      if (ap !== null && bp !== null && ap !== bp) return bp - ap;
+      if (ap !== null && bp === null) return -1;
+      if (ap === null && bp !== null) return 1;
+      return (num(a.rank) ?? 99999) - (num(b.rank) ?? 99999);
+    })
+    .slice(0, 1000)
+    .map((trader, index) => ({...trader, displayRank:index + 1}));
+}
+
+function comboEntryCost(combo) {
+  // Prefer net remaining cost basis; if the API reports zero/missing after a
+  // close or merge, use observed split/merge cash flows before gross cost.
+  const net = num(combo?.entry_cost_usdc);
+  if (net !== null && net > 0) return net;
+  const activity = num(combo?._activityEntryCost);
+  if (activity !== null && activity > 0) return activity;
+  const gross = num(combo?.gross_entry_cost_usdc);
+  return gross !== null && gross > 0 ? gross : null;
+}
+function comboPayout(combo) {
+  const status = String(combo?.status || "").toUpperCase();
+  const direct = num(combo?.realized_payout_usdc);
+  const activity = num(combo?._activityPayout);
+  // A resolved win with a zero-valued position field but a positive REDEEM event
+  // must show the actual cash redemption rather than the stale zero.
+  const terminal = ["RESOLVED_WIN","RESOLVED_LOSS","RESOLVED_PARTIAL"].includes(status);
+  // An active position's zero realized payout is not its potential payout.
+  if (!terminal) return activity !== null && activity > 0 ? activity : null;
+  if (!(direct > 0) && activity > 0) return activity;
+  return direct !== null ? direct : activity;
+}
+function comboResolvedMs(combo) {
+  const status = String(combo?.status || "").toUpperCase();
+  const terminal = ["RESOLVED_WIN","RESOLVED_LOSS","RESOLVED_PARTIAL"].includes(status);
+  const candidates = [combo?.resolved_at, combo?.resolvedAt, combo?._activityResolvedAt];
+  for (const value of candidates) {
+    if (value === null || value === undefined || value === "") continue;
+    const n = Number(value);
+    const ms = Number.isFinite(n) ? (n < 1e12 ? n * 1000 : n) : Date.parse(String(value));
+    if (Number.isFinite(ms) && ms > 0) return ms;
+  }
+  const legTimes = (Array.isArray(combo?.legs) ? combo.legs : [])
+    .map(leg => leg?.leg_resolved_at ? Date.parse(String(leg.leg_resolved_at)) : NaN).filter(Number.isFinite);
+  return terminal && legTimes.length ? Math.max(...legTimes) : null;
+}
+function comboProfitRows() {
+  const now = Date.now(), weekAgo = now - 7 * 24 * 60 * 60 * 1000;
+  const byWallet = new Map(), seenCombos = new Set();
+  for (const combo of comboRows) {
+    const wallet = String(combo._wallet || walletOf(combo._trader || {})).toLowerCase();
+    const status = String(combo.status || "").toUpperCase();
+    const comboId = String(combo.combo_position_id || combo.combo_condition_id || "");
+    const ts = comboResolvedMs(combo);
+    // This view is strictly a rolling 7-day report: exclude combos resolved
+    // outside the week before counting wins, losses, partials, or profit.
+    if (!wallet || !comboId || ts === null || ts < weekAgo || ts > now ||
+        !["RESOLVED_WIN","RESOLVED_LOSS","RESOLVED_PARTIAL"].includes(status)) continue;
+    const entry = comboEntryCost(combo);
+    // Keep the weekly report on the same $5 minimum as the combo feed.
+    if (entry === null || entry < 5) continue;
+    const uniqueKey = wallet + ":" + comboId;
+    if (seenCombos.has(uniqueKey)) continue;
+    seenCombos.add(uniqueKey);
+    const current = byWallet.get(wallet) || {
+      wallet, trader:combo._trader || {}, profit:0, combos:0, wins:0, losses:0,
+      partial:0, volume:0, pnlKnown:0, pnlMissing:0, weeklyCombos:0
+    };
+    current.combos++;
+    current.weeklyCombos++;
+    if (status === "RESOLVED_WIN") current.wins++;
+    else if (status === "RESOLVED_LOSS") current.losses++;
+    else current.partial++;
+
+    const payout = comboPayout(combo);
+    if (payout !== null) {
+      current.profit += payout - entry;
+      current.volume += entry;
+      current.pnlKnown++;
+    } else current.pnlMissing++;
+    byWallet.set(wallet,current);
+  }
+  // This is a profit leaderboard, not a list of everyone who placed a combo.
+  // Only include traders whose full weekly entry and payout totals are known
+  // and whose net realized combo P&L is strictly positive. Exclude partial
+  // accounting and losing/negative rows rather than filling the Top 100 with them.
+  return [...byWallet.values()]
+    .filter(row => row.combos > 0 && row.pnlMissing === 0 &&
+      row.pnlKnown === row.combos && Number.isFinite(row.profit) && row.profit > 0)
+    .sort((a,b) => b.profit-a.profit || b.wins-a.wins || b.weeklyCombos-a.weeklyCombos)
+    .slice(0,100)
+    .map((row,index)=>({...row,displayRank:index+1}));
+}
+function comboEfficiencyRows() {
+  // Upcoming, still-open combos only. current_size is shares; a winning binary combo share pays $1.
+  const seen = new Set(), rows = [];
+  for (const combo of comboRows) {
+    const wallet = String(combo._wallet || walletOf(combo._trader || {})).toLowerCase();
+    const id = String(combo.combo_position_id || combo.combo_condition_id || "");
+    const status = String(combo.status || "").toUpperCase();
+    const held = ["OPEN","REDEEMABLE","PARTIAL"].includes(status);
+    const timing = comboTimingState(combo);
+    const timingLegs = Array.isArray(combo.legs) ? combo.legs : [];
+    const noLegResolved = timingLegs.length > 0 && timingLegs.every(leg => {
+      const legStatus = String(leg.leg_status || "").toUpperCase();
+      return !leg.leg_resolved_at && !legStatus.startsWith("RESOLV") && legStatus !== "CLOSED";
+    });
+    const entry = comboEntryCost(combo);
+    const shares = num(combo.current_size);
+    const payout = shares !== null && shares > 0 ? shares : null;
+    const key = wallet + ":" + id;
+    const traderRecord = comboTraderRecord(wallet);
+    // Minimum $5 actual entry; cap at $100 and require >=25% settled combo win rate over a minimum sample.
+    if (!wallet || !id || seen.has(key) || !held || (timing.key !== "upcoming" && !(timing.key === "unknown" && noLegResolved)) || entry === null || entry < 5 || entry > 100 || payout === null || payout <= entry || traderRecord.resolved < 4 || traderRecord.rate === null || traderRecord.rate < 25) continue;
+    seen.add(key);
+    const profit = payout - entry;
+    const legs = Array.isArray(combo.legs) ? combo.legs : [];
+    const title = legs.map(leg => {
+      const m = leg.market || {};
+      return (m.question || m.title || m.event?.event_title || "Combo leg") + " — " + (leg.leg_outcome_label || m.outcome || "");
+    }).filter(Boolean).join(" · ");
+    rows.push({wallet, trader:combo._trader || {}, entry, payout, profit, multiple:payout/entry, roi:profit/entry*100, title, comboId:id, timingLabel:timing.label});
+  }
+  return rows.sort((a,b) => b.multiple-a.multiple || b.profit-a.profit);
+}
+function renderLeaders() {
+  const mode = $("leaderMode")?.value || "all";
+  const comboMode = mode === "combos";
+  const efficiencyMode = mode === "efficiency";
+  const baseList = rankedLeaders();
+  // The scanner publishes the canonical selected-period P&L Top 100.
+  // Do not apply a second qualification filter in the browser.
+  // Only verified resolved market outcomes are published as the 30-day W/L record.
+  const qualifiedLeaderboard = baseList
+    .filter(trader => num(trader.pnl ?? trader.profit) !== null && recordOf(trader) !== null)
+    .slice(0, 100)
+    .map((trader, index) => ({ ...trader, displayRank: index + 1 }));
+  const list = comboMode ? comboProfitRows() : efficiencyMode ? comboEfficiencyRows() : qualifiedLeaderboard;
+  const visible = allLeaders ? list : list.slice(0, 10);
+  $("leaderModeNote").textContent = !comboMode && !efficiencyMode ? "Selected-period P&L leaderboard restricted to traders with complete 60-day settlement records, 10+ resolved markets, and 90%+ settlement accuracy. Early exits are excluded." : efficiencyMode ? "Active combos only · each entry is $5–$100 · trader must have at least 4 settled combos in the last 7 days and a combo win rate of at least 25%. Payout is estimated from shares and entry cost; no guaranteed returns." : comboMode ? "Top 100 traders with strictly positive, fully reconciled net combo P&L from combos resolved in the rolling last 7 days. Every counted combo has at least $5 entry and a known entry cost and realized payout. Losing traders and rows with incomplete payout data are excluded rather than shown as profitable. Market wins–losses, weekly market P&L, and volume are separate market-only stats." : "";
+  $("leaderHeader").innerHTML = comboMode
+    ? " <th>#</th><th>Trader</th><th>Weekly combo wins</th><th>Weekly combo losses</th><th>Weekly partial</th><th>Combo win rate</th><th>Weekly combo net P&amp;L</th><th>P&amp;L coverage</th><th>Weekly market wins–losses</th><th>Weekly market P&amp;L</th><th>Market volume</th>"
+    : efficiencyMode
+      ? "<th>#</th><th>Trader</th><th>Upcoming combo</th><th>Entry</th><th>Est. payout</th><th>Est. profit</th><th>Est. return</th>"
+      : "<th>#</th><th>Trader</th><th>60-day settled wins–losses</th><th>60-day settlement accuracy</th><th>" + (period === "week" ? "7-day P&amp;L" : "30-day P&amp;L") + "</th><th>Volume</th>";
+  $("leadersBody").innerHTML = visible.length ? visible.map((trader,index) => {
+    if (comboMode) {
+      // Combo traders are not necessarily in the visible Top 100 market leaderboard.
+      // Match against the full period candidate pool so their market stats don't
+      // disappear merely because they rank below #100.
+      const marketPool = Array.isArray(data?.comboCandidates) ? data.comboCandidates : [];
+      const marketTrader = marketPool.find(row => walletOf(row).toLowerCase() === String(trader.wallet).toLowerCase()) ||
+        baseList.find(row => walletOf(row).toLowerCase() === String(trader.wallet).toLowerCase());
+      const marketWins = marketTrader?.settlementRecordComplete === true ? num(marketTrader?.settlementWins ?? marketTrader?.wins) : null;
+      const marketLosses = marketTrader?.settlementRecordComplete === true ? num(marketTrader?.settlementLosses ?? marketTrader?.losses) : null;
+      const marketRecordSuffix = marketTrader?.settlementRecordComplete === false ? "+" : "";
+      const marketPnl = num(marketTrader?.pnl ?? marketTrader?.profit), marketVolume = num(marketTrader?.volume ?? marketTrader?.vol);
+      return `<tr><td class="rank">${index+1}</td><td><div class="trader-name">${avatar(trader.trader)}<span class="name-text">${profileButton({...trader.trader, wallet:trader.wallet}, nameOf(trader.trader))}</span>${favoriteButton(trader.wallet)}</div></td><td class="record">${trader.wins}</td><td class="record">${trader.losses}</td><td class="record">${trader.partial}</td><td class="record">${(trader.wins + trader.losses) ? (trader.wins / (trader.wins + trader.losses) * 100).toFixed(1) + "%" : "N/A"}</td><td class="${trader.pnlKnown && trader.profit < 0 ? "negative" : "positive"}">${trader.pnlKnown ? (trader.pnlMissing ? "Partial: " : "") + (trader.profit > 0 ? "+" : "") + cash(trader.profit) : "N/A"}</td><td class="record">${trader.pnlKnown}/${trader.combos} combos</td><td class="record">${marketWins !== null && marketLosses !== null ? marketWins + marketRecordSuffix + "–" + marketLosses + marketRecordSuffix : "N/A"}</td><td class="${marketPnl !== null && marketPnl < 0 ? "negative" : "positive"}">${marketPnl !== null ? cash(marketPnl) : "N/A"}</td><td class="money">${marketVolume !== null ? cash(marketVolume) : "N/A"}</td></tr>`;
+    }
+    if (efficiencyMode) return `<tr><td class="rank">${index+1}</td><td><div class="trader-name">${avatar(trader.trader)}<span class="name-text">${profileButton({...trader.trader, wallet:trader.wallet}, nameOf(trader.trader))}</span>${favoriteButton(trader.wallet)}</div></td><td class="combo-title" title="${esc(trader.title || "Combo details unavailable")}">${esc(trader.title || "Combo details unavailable")}<br><small class="subtitle">${esc(trader.timingLabel || "Start time unverified")}</small></td><td class="money">${cash(trader.entry)}</td><td class="money">${cash(trader.payout)}</td><td class="positive">~${cash(trader.profit)}</td><td class="record">~${trader.multiple.toFixed(1)}×</td></tr>`;
+    const pnl = num(trader.pnl ?? trader.profit), volume = num(trader.volume ?? trader.vol), pnlClass = pnl !== null && pnl < 0 ? "negative" : "positive";
+    return `<tr><td class="rank">${trader.displayRank}</td><td><div class="trader-name">${avatar(trader)}<span class="name-text">${profileButton(trader)}</span>${favoriteButton(walletOf(trader))}</div></td><td class="record">${recordText(trader)}</td><td class="record">${recordOf(trader)?.rate == null ? "N/A" : recordOf(trader).rate.toFixed(1) + "%"}</td><td class="${pnlClass}">${pnl === null ? "N/A" : (pnl > 0 ? "+" : "") + cash(pnl)}</td><td class="money">${cash(volume)}</td></tr>`;
+  }).join("") : `<tr><td colspan="${comboMode || efficiencyMode ? 7 : 6}" class="empty">${comboMode ? (comboLoadFinished ? "No traders cleared the $100 minimum in fully reconciled net combo profit for the last 7 days." : "Scanning combo positions…") : efficiencyMode ? (comboLoadFinished ? "No open combos with a positive estimated return and no resolved legs were found in the checked traders." : "Scanning combo positions…") : "No ranked traders were returned for this period."}</td></tr>`;
+  $("leadersMore").textContent = allLeaders ? "Show fewer ↑" : "View all traders →";
+  $("leadersMore").style.display = list.length > 10 ? "inline-block" : "none";
+  const overviewList = comboMode ? list : efficiencyMode ? [] : qualifiedLeaderboard;
+  const pnlTotal = comboMode || efficiencyMode ? overviewList.reduce((sum,row)=>sum+row.profit,0) : overviewList.reduce((sum,trader)=>sum+(num(trader.pnl ?? trader.profit)??0),0);
+  const volumeTotal = comboMode ? overviewList.reduce((sum,row)=>sum+row.volume,0) : efficiencyMode ? overviewList.reduce((sum,row)=>sum+row.entry,0) : overviewList.reduce((sum,trader)=>sum+(num(trader.volume ?? trader.vol)??0),0);
+  const records = efficiencyMode ? [] : overviewList.map(recordOf).filter(record => record && record.rate !== null);
+  $("totalPnl").textContent = cash(pnlTotal);
+  $("totalPnl").className = "metric-value " + (pnlTotal < 0 ? "negative" : "positive");
+  $("totalVolume").textContent = cash(volumeTotal);
+  $("avgWinRate").textContent = comboMode || efficiencyMode ? "N/A" : records.length ? (records.reduce((sum,record)=>sum+record.rate,0)/records.length).toFixed(1)+"%" : "N/A";
+}
+
+function renderSportsLeaders() {
+  const rows = Array.isArray(data?.sportsLeaders) ? data.sportsLeaders : [];
+  const body = $("sportsLeadersBody");
+  if (!body) return;
+  body.innerHTML = rows.length ? rows.slice(0, 25).map((trader, index) => {
+    const settlementVerified = trader.settlementRecordComplete === true &&
+      String(trader.recordBasis || "").toLowerCase().includes("settlement-only");
+    const wins = settlementVerified ? num(trader.sportsWins) : null;
+    const losses = settlementVerified ? num(trader.sportsLosses) : null;
+    const rate = settlementVerified ? num(trader.sportsWinRate) : null;
+    const sample = settlementVerified ? num(trader.sportsResolvedMarkets) : null;
+    return '<tr><td class="rank">' + (index + 1) + '</td><td><div class="trader-name">' + avatar(trader) + '<span class="name-text">' + profileButton(trader) + '</span></div></td><td class="record">' + (wins === null || losses === null ? 'N/A' : wins + '–' + losses) + '</td><td class="record">' + (rate === null ? 'N/A' : rate.toFixed(1) + '%') + '</td><td>' + (sample === null ? 'N/A' : sample) + '</td></tr>';
+  }).join('') : '<tr><td colspan="5" class="empty">Sports discovery rows are not independently settlement-audited; verified W/L and accuracy are withheld.</td></tr>';
+}
+
+const consensusTradeCache = new Map();
+const consensusTradePending = new Map();
+
+async function loadConsensusTradeHistory(wallet, conditionId, outcome) {
+  const cacheKey = [String(wallet || "").toLowerCase(), String(conditionId || "").toLowerCase(), String(outcome || "").toLowerCase()].join("|");
+  if (consensusTradeCache.has(cacheKey)) return consensusTradeCache.get(cacheKey);
+  if (consensusTradePending.has(cacheKey)) return consensusTradePending.get(cacheKey);
+
+  const pending = (async () => {
+    if (!wallet || !conditionId) {
+      consensusTradeCache.set(cacheKey, []);
+      return [];
+    }
+    const fetchRows = async (withMarket) => {
+      const params = new URLSearchParams({ user: wallet, limit: withMarket ? "100" : "500" });
+      if (withMarket) params.set("market", conditionId);
+      const response = await fetch("https://data-api.polymarket.com/trades?" + params.toString(), { cache: "no-store" });
+      if (!response.ok) throw new Error("Trade history HTTP " + response.status);
+      const payload = await response.json();
+      return Array.isArray(payload) ? payload : [];
+    };
+    let rows = [];
+    try {
+      rows = await fetchRows(true);
+      rows = rows.filter(row => {
+        const id = String(row.conditionId || row.condition_id || row.market || "").toLowerCase();
+        return !id || id === String(conditionId).toLowerCase();
+      });
+      if (!rows.length) {
+        const allRows = await fetchRows(false);
+        rows = allRows.filter(row => String(row.conditionId || row.condition_id || row.market || "").toLowerCase() === String(conditionId).toLowerCase());
+      }
+    } catch (error) {
+      console.warn("Consensus trader trade history unavailable", wallet, conditionId, error);
+    }
+    const wantedOutcome = String(outcome || "").trim().toLowerCase();
+    const mapped = rows.map(row => {
+      const price = num(row.price);
+      const shares = num(row.size ?? row.shares);
+      const amount = num(row.usdcSize ?? row.usdc_size ?? row.amount);
+      return {
+        ...row,
+        wallet: String(row.proxyWallet || row.wallet || row.user || wallet).toLowerCase(),
+        side: String(row.side || "").toUpperCase(),
+        outcome: row.outcome || row.outcome_name || "",
+        timestamp: row.timestamp ?? row.createdAt ?? row.time,
+        _price: price,
+        _shares: shares,
+        _cost: amount !== null ? amount : (price !== null && shares !== null ? price * shares : null),
+        _currentPrice: null
+      };
+    }).filter(row => {
+      const rowOutcome = String(row.outcome || "").trim().toLowerCase();
+      return (!wantedOutcome || !rowOutcome || rowOutcome === wantedOutcome) && ["BUY", "SELL"].includes(row.side);
+    }).sort((a, b) => (timestamp(b.timestamp) || 0) - (timestamp(a.timestamp) || 0));
+    consensusTradeCache.set(cacheKey, mapped);
+    return mapped;
+  })().finally(() => consensusTradePending.delete(cacheKey));
+  consensusTradePending.set(cacheKey, pending);
+  return pending;
+}
+
+function renderConsensus() {
+  const minCount = Number($("minTraders").value || 2);
+  const qualificationDays = Number(consensusData?.qualificationWindowDays ?? consensusData?.qualification?.windowDays) || 60;
+  const qualificationCloses = Number(consensusData?.minimumResolvedMarkets) || 10;
+  const filteredSides = consensus().map((market, index) => {
+      const endSeconds = marketEndTimestamp(market);
+      return {...market, _index:index, _endSeconds:endSeconds};
+    })
+    // Show every market the scanner has verified as currently active and open.
+    // Do not hide started games, missing/estimated end dates, or markets outside
+    // an arbitrary 24/48-hour resolution window.
+    .filter(market =>
+      market.marketMetadataVerified === true &&
+      market.marketClosed === false &&
+      traderCount(market) >= minCount)
+    .sort((a, b) =>
+      (["Strong Signals","Developing Signals","Watchlist"].indexOf(a.signalTier) - ["Strong Signals","Developing Signals","Watchlist"].indexOf(b.signalTier)) ||
+      (({sports:0, esports:1, other:2, crypto:3, weather:4, politics:5, government:6}[String(a.category || "other").toLowerCase()] ?? 7) -
+       ({sports:0, esports:1, other:2, crypto:3, weather:4, politics:5, government:6}[String(b.category || "other").toLowerCase()] ?? 7)) ||
+      (num(b.consensusScore) ?? 0) - (num(a.consensusScore) ?? 0) ||
+      traderCount(b) - traderCount(a) ||
+      (marketAmount(b) ?? -1) - (marketAmount(a) ?? -1) ||
+      a._endSeconds - b._endSeconds);
+
+  // A Polymarket condition is one market, even when separate groups have
+  // consensus on opposite outcomes. Merge those outcome rows into one display
+  // row; keep each side's qualified count and trader history distinct.
+  const marketGroups = new Map();
+  for (const market of filteredSides) {
+    const id = String(market.conditionId || market.marketId || market.slug || market._index) + "|" + String(marketSide(market)).trim().toLowerCase();
+    if (!marketGroups.has(id)) marketGroups.set(id, []);
+    marketGroups.get(id).push(market);
+  }
+  const filtered = [...marketGroups.values()].map(group => {
+    const primary = group[0];
+    const sideSignals = group.map(item => ({
+      side: String(marketSide(item)),
+      count: traderCount(item),
+      entry: marketAmount(item),
+      tier: item.signalTier
+    }));
+    const members = [];
+    const seen = new Set();
+    for (const item of group) {
+      for (const trader of (Array.isArray(item.traders) ? item.traders : [])) {
+        const wallet = walletOf(trader);
+        const sideKey = String(trader.side || marketSide(item)).toLowerCase();
+        const key = (wallet || JSON.stringify(trader)) + "|" + sideKey;
+        if (!seen.has(key)) {
+          seen.add(key);
+          members.push({...trader, side:trader.side || marketSide(item)});
+        }
+      }
+    }
+    return {
+      ...primary,
+      sideSignals,
+      traders:members,
+      sameSide:members.length,
+      totalValue:group.reduce((sum,item)=>sum+(num(item.totalValue)??0),0),
+      totalEntry:group.reduce((sum,item)=>sum+(num(item.totalEntry)??0),0),
+      signalTier:group.some(item=>item.signalTier==="Strong Signals")?"Strong Signals":primary.signalTier,
+      _index:primary._index
+    };
+  }).filter(market => market.sideSignals.reduce((sum,side)=>sum+side.count,0) >= minCount);
+
+  const tierSections = [
+    {title:"Strong Signals", note:`Every listed trader has 10+ resolved markets and a 90%+ win rate over the last 60 days; recent BUY within 60 minutes; early exits excluded.`, rows:filtered.filter(m => m.signalTier === "Strong Signals")},
+    {title:"Developing Signals", note:`Developing Signals are disabled; only holders passing the 10-market / 90% settlement-only threshold are shown as Strong Signals.`, rows:filtered.filter(m => m.signalTier === "Developing Signals")},
+    {title:"Watchlist", note:"2+ distinct wallets hold the same outcome, but historical qualification is incomplete or below the Developing threshold.", rows:filtered.filter(m => m.signalTier === "Watchlist")}
+  ];
+  const visible = tierSections.flatMap(section =>
+    (allMarkets ? section.rows : section.rows.slice(0, 10)).map((market, index) => ({
+      ...market,
+      _sectionHeader: index === 0 ? section.title : null,
+      _sectionNote: section.note
+    }))
+  );
+  const hasMoreMarkets = tierSections.some(section => section.rows.length > 10);
+
+  $("consensusBody").innerHTML = visible.length ? visible.map((market, index) => {
+    const key = marketKey(market, market._index);
+    const side = String(marketSide(market));
+    const sideSignals = Array.isArray(market.sideSignals) ? market.sideSignals : [{side,count:traderCount(market)}];
+    const sideMarkup = sideSignals.map(signal => {
+      const cls = String(signal.side).toLowerCase() === "no" ? "side-tag no" : "side-tag";
+      return `<span class="${cls}">${esc(signal.side)} · ${signal.count}</span>`;
+    }).join(" ");
+
+    const members = (Array.isArray(market.traders) ? market.traders :
+      Array.isArray(market.members) ? market.members : []);
+    const expanded = expandedMarkets.has(key);
+    const count = traderCount(market);
+    const time = marketTime(market);
+    const amount = marketAmount(market);
+    const buyPreview = members.slice(0, 3).map(member => {
+      const label = member.name || member.username || member.userName || "Trader";
+      return esc(label + ": " + tokenPrice(member.avgPrice ?? member.averagePrice ?? member.avg_price));
+    }).join(" · ");
+    const buyPreviewHtml = buyPreview
+      ? `<small class="subtitle">Avg. buy: ${buyPreview}${members.length > 3 ? " · +" + (members.length - 3) + " more" : ""}</small>`
+      : "";
+
+    // Some markets have hundreds of holders. Load trade detail for only five
+    // members and batch the refresh instead of rebuilding the whole table per wallet.
+    if (expanded && market.conditionId) {
+      const historyTargets = members.slice(0, 5).filter(member => {
+        const wallet = walletOf(member);
+        const cacheKey = [String(wallet).toLowerCase(), String(market.conditionId).toLowerCase(), String(side).toLowerCase()].join("|");
+        return wallet && !consensusTradeCache.has(cacheKey) && !consensusTradePending.has(cacheKey);
+      });
+      const pendingHistory = historyTargets.map(member =>
+        loadConsensusTradeHistory(walletOf(member), market.conditionId, member.side || side)
+      );
+      if (pendingHistory.length && !market._historyRefreshQueued) {
+        market._historyRefreshQueued = true;
+        Promise.all(pendingHistory).then(() => {
+          market._historyRefreshQueued = false;
+          renderConsensus();
+        }).catch(() => { market._historyRefreshQueued = false; });
+      }
+    }
+    const sectionHeader = market._sectionHeader ? `<tr class="signal-section"><td colspan="6"><strong>${esc(market._sectionHeader)}</strong><small>${esc(market._sectionNote)}</small></td></tr>` : "";
+    const row = `<tr class="click-row" onclick="toggleMarket('${esc(key)}')">
+      <td>${index + 1}</td>
+      <td><div class="market-name"><span class="market-symbol">◈</span><span class="market-title">${esc(marketTitle(market))}</span></div>${buyPreviewHtml}</td>
+      <td>${sideMarkup}</td>
+      <td><strong>${sideSignals.map(signal => `${esc(signal.side)}: ${signal.count}`).join(" · ")} qualified</strong></td>
+      <td class="money">${consensusCash(amount)}${num(amount) !== null && amount > 0 && amount < 1 ? '<small class="subtitle">Under $1 total entry</small>' : ''}</td>
+      <td title="${esc(market.endTimeBasis === "estimated_game_finish" ? "Estimated game finish: four hours after kickoff" : (market._endSeconds ? new Date(market._endSeconds * 1000).toLocaleString() : "Unavailable"))}">${esc(timeUntil(market._endSeconds))}${market.endTimeBasis === "estimated_game_finish" ? '<small class="subtitle">Estimated game finish</small>' : ''}</td>
+    </tr>`;
+
+    const detail = expanded ? `<tr class="expand-row"><td colspan="6">
+      <div class="expand-title">Current open holdings · ${count}</div>
+      ${members.length ? `<div class="member-list">${members.slice(0, 25).map(member => {
+        const memberName = member.name || member.username || member.userName || "Trader";
+        const wallet = walletOf(member);
+        if (wallet) consensusMemberCache.set(wallet, member);
+        const memberSide = String(member.side || side);
+        const key = [String(wallet || "").toLowerCase(), String(market.conditionId || "").toLowerCase(), memberSide.toLowerCase()].join("|");
+        const events = consensusTradeCache.get(key);
+        const matchedEvents = (events || []).filter(t => !t.outcome || String(t.outcome).trim().toLowerCase() === memberSide.trim().toLowerCase());
+        const buy = matchedEvents.find(t => String(t.side || "").toUpperCase() === "BUY");
+        const sell = matchedEvents.find(t => String(t.side || "").toUpperCase() === "SELL" && (!buy || (timestamp(t.timestamp)||0) > (timestamp(buy.timestamp)||0)));
+        // The consensus scan is built from live position records. Keep those
+        // reported entry fields as a fallback when the separate trade feed
+        // omits or delays the corresponding print for a wallet/condition.
+        const memberEntryRaw = num(member.entryValue ?? member.amount);
+        const memberEntry = memberEntryRaw !== null && memberEntryRaw > 0 ? memberEntryRaw : null;
+        const memberValue = num(member.currentValue);
+        const reportedAvgPriceRaw = num(member.avgPrice ?? member.averagePrice ?? member.avg_price);
+        const reportedAvgPrice = reportedAvgPriceRaw !== null && reportedAvgPriceRaw > 0 && reportedAvgPriceRaw <= 1 ? reportedAvgPriceRaw : null;
+        const hasObservedBuy = !!buy;
+        const buyPriceRaw = buy?._price ?? reportedAvgPrice;
+        const buyPrice = buyPriceRaw !== null && buyPriceRaw !== undefined && buyPriceRaw > 0 && buyPriceRaw <= 1 ? buyPriceRaw : null;
+        const shares = buy?._shares ?? num(member.shares ?? member.size);
+        const bought = buy?._cost ?? (reportedAvgPrice !== null && shares !== null && shares > 0 ? reportedAvgPrice * shares : memberEntry);
+        const buyTime = buy?.timestamp ?? member.buyTime ?? member.firstEntryAt ?? member.first_entry_at ?? member.lastEventAt;
+        const hasReportedEntry = !buy && reportedAvgPrice !== null;
+        const sellCost = sell?._cost;
+        return '<div class="member member-compact">' +
+          '<div class="member-identity"><strong>' + profileButton(member, memberName) + favoriteButton(wallet) + '</strong><small class="member-record">' + (Number(consensusData?.qualificationWindowDays) || 30) + "-day settlement-only record: " + (member.settlementRecordComplete === true && String(member.recordBasis || "").toLowerCase().includes("settlement-only") && num(member.settlementWins ?? member.wins) !== null && num(member.settlementLosses ?? member.losses) !== null ? num(member.settlementWins ?? member.wins).toLocaleString() + "–" + num(member.settlementLosses ?? member.losses).toLocaleString() + " · " + (num(member.winRate) !== null ? num(member.winRate).toFixed(1) + "% settlement accuracy" : "settlement accuracy N/A") + " · " + (num(member.resolvedMarkets) ?? (num(member.settlementWins ?? member.wins)+num(member.settlementLosses ?? member.losses))).toLocaleString() + " resolved markets" : "Verified settlement record incomplete / unavailable") + '</small><small>' + (num(member.weeklyPnl) !== null ? "7-day leaderboard P&L: " + consensusCash(num(member.weeklyPnl)) : "7-day leaderboard P&L unavailable") + '</small><small>' + (hasObservedBuy ? "Observed BUY · "+esc(dateText(buy?.timestamp)) : "Open position confirmed · original BUY timestamp not required") + '</small><small>' + (sell ? "SELL observed · "+esc(dateText(sell.timestamp)) : (!events ? "Checking later SELL trades…" : (member.isStillHolding === true || String(member.positionStatus || "").toUpperCase() === "OPEN" ? "Still listed as an open position; no SELL required" : "No matching SELL found in returned trade history"))) + '</small></div>' +
+          '<div><strong>' + (buyPrice === null ? "N/A" : tokenPrice(buyPrice)) + '</strong><small>' + (hasObservedBuy ? "Observed BUY price" : (reportedAvgPrice !== null ? "Average buy price from open position" : "Average buy price unavailable")) + '</small><small>' + (bought === null || bought === undefined ? (memberEntry !== null ? "Reported position entry value "+consensusCash(memberEntry)+" · exact trade cost unavailable" : "Entry cost unavailable; no matching BUY trade found") : (hasObservedBuy ? "Observed BUY / position entry "+consensusCash(bought) : "Reported position entry "+consensusCash(bought))+(shares !== null ? " · "+shares.toFixed(1)+" shares" : "")) + '</small>' + (bought !== null && memberValue !== null ? '<small>' + (buy ? "Approx. unrealized change: " : "Approx. change vs estimated entry: ") + (memberValue-bought>0?"+":"") + consensusCash(memberValue-bought) + " (" + (bought>0?((memberValue-bought)/bought*100).toFixed(1):"N/A") + "%)" + '</small>' : "") + '</div>' +
+          '<div><strong>' + (sell && sell._price !== null ? (sell._price*100).toFixed(1)+"¢" : "—") + '</strong><small>Observed sell price</small><small>' + (sell ? "SELL transaction "+(sellCost === null ? "amount unavailable" : cash(sellCost)) : (!events ? "Loading transaction history" : "No matching SELL found")) + '</small><small>' + (memberValue !== null ? "Position value reported "+consensusCash(memberValue) : "Current held value unavailable") + '</small></div>' +
+        '</div>';
+      }).join("")}</div>${members.length > 25 ? '<div class="source-note">Showing the first 25 of ' + members.length.toLocaleString() + ' holders to keep the dashboard responsive.</div>' : ''}` : `<div class="empty">No trader-level position details were supplied for this market.</div>`}
+    </td></tr>` : "";
+
+    return sectionHeader + row + detail;
+  }).join("") : `<tr><td colspan="6" class="empty">No market with 2+ distinct same-side holders was found in the current time window.</td></tr>`;
+
+  $("consensusMore").textContent = allMarkets ? "Show fewer ↑" : "View all consensus markets →";
+  $("consensusMore").style.display = hasMoreMarkets ? "inline-block" : "none";
+}
+
+async function loadComboPositions() {
+  if (comboLoadStarted) return;
+  comboLoadStarted = true;
+  const loadButton = $("loadCombosButton");
+  if (loadButton) { loadButton.disabled = true; loadButton.textContent = "Scanning combo wallets…"; }
+  // Scan a broader leaderboard-derived wallet pool. Combo endpoints are user-anchored;
+  // this is broader coverage, not a claim to enumerate every Polymarket wallet.
+  const source = Array.isArray(data?.comboCandidates) && data.comboCandidates.length
+    ? data.comboCandidates
+    : rankedLeaders();
+  const seenWallets = new Set();
+  const candidates = source.filter(t => {
+    const wallet = walletOf(t);
+    if (!/^0x[a-f0-9]{40}$/i.test(wallet) || seenWallets.has(wallet)) return false;
+    seenWallets.add(wallet);
+    return true;
+  }).slice(0, 1000);
+
+  traderAliases.clear();
+  candidates.forEach((t, i) => traderAliases.set(walletOf(t).toLowerCase(), "Trader " + (i + 1)));
+  comboRows = [];
+  comboLoadFinished = false;
+  if (!candidates.length) {
+    $("comboList").innerHTML = '<div class="empty">No valid trader wallets were found in the loaded leaderboard.</div>';
+    comboLoadFinished = true;
+    if (loadButton) { loadButton.disabled = false; loadButton.textContent = "Retry combo scan"; }
+    comboLoadStarted = false;
+    return;
+  }
+  $("comboList").innerHTML = '<div class="loading">Checking actual combo positions for ' + candidates.length + ' traders…</div>';
+  let next = 0, completed = 0, failed = 0;
+  const terminal = new Set(["RESOLVED_WIN", "RESOLVED_LOSS", "RESOLVED_PARTIAL"]);
+
+  async function fetchComboPages(baseUrl, maxPages = 3) {
+    const all = [], seenIds = new Set();
+    let cursor = null;
+    for (let pageNo = 0; pageNo < maxPages; pageNo++) {
+      const url = baseUrl + (baseUrl.includes("?") ? "&" : "?") + "limit=1000" +
+        (cursor ? "&cursor=" + encodeURIComponent(cursor) : "");
+      const response = await fetch(url, {cache:"no-store", signal:AbortSignal.timeout(12000)});
+      if (!response.ok) throw new Error("Combo API HTTP " + response.status);
+      const json = await response.json();
+      const rows = Array.isArray(json?.data) ? json.data : Array.isArray(json?.combos) ? json.combos : Array.isArray(json) ? json : [];
+      for (const row of rows) {
+        const id = String(row.combo_position_id || row.combo_condition_id || "");
+        if (!id) continue;
+        if (!seenIds.has(id)) { seenIds.add(id); all.push(row); }
+      }
+      cursor = json?.pagination?.next_cursor || null;
+      if (!json?.pagination?.has_more || !cursor || !rows.length) break;
+    }
+    return all;
+  }
+
+  const worker = async () => {
+    while (next < candidates.length) {
+      const trader = candidates[next++], wallet = walletOf(trader);
+      try {
+        const root = "https://data-api.polymarket.com/v2/positions/combos?user=" + encodeURIComponent(wallet);
+        const [heldResult, closedResult] = await Promise.allSettled([
+          fetchComboPages(root + "&sort_by=UPDATED&sort_direction=DESC", 2),
+          fetchComboPages(root + "&status=RESOLVED_WIN,RESOLVED_LOSS,RESOLVED_PARTIAL&sort_by=UPDATED&sort_direction=DESC", 2)
+        ]);
+        let rows = [];
+        if (heldResult.status === "fulfilled") rows.push(...heldResult.value);
+        if (closedResult.status === "fulfilled") rows.push(...closedResult.value);
+        if (heldResult.status === "rejected" && closedResult.status === "rejected") {
+          // Legacy endpoint is a last-resort compatibility path.
+          const legacy = await fetch("https://data-api.polymarket.com/v1/positions/combos?user=" + encodeURIComponent(wallet) + "&limit=500", {
+            cache:"no-store", signal:AbortSignal.timeout(12000)
+          });
+          if (legacy.ok) {
+            const lj = await legacy.json();
+            rows.push(...(Array.isArray(lj?.data) ? lj.data : Array.isArray(lj?.combos) ? lj.combos : Array.isArray(lj) ? lj : []));
+          } else failed++;
+        }
+        const unique = new Map();
+        for (const row of rows) {
+          const id = String(row.combo_position_id || row.combo_condition_id || "");
+          if (id) unique.set(id, row);
+        }
+        rows = [...unique.values()];
+
+        const needsActivity = rows.some(combo =>
+          comboEntryCost(combo) === null ||
+          (terminal.has(String(combo.status || "").toUpperCase()) && num(combo.realized_payout_usdc) === null)
+        );
+        const activityById = new Map();
+        if (needsActivity) {
+          try {
+            let activityCursor = null, activityPages = 0;
+            while (activityPages < 10) {
+              const activityUrl = "https://data-api.polymarket.com/v2/activity/combos?user=" +
+                encodeURIComponent(wallet) + "&limit=1000" +
+                (activityCursor ? "&cursor=" + encodeURIComponent(activityCursor) : "");
+              const ar = await fetch(activityUrl, {
+                cache:"no-store", signal:AbortSignal.timeout(12000)
+              });
+              if (!ar.ok) break;
+              const aj = await ar.json();
+              const events = Array.isArray(aj?.data) ? aj.data : Array.isArray(aj) ? aj : [];
+              activityPages++;
+              for (const event of events) {
+                const id = String(event.combo_position_id || "");
+                if (!id) continue;
+                const rec = activityById.get(id) || {entry:0,payout:0,hasEntry:false,hasPayout:false,resolvedAt:null,legs:event.legs || []};
+                const type = String(event.type || "").toUpperCase();
+                const amount = num(event.amount_usdc), payout = num(event.payout_usdc);
+                if (type === "SPLIT" && amount !== null) { rec.entry += amount; rec.hasEntry = true; }
+                if (type === "MERGE" && amount !== null) { rec.entry -= amount; rec.hasEntry = true; }
+                if (type === "REDEEM" && payout !== null) { rec.payout += payout; rec.hasPayout = true; rec.resolvedAt = event.timestamp ?? rec.resolvedAt; }
+                if (!rec.legs?.length && event.legs) rec.legs = event.legs;
+                activityById.set(id, rec);
+              }
+              activityCursor = aj?.pagination?.next_cursor || null;
+              if (aj?.pagination?.has_more !== true || !activityCursor || !events.length) break;
+            }
+          } catch (error) { console.warn("Combo activity unavailable for " + wallet + ": " + error.message); }
+        }
+        for (const combo of rows) {
+          const activity = activityById.get(String(combo.combo_position_id || ""));
+          comboRows.push({
+            ...combo,
+            _activityEntryCost: (num(combo.entry_cost_usdc) > 0 ? num(combo.entry_cost_usdc) : null) ??
+              (activity?.hasEntry && activity.entry > 0 ? activity.entry : null) ??
+              (num(combo.gross_entry_cost_usdc) > 0 ? num(combo.gross_entry_cost_usdc) : null),
+            _activityPayout: num(combo.realized_payout_usdc) ?? (activity?.hasPayout ? activity.payout : null),
+            _activityResolvedAt: activity?.resolvedAt ?? null,
+            legs: Array.isArray(combo.legs) && combo.legs.length ? combo.legs : (activity?.legs || []),
+            _trader: trader,
+            _wallet: wallet
+          });
+        }
+      } catch (error) {
+        failed++;
+        console.warn("Combo lookup failed for " + wallet + ": " + error.message);
+      }
+      completed++;
+      if (completed % 50 === 0 || completed === candidates.length) {
+        comboRecordSummaryCache = null;
+        $("comboList").innerHTML = '<div class="loading">Checked ' + completed + ' of ' + candidates.length +
+          ' traders · ' + comboRows.length + ' combo records found…</div>';
+        if (($( "leaderMode")?.value || "all") === "combos") renderLeaders();
+        renderCombos();
+      }
+    }
+  };
+  // Keep the full 1,000-wallet coverage, but limit concurrent API traffic so the dashboard stays responsive.
+  await Promise.all(Array.from({length:4}, () => worker()));
+  // De-duplicate overlapping held/resolved responses by wallet + position ID.
+  const uniqueRows = new Map();
+  for (const combo of comboRows) {
+    const id = String(combo.combo_position_id || combo.combo_condition_id || "");
+    const key = String(combo._wallet || walletOf(combo._trader || {})).toLowerCase() + ":" + id;
+    if (id) uniqueRows.set(key, combo);
+  }
+  comboRows = [...uniqueRows.values()];
+  comboRecordSummaryCache = null;
+  comboLoadFinished = true;
+  renderCombos();
+  renderLeaders();
+  if (!comboRows.length) {
+    $("comboList").innerHTML = '<div class="empty">No combo positions were returned for the ' + candidates.length +
+      ' wallets scanned. ' + failed + ' wallet lookups failed. This is an API coverage result, not proof that Polymarket has no combos.</div>';
+  }
+  comboLoadStarted = false;
+  if (loadButton) { loadButton.disabled = false; loadButton.textContent = "Refresh combo data"; }
+}
+
+function comboLegStartMs(leg) {
+  const market = leg?.market || {}, event = market?.event || {};
+  const candidates = [
+    market.game_start_time, market.gameStartTime, market.start_time, market.startTime,
+    market.event_start_time, market.eventStartTime, market.start_date, market.startDate,
+    event.game_start_time, event.gameStartTime, event.start_time, event.startTime,
+    event.start_date, event.startDate, event.date
+  ];
+  for (const value of candidates) {
+    if (value === null || value === undefined || value === "") continue;
+    const numeric = typeof value === "number" || /^\d+(\.\d+)?$/.test(String(value).trim())
+      ? Number(value) : NaN;
+    const parsed = Number.isFinite(numeric)
+      ? (numeric < 1e12 ? numeric * 1000 : numeric)
+      : Date.parse(String(value));
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return null;
+}
+function comboTimingState(combo) {
+  const legs = Array.isArray(combo.legs) ? combo.legs : [];
+  if (!legs.length) return {key:"unknown", label:"Start time not supplied by source"};
+  const starts = legs.map(comboLegStartMs);
+  if (starts.some(value => value === null)) return {key:"unknown", label:"Start time not supplied by source"};
+  const now = Date.now();
+  if (starts.some(value => value <= now)) return {key:"started", label:"At least one event started"};
+  return {key:"upcoming", label:"All events not started"};
+}
+
+function comboPotentialPayout(combo) {
+  // Polymarket v2 documents current_size as combo shares and entry_cost_usdc
+  // as USD. A winning binary combo share pays $1, so use shares as payout.
+  // Do NOT trust undocumented potential/max payout fields: they can be on a
+  // different scale and have caused inflated multipliers (e.g. 261x vs ~5x).
+  const shares = num(combo?.current_size);
+  return shares !== null && shares > 0 ? shares : null;
+}
+function comboMultiplier(combo) {
+  const entry = comboEntryCost(combo);
+  if (entry === null || entry <= 0) return null;
+  const status = String(combo.status || "").toUpperCase();
+  const terminal = ["RESOLVED_WIN","RESOLVED_LOSS","RESOLVED_PARTIAL"].includes(status);
+  const payout = terminal ? comboPayout(combo) : comboPotentialPayout(combo);
+  return payout !== null && payout >= 0 ? payout / entry : null;
+}
+let comboRecordSummaryCache = null;
+function comboTraderRecord(wallet) {
+  // Cache the rolling 7-day results once per batch. Previously every combo
+  // card rescanned the full combo array, causing quadratic work/freezing.
+  if (!comboRecordSummaryCache) {
+    const now = Date.now(), cutoff = now - 7 * 24 * 60 * 60 * 1000;
+    const byWallet = new Map(), seen = new Set();
+    for (const combo of comboRows) {
+      const w = String(combo._wallet || walletOf(combo._trader || {})).toLowerCase();
+      const id = String(combo.combo_position_id || combo.combo_condition_id || "");
+      const key = w + ":" + id;
+      if (!w || !id || seen.has(key)) continue;
+      const status = String(combo.status || "").toUpperCase();
+      if (!["RESOLVED_WIN","RESOLVED_LOSS","RESOLVED_PARTIAL"].includes(status)) continue;
+      const resolvedAt = comboResolvedMs(combo), entry = comboEntryCost(combo);
+      if (resolvedAt === null || resolvedAt < cutoff || resolvedAt > now || entry === null || entry < 5) continue;
+      seen.add(key);
+      const record = byWallet.get(w) || {wins:0,losses:0,partial:0};
+      if (status === "RESOLVED_WIN") record.wins++;
+      else if (status === "RESOLVED_LOSS") record.losses++;
+      else record.partial++;
+      byWallet.set(w, record);
+    }
+    comboRecordSummaryCache = new Map();
+    for (const [w, record] of byWallet) {
+      const resolved = record.wins + record.losses;
+      comboRecordSummaryCache.set(w, {...record,resolved,rate:resolved ? record.wins/resolved*100 : null});
+    }
+  }
+  return comboRecordSummaryCache.get(String(wallet || "").toLowerCase()) || {wins:0,losses:0,partial:0,resolved:0,rate:null};
+}
+function renderCombos() {
+  const container = $("comboList"); if (!container) return;
+  if (!comboLoadFinished && !comboRows.length) { if (!container.innerHTML.includes("Checking combo positions")) container.innerHTML = '<div class="loading">Loading actual combo positions…</div>'; return; }
+  const maximum = Number($("minComboEntry")?.value || 100), minMultiplier = Number($("comboMultiplier")?.value || 10);
+  const timingFilter = $("comboTiming")?.value || "all";
+  const rows = comboRows.filter(combo => {
+    const status = String(combo.status || "").toUpperCase(), entry = comboEntryCost(combo), multiplier = comboMultiplier(combo);
+    const held = ["OPEN","REDEEMABLE","PARTIAL"].includes(status) || (!status && (num(combo.current_size) ?? 0) > 0);
+    const timing = comboTimingState(combo);
+    // Only show active combos with a reliable positive entry in the requested $5–$100 range.
+    // Resolved wins/losses belong in history, not the live combo opportunity feed.
+    return held && entry !== null && entry >= 5 && entry <= Math.min(100, maximum) &&
+      multiplier !== null && multiplier >= minMultiplier &&
+      (timingFilter === "all" || timing.key === timingFilter);
+  }).sort((a,b) => (comboMultiplier(b) ?? -Infinity) - (comboMultiplier(a) ?? -Infinity) ||
+    (comboEntryCost(a) ?? Infinity) - (comboEntryCost(b) ?? Infinity));
+  const visible = allCombos ? rows : rows.slice(0,12);
+  if (!visible.length) container.innerHTML = comboLoadFinished ? '<div class="empty">No active combos.</div>' : '<div class="loading">Checking combo positions…</div>';
+  else container.innerHTML = visible.map((combo,index) => {
+    const trader = combo._trader || {}, id = String(combo.combo_position_id || combo.combo_condition_id || combo._wallet + "-" + index);
+    const expanded = expandedCombos.has(id), status = String(combo.status || "UNKNOWN").replaceAll("_"," ");
+    const entry = comboEntryCost(combo), realizedPayout = comboPayout(combo), potentialPayout = comboPotentialPayout(combo), payout = realizedPayout !== null ? realizedPayout : potentialPayout, potentialProfit = realizedPayout === null && payout !== null && entry !== null ? payout - entry : null, multiplier = comboMultiplier(combo), traderRecord = comboTraderRecord(combo._wallet || walletOf(trader)), legs = Array.isArray(combo.legs) ? combo.legs : [], timing = comboTimingState(combo);
+    const summary = legs.slice(0,3).map(leg => leg.market?.question || leg.market?.title || leg.market?.event?.event_title || "Market leg").join(" · ");
+    const detail = expanded ? '<div class="combo-legs">' + (legs.length ? legs.map((leg,i) => {
+      const market = leg.market || {}, event = market.event || {}, label = leg.leg_outcome_label || market.outcome || (leg.leg_outcome_index ?? "Unknown outcome");
+      return '<div class="combo-leg"><strong>Leg ' + (num(leg.leg_index) ?? i+1) + ': ' + esc(market.question || market.title || event.event_title || "Untitled market") + '</strong><br><span class="side-tag ' + (String(label).toLowerCase()==="no"?"no":"") + '">' + esc(label) + '</span> <small class="subtitle">· ' + esc(String(leg.leg_status || "UNKNOWN").replaceAll("_"," ")) + '</small>' + (event.event_slug ? '<br><a href="https://polymarket.com/event/' + encodeURIComponent(event.event_slug) + '" target="_blank" rel="noopener noreferrer">Open market ↗</a>' : '') + '</div>';
+    }).join("") : '<div class="empty">No leg details were returned.</div>') + '</div>' : '';
+    return '<div class="combo-card"><div><div class="combo-title">' + esc(nameOf(trader)) + ' · ' + legs.length + '-leg combo ' + favoriteButton(combo._wallet || walletOf(trader)) + '</div><div>' + esc(summary || "Combo market details unavailable") + '</div><div class="combo-meta"><span class="side-tag">' + esc(status) + '</span><span>' + cash(entry) + ' entry</span><span><strong>' + (multiplier === null ? 'Multiplier unavailable' : multiplier.toFixed(1) + '× potential payout') + '</strong></span><span>' + (realizedPayout !== null && ["RESOLVED_WIN","RESOLVED_LOSS","RESOLVED_PARTIAL"].includes(String(combo.status || "").toUpperCase()) ? 'Realized payout: ' + cash(realizedPayout) : (payout === null ? 'Potential payout unavailable' : 'Potential payout if successful: ' + cash(payout))) + (potentialProfit === null ? '' : '<span>' + (potentialProfit >= 0 ? '+' : '') + cash(potentialProfit) + ' est. profit</span>') + '</span><span class="trade-time">' + esc(timing.label) + '</span><span>' + (num(combo.legs_resolved) ?? 0) + '/' + (num(combo.legs_total) ?? legs.length) + ' legs resolved</span><span>7-day combo record: ' + traderRecord.wins + 'W–' + traderRecord.losses + 'L' + (traderRecord.rate === null ? '' : ' · ' + traderRecord.rate.toFixed(1) + '%') + ' (' + traderRecord.resolved + ' resolved)</span></div><button class="link-button" onclick="toggleCombo(&quot;' + esc(id) + '&quot;)">' + (expanded ? 'Hide legs ↑' : 'Show legs ↓') + '</button></div>' + detail + '<div class="trade-user">' + profileButton({...trader, wallet:combo._wallet || walletOf(trader)}, nameOf(trader)) + '</div></div>';
+  }).join("");
+  $("comboMore").textContent = allCombos ? "Show fewer ↑" : "View more combos →";
+  $("comboMore").style.display = rows.length > 12 ? "inline-block" : "none";
+}
+
+function toggleCombos() { allCombos = !allCombos; renderCombos(); }
+function toggleCombo(id) { if (expandedCombos.has(id)) expandedCombos.delete(id); else expandedCombos.add(id); renderCombos(); }
+
+let favoriteFeedBusy=false;
+const favoriteSeenTrades=new Set();
+const favoriteFeedItems=new Map();
+async function renderFavoriteFeed() {
+ const box=$("favoriteFeed"),count=$("favoriteCount"); if(!box||favoriteFeedBusy)return;
+ const favorites=favoriteWallets(); if(count)count.textContent=favorites.length+" saved";
+ if(!favorites.length){box.innerHTML='<div class="empty">Star a trader in the leaderboard, consensus list, or combo list to follow their recent buys.</div>';return;}
+ favoriteFeedBusy=true;
+ try {
+  const known=new Map(); for(const t of rankedLeaders())known.set(walletOf(t),t);
+  for(const m of consensus())for(const t of (m.traders||m.members||[])){const w=walletOf(t);if(w)known.set(w,t);}
+  for(const c of comboRows){const w=String(c._wallet||walletOf(c._trader||{})).toLowerCase();if(w&&!known.has(w))known.set(w,c._trader||{wallet:w});}
+  const found=[];
+  for(const wallet of favorites.slice(0,20))try{
+   const r=await fetch("https://data-api.polymarket.com/trades?user="+encodeURIComponent(wallet)+"&limit=20",{cache:"no-store",signal:AbortSignal.timeout(10000)});
+   if(!r.ok)continue;const j=await r.json(),rows=Array.isArray(j?.data)?j.data:Array.isArray(j)?j:[];
+   for(const t of rows){if(String(t.side||"").toUpperCase()!=="BUY")continue;const time=timestamp(t.timestamp??t.createdAt??t.time);if(!time||Date.now()/1000-time>1800)continue;
+    const id=[wallet,t.transactionHash||t.txHash||t.asset||t.tokenId||t.conditionId||t.market,t.timestamp??t.createdAt??t.time,t.price,t.size].join("|");const item={wallet,trade:t,time,trader:known.get(wallet)||{wallet,name:"Favorite trader"}};if(!favoriteSeenTrades.has(id)){favoriteSeenTrades.add(id);favoriteFeedItems.set(id,item);}found.push(item);
+   }
+  }catch{}
+  const cutoff=Date.now()/1000-1800;for(const [id,item] of favoriteFeedItems){if(item.time<cutoff)favoriteFeedItems.delete(id);}for(const item of found){const id=[item.wallet,item.trade.transactionHash||item.trade.txHash||item.trade.asset||item.trade.tokenId||item.trade.conditionId||item.trade.market,item.trade.timestamp??item.trade.createdAt??item.trade.time,item.trade.price,item.trade.size].join("|");favoriteFeedItems.set(id,item);}const rows=[...favoriteFeedItems.values()].sort((a,b)=>b.time-a.time).slice(0,30);
+  box.innerHTML=rows.length?rows.map(({wallet,trade,time,trader})=>'<div class="favorite-trade"><div><strong>'+profileButton({...trader,wallet},nameOf(trader))+favoriteButton(wallet)+'</strong><span class="subtitle"> · '+esc(relative(time))+'</span></div><div>'+esc(trade.title||trade.question||trade.market||trade.eventSlug||"Market details unavailable")+'</div><div><span class="side-tag">'+esc(trade.outcome||"Outcome unavailable")+'</span> BUY · '+(num(trade.usdcSize??trade.amount)!==null?cash(trade.usdcSize??trade.amount):"amount N/A") +' <small class="subtitle">'+(num(trade.price)!==null?(num(trade.price)*100).toFixed(1)+"¢":"price N/A")+'</small></div></div>').join(""):'<div class="empty">No new BUY prints.</div>';
+ }finally{favoriteFeedBusy=false;}
+}
+function toggleLeaders() {
+  allLeaders = !allLeaders;
+  renderLeaders();
+}
+
+function toggleConsensus() {
+  allMarkets = !allMarkets;
+  renderConsensus();
+}
+
+function toggleRecent() {
+  allRecent = !allRecent;
+  renderRecent();
+}
+
+function toggleMarket(key) {
+  if (expandedMarkets.has(key)) expandedMarkets.delete(key);
+  else expandedMarkets.add(key);
+  renderConsensus();
+}
+
+function selectPeriod(nextPeriod) {
+  if (nextPeriod === period) return;
+  period = nextPeriod;
+  $("weekTab").classList.toggle("active", period === "week");
+  $("monthTab").classList.toggle("active", period === "month");
+  $("leaderPeriod").textContent = period === "week" ? "Week" : "Month";
+  loadData();
+}
+
+function openProfile(wallet) {
+  const normalizedWallet = String(wallet).toLowerCase();
+  const comboMatch = comboRows.find(combo =>
+    String(combo._wallet || walletOf(combo._trader || {})).toLowerCase() === normalizedWallet
+  );
+  const knownTrader = [
+    ...rankedLeaders(),
+    ...(Array.isArray(data?.leaders) ? data.leaders : []),
+    ...(Array.isArray(data?.sportsLeaders) ? data.sportsLeaders : []),
+    ...(Array.isArray(data?.comboCandidates) ? data.comboCandidates : [])
+  ].find(item => walletOf(item) === normalizedWallet)
+    || consensusMemberCache.get(normalizedWallet)
+    || comboMatch?._trader
+    || {};
+  // Combo API records may keep the wallet on the combo wrapper, not inside _trader.
+  // Always carry the clicked wallet into the profile and all profile API requests.
+  const traderWallet = walletOf(knownTrader) || normalizedWallet;
+  const trader = {...knownTrader, wallet:traderWallet, proxyWallet:knownTrader.proxyWallet || traderWallet};
+
+  const pnl = num(trader.periodPnl ?? trader.weeklyPnl ?? trader.pnl ?? trader.profit);
+  const volume = num(trader.volume ?? trader.vol);
+  const positions = activePositions(trader);
+  const selectedPeriodLabel = "60-day";
+  // Consensus members carry a verified rolling 60-day settlement-only record.
+  const settlementRecord = recordOf(trader);
+  const selectedWins = settlementRecord?.wins ?? null;
+  const selectedLosses = settlementRecord?.losses ?? null;
+  const selectedRate = settlementRecord?.rate ?? null;
+  const otherPeriodLabel = "other-period";
+  const otherWins = null;
+  const otherLosses = null;
+  const otherComplete = false;
+  const periodBasis = settlementRecord
+    ? "Verified settlement-only record; early exits excluded"
+    : "No complete 60-day settlement-only record was published for this trader";
+  const recentTrades = Array.isArray(data?.traderActiveTrades?.[traderWallet])
+    ? data.traderActiveTrades[traderWallet]
+    : [];
+
+  $("profileContent").innerHTML = `
+    <div class="profile-top">${avatar(trader)}<div><h2>${esc(nameOf(trader))} ${favoriteButton(traderWallet)}</h2><div class="subtitle">Trader profile</div></div></div>
+    <div class="profile-grid">
+      <div class="profile-stat"><small>Leaderboard rank</small><strong>${trader.rank ?? trader.displayRank ? "#" + esc(trader.rank ?? trader.displayRank) : "Not ranked in loaded data"}</strong></div>
+      <div class="profile-stat"><small>${selectedPeriodLabel} wins / losses</small><strong>${selectedWins !== null && selectedLosses !== null ? selectedWins.toLocaleString() + "–" + selectedLosses.toLocaleString() : "No complete record in published data"}</strong><small class="subtitle">${esc(periodBasis)}</small></div>
+      <div class="profile-stat"><small>${selectedPeriodLabel} settlement accuracy</small><strong>${selectedRate !== null ? selectedRate.toFixed(1) + "%" : "Not calculable from published data"}</strong><small class="subtitle">Verified resolved market outcomes only; early exits are excluded</small></div>
+      <div class="profile-stat"><small>${otherPeriodLabel} wins / losses</small><strong>${otherComplete && otherWins !== null && otherLosses !== null ? otherWins.toLocaleString() + "–" + otherLosses.toLocaleString() : "Not available"}</strong><small class="subtitle">Early exits are excluded from settlement wins, losses, and accuracy; any close-profitability diagnostic is separate.</small></div>
+      <div class="profile-stat"><small>Markets with SELL activity</small><strong id="sellMarketCount">Checking…</strong><small class="subtitle">A SELL print can be a partial reduction, not necessarily a full exit.</small></div>
+      <div class="profile-stat"><small>${period === "week" ? "Weekly" : "Monthly"} market P&amp;L</small><strong class="${pnl !== null && pnl < 0 ? "negative" : "positive"}">${cash(pnl)}</strong></div>
+      <div class="profile-stat"><small>Volume</small><strong>${cash(volume)}</strong></div>
+    </div>
+    <div class="source-note">${period === "week" ? "The market P&amp;L and volume fields come from the selected 7-day leaderboard window when available." : "The market P&amp;L and volume fields come from the selected 30-day leaderboard window when available."} The 60-day win/loss record counts only verified actual market resolutions. Positions exited before resolution are excluded from wins, losses, and settlement accuracy. Any separate close-profitability diagnostic may include early exits, but is never shown as settlement accuracy or used for qualification. “Not ranked in loaded data” means this wallet was found through combos or consensus but was not in the loaded leaderboard sample; missing P&amp;L and volume are unavailable values, not zero. Market P&amp;L and combo P&amp;L are separate datasets and should not be added together.</div>
+    <div class="profile-trades"><h3>Combo results · last 7 days</h3><div id="profileComboSummary" class="empty">Loading resolved combo results…</div></div>
+    <div class="profile-trades"><h3>Active combos</h3><div id="profileActiveCombos" class="empty">Loading active combos…</div></div>
+    <div class="profile-trades"><h3>Recent buys</h3>
+      ${recentTrades.length ? recentTrades.map(trade => `
+        <div class="profile-trade">
+          <strong>${esc(trade.title || trade.market || trade.question || "Untitled market")}</strong><br>
+          <span class="side-tag ${String(trade.outcome || "").toLowerCase() === "no" ? "no" : ""}">${esc(trade.outcome || "Unknown side")}</span>
+          &nbsp; Buy amount: ${cash(trade.amount)}
+          <br><small class="subtitle">Bought: ${esc(dateText(trade.buyTime ?? trade.timestamp ?? trade.createdAt))}</small>
+        </div>`).join("") : `<div class="empty">No recent buy history supplied for this trader.</div>`}
+    </div>
+    <div class="profile-trades"><h3>Closed combos</h3><div id="profileClosedCombos" class="empty">Loading combo history…</div></div>
+    <div class="profile-trades"><h3>Closed markets / positions</h3><div id="closedPositionsContent" class="empty">Loading full closed-position history…</div></div>
+  `;
+
+  $("profileDialog").showModal();
+  loadTraderCombos(traderWallet);
+  loadClosedPositionHistory(traderWallet);
+  loadSellMarketCount(traderWallet);
+}
+
+async function loadSellMarketCount(wallet) {
+  const target = $("sellMarketCount");
+  if (!target) return;
+  try {
+    const response = await fetch("https://data-api.polymarket.com/trades?user=" + encodeURIComponent(wallet) + "&side=SELL&limit=100", {cache:"no-store"});
+    if (!response.ok) throw new Error("HTTP " + response.status);
+    const json = await response.json();
+    const trades = Array.isArray(json?.data) ? json.data : Array.isArray(json) ? json : [];
+    const markets = new Set();
+    for (const trade of trades) {
+      const condition = String(trade.conditionId ?? trade.condition_id ?? trade.market ?? "");
+      const asset = String(trade.asset ?? trade.token_id ?? trade.tokenId ?? "");
+      const key = condition || asset;
+      if (key) markets.add(key);
+    }
+    target.textContent = markets.size.toLocaleString() + (trades.length >= 1000 ? "+" : "");
+    target.title = "Unique markets with SELL prints in the latest " + trades.length + " returned SELL trades. A print may be a partial reduction, not a full exit.";
+  } catch (error) {
+    target.textContent = "N/A";
+    target.title = "SELL activity could not be loaded: " + error.message;
+  }
+}
+
+async function loadTraderCombos(wallet) {
+  const activeBox = $("profileActiveCombos"), closedBox = $("profileClosedCombos");
+  if (!activeBox || !closedBox) return;
+  activeBox.textContent = "Loading all available combo positions…";
+  closedBox.textContent = "Loading all resolved combos and payouts…";
+
+  async function fetchAllPages(url, maxPages = 2) {
+    const output = [], seen = new Set();
+    let cursor = null;
+    for (let page = 0; page < maxPages; page++) {
+      const pageUrl = url + (url.includes("?") ? "&" : "?") + "limit=1000" +
+        (cursor ? "&cursor=" + encodeURIComponent(cursor) : "");
+      const response = await fetch(pageUrl, {cache:"no-store", signal:AbortSignal.timeout(20000)});
+      if (!response.ok) throw new Error("Polymarket combo API returned HTTP " + response.status);
+      const json = await response.json();
+      const rows = Array.isArray(json?.data) ? json.data : Array.isArray(json?.combos) ? json.combos : Array.isArray(json) ? json : [];
+      for (const row of rows) {
+        const id = String(row.combo_position_id || row.combo_condition_id || row.id || "");
+        const key = id || JSON.stringify(row);
+        if (!seen.has(key)) { seen.add(key); output.push(row); }
+      }
+      cursor = json?.pagination?.next_cursor || null;
+      if (!json?.pagination?.has_more || !cursor || !rows.length) break;
+    }
+    return output;
+  }
+
+  try {
+    const root = "https://data-api.polymarket.com/v2/positions/combos?user=" + encodeURIComponent(wallet);
+    // The API documents these as separate visibility cohorts. Fetch both so resolved
+    // records aren't lost when the held/default cohort is returned successfully.
+    const [heldResult, resolvedResult, activityResult] = await Promise.allSettled([
+      fetchAllPages(root + "&sort_by=UPDATED&sort_direction=DESC", 2),
+      fetchAllPages(root + "&status=RESOLVED_WIN,RESOLVED_LOSS,RESOLVED_PARTIAL&sort_by=UPDATED&sort_direction=DESC", 2),
+      fetchAllPages("https://data-api.polymarket.com/v2/activity/combos?user=" + encodeURIComponent(wallet) + "&start=1", 2)
+    ]);
+
+    const positionsById = new Map();
+    for (const result of [heldResult, resolvedResult]) {
+      if (result.status !== "fulfilled") continue;
+      for (const row of result.value) {
+        const id = String(row.combo_position_id || row.combo_condition_id || "");
+        if (!id) continue;
+        const prior = positionsById.get(id) || {};
+        positionsById.set(id, {...prior, ...row});
+      }
+    }
+    if (!positionsById.size && heldResult.status === "rejected" && resolvedResult.status === "rejected") {
+      throw heldResult.reason || resolvedResult.reason || new Error("Combo position lookup failed");
+    }
+
+    const activityById = new Map();
+    const activityRows = activityResult.status === "fulfilled" ? activityResult.value : [];
+    for (const event of activityRows) {
+      const id = String(event.combo_position_id || "");
+      if (!id) continue;
+      const rec = activityById.get(id) || {
+        entryNet:0, hasEntry:false, payout:0, hasPayout:false, mergeEvents:[],
+        legs:event.legs || [], resolvedAt:null, lastEventAt:null
+      };
+      const type = String(event.type || "").toUpperCase();
+      const amount = num(event.amount_usdc), payout = num(event.payout_usdc);
+      // Cash movements are only a fallback for entry basis. REDEEM is the authoritative
+      // activity-level cash payout; don't confuse missing values with $0.
+      if (type === "SPLIT" && amount !== null) { rec.entryNet += amount; rec.hasEntry = true; }
+      if (type === "MERGE" && amount !== null) { rec.entryNet -= amount; rec.hasEntry = true; rec.mergeEvents.push({timestamp:event.timestamp ?? null, amount}); }
+      if (type === "REDEEM" && payout !== null) {
+        rec.payout += payout; rec.hasPayout = true;
+        rec.resolvedAt = event.timestamp ?? rec.resolvedAt;
+      }
+      if (!rec.legs?.length && event.legs) rec.legs = event.legs;
+      rec.lastEventAt = event.timestamp ?? rec.lastEventAt;
+      activityById.set(id, rec);
+    }
+
+    const positions = [...positionsById.values()].map(combo => {
+      const id = String(combo.combo_position_id || combo.combo_condition_id || "");
+      const activity = activityById.get(id);
+      const status = String(combo.status || "").toUpperCase();
+      const directPayout = num(combo.realized_payout_usdc);
+      const activityPayout = activity?.hasPayout ? activity.payout : null;
+      // Some API rows report 0 for a winning combo despite a recorded REDEEM. Prefer
+      // positive redemption cash in that case; keep zero as a valid payout for losses.
+      const payout = ["RESOLVED_WIN","RESOLVED_PARTIAL"].includes(status) && !(directPayout > 0) && activityPayout > 0
+        ? activityPayout
+        : (directPayout !== null ? directPayout : activityPayout);
+      const entry = (num(combo.entry_cost_usdc) > 0 ? num(combo.entry_cost_usdc) : null) ??
+        (activity?.hasEntry && activity.entryNet > 0 ? activity.entryNet : null) ??
+        (num(combo.gross_entry_cost_usdc) > 0 ? num(combo.gross_entry_cost_usdc) : null);
+      return {
+        ...combo,
+        _activityEntryCost: entry,
+        _activityPayout: payout,
+        _activityResolvedAt: activity?.resolvedAt ?? null,
+        _activityLastEventAt: activity?.lastEventAt ?? null,
+        _activityExitEvents: activity?.mergeEvents || [],
+        legs: Array.isArray(combo.legs) && combo.legs.length ? combo.legs : (activity?.legs || [])
+      };
+    });
+
+    const terminal = new Set(["RESOLVED_WIN","RESOLVED_LOSS","RESOLVED_PARTIAL"]);
+    const closed = positions.filter(c => terminal.has(String(c.status || "").toUpperCase()));
+    const active = positions.filter(c => ["OPEN","REDEEMABLE","PARTIAL"].includes(String(c.status || "").toUpperCase()));
+
+    // Keep all-time record and weekly financial performance distinct. This avoids
+    // comparing a 7-day chart against the full lifetime list of combos.
+    const allWins = closed.filter(c => String(c.status).toUpperCase() === "RESOLVED_WIN").length;
+    const allLosses = closed.filter(c => String(c.status).toUpperCase() === "RESOLVED_LOSS").length;
+    const allPartial = closed.filter(c => String(c.status).toUpperCase() === "RESOLVED_PARTIAL").length;
+    const weekCutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
+    const resolvedThisWeek = closed.filter(c => {
+      const ts = comboResolvedMs(c);
+      return ts !== null && ts >= weekCutoff && ts <= Date.now();
+    });
+    const weeklyWins = resolvedThisWeek.filter(c => String(c.status).toUpperCase() === "RESOLVED_WIN").length;
+    const weeklyLosses = resolvedThisWeek.filter(c => String(c.status).toUpperCase() === "RESOLVED_LOSS").length;
+    const weeklyPartial = resolvedThisWeek.filter(c => String(c.status).toUpperCase() === "RESOLVED_PARTIAL").length;
+    const knownWeeklyPnL = resolvedThisWeek.map(c => {
+      const entry = comboEntryCost(c), payout = num(c._activityPayout);
+      return entry !== null && entry >= 0 && payout !== null ? payout - entry : null;
+    }).filter(value => value !== null);
+    const summaryBox = $("profileComboSummary");
+    if (summaryBox) {
+      const weeklyNet = knownWeeklyPnL.reduce((sum,value)=>sum+value,0);
+      summaryBox.innerHTML =
+        '<strong>All-time resolved combos: ' + allWins + ' won · ' + allLosses + ' lost · ' + allPartial + ' partial</strong><br>' +
+        '<strong>Last 7 days: ' + weeklyWins + ' wins · ' + weeklyLosses + ' losses · ' + weeklyPartial + ' partial (' + resolvedThisWeek.length + ' total)</strong><br>' +
+        '<span class="' + (weeklyNet < 0 ? 'negative' : 'positive') + '">Verified weekly combo P&amp;L: ' +
+        (knownWeeklyPnL.length ? (weeklyNet > 0 ? '+' : '') + cash(weeklyNet) : 'N/A') + '</span><br>' +
+        '<small class="subtitle">Weekly entry/payout data available for ' + knownWeeklyPnL.length + ' of ' + resolvedThisWeek.length +
+        ' resolved combos. Payout means actual recorded redemption cash, not a projected payout.</small>' +
+        (activityResult.status === "rejected" ? '<br><small class="subtitle">Combo activity history could not be fully loaded; payout coverage may be incomplete.</small>' : '');
+    }
+    activeBox.innerHTML = active.length ? active.map(c => renderProfileCombo(c, false)).join("") : '<div class="empty">No active combos.</div>';
+    closedBox.innerHTML = closed.length ? closed
+      .sort((a,b) => (comboResolvedMs(b) || 0) - (comboResolvedMs(a) || 0))
+      .map(c => renderProfileCombo(c, true)).join("") : '<div class="empty">No resolved combo positions returned.</div>';
+  } catch (error) {
+    activeBox.innerHTML = '<div class="error">Could not load combo positions: ' + esc(error.message) + '</div>';
+    closedBox.innerHTML = '<div class="error">Could not load resolved combos: ' + esc(error.message) + '</div>';
+  }
+}
+
+function renderProfileCombo(combo, isClosed) {
+  const legs = Array.isArray(combo.legs) ? combo.legs : [];
+  const title = legs.map((leg,i) => {
+    const m = leg.market || {};
+    return 'Leg ' + (num(leg.leg_index) ?? i+1) + ': ' + esc(m.question || m.title || m.event?.event_title || "Market details unavailable") + ' — ' + esc(leg.leg_outcome_label || m.outcome || "Outcome unavailable");
+  }).join("<br>");
+  const entry = comboEntryCost(combo);
+  const payout = comboPayout(combo);
+  const profit = entry !== null && payout !== null ? payout - entry : null;
+  const status = String(combo.status || (isClosed ? "RESOLVED" : "OPEN")).replaceAll("_"," ");
+  const resolvedAt = comboResolvedMs(combo);
+  const resolvedLabel = resolvedAt !== null ? "Resolved/closed: " + esc(dateText(resolvedAt)) : "Resolved/closed date unavailable";
+  const exits = Array.isArray(combo._activityExitEvents) ? combo._activityExitEvents : [];
+  const exitLabel = exits.map(event => "Merge/exit cash flow " + cash(event.amount) + (event.timestamp ? " on " + esc(dateText(event.timestamp)) : "")).join(" · ");
+  return '<div class="profile-trade"><strong>' + esc(status) + '</strong><br>' + (title || '<span class="subtitle">Combo leg details unavailable.</span>') + '<br><small class="subtitle">' + resolvedLabel + '</small><br><small class="subtitle">Entry: ' + (entry === null ? "Cost basis unavailable" : cash(entry)) + ' · Actual recorded payout: ' + (payout === null ? "Payout not available in returned data" : cash(payout)) + (profit === null ? '' : ' · Net P&amp;L: ' + (profit >= 0 ? '+' : '') + cash(profit)) + '</small>' + (exitLabel ? '<br><small class="subtitle">Early exit/merge observed: ' + exitLabel + '</small>' : '') + '</div>';
+}
+
+function closeProfile() {
+  $("profileDialog").close();
+}
+
+function renderClosedPositionHistory(wallet) {
+  const container = $("closedPositionsContent");
+  if (!container) return;
+  const state = closedPositionState.get(wallet);
+  if (!state) { container.textContent = "Loading closed-position history…"; return; }
+  if (state.error && !state.rows.length) {
+    container.innerHTML = '<div class="error">Could not load closed-position history: ' + esc(state.error) + '</div><button class="link-button" onclick="loadClosedPositionHistory(\'' + esc(wallet) + '\')">Retry</button>';
+    return;
+  }
+  if (!state.rows.length && !state.loading) {
+    container.innerHTML = '<div class="empty">No closed positions returned by the public API.</div>';
+    return;
+  }
+  const showAll = expandedClosedMarkets.has(wallet);
+  const visible = showAll ? state.rows : state.rows.slice(0, 100);
+  let output = '<div class="source-note" style="margin:0 0 10px">Loaded ' + state.rows.length.toLocaleString() + ' closed-position rows' +
+    (state.hasMore ? ' · more available' : ' · end of available history') +
+    '. These rows are for inspection only and are not used as a verified weekly/monthly win-loss record.</div><div class="member-list">';
+  output += visible.map(position => {
+    const pnl = num(position.realized_pnl ?? position.realizedPnl ?? position.cashPnl ?? position.cash_pnl ?? position.total_pnl ?? position.totalPnl);
+    const rawInvested = num(position.entry_cost_usdc ?? position.total_cost_usdc ?? position.initialValue ?? position.initial_value ?? position.initial_value_usd ?? position.costBasis ?? position.cost_basis);
+    const avgPrice = num(position.avgPrice ?? position.avg_price ?? position.averagePrice ?? position.average_price);
+    const size = num(position.size ?? position.current_size ?? position.currentSize);
+    const totalBought = num(position.total_size ?? position.totalSize ?? position.totalBought ?? position.total_bought ?? position.totalSharesBought ?? position.total_shares_bought);
+    const estimatedShares = totalBought !== null && totalBought > 0 ? totalBought : size;
+    const invested = rawInvested !== null && rawInvested > 0 ? rawInvested : (avgPrice !== null && estimatedShares !== null && avgPrice >= 0 && estimatedShares > 0 ? avgPrice * estimatedShares : null);
+    const investedLabel = rawInvested !== null && rawInvested > 0 ? "Amount invested" : "Est. invested";
+    const outcome = position.outcome || "Position";
+    const time = position.last_event_at ?? position.lastEventAt;
+    const condition = position.condition_id ?? position.conditionId ?? "";
+    const sideClass = String(outcome).toLowerCase() === "no" ? "no" : "";
+    return '<div class="member"><div><strong>' + esc(position.title || position.name || "Untitled market") + '</strong><small><span class="side-tag ' + sideClass + '">' + esc(outcome) + '</span> · ' + esc(condition ? condition.slice(0, 12) + "…" : "Market ID unavailable") + '</small></div><div>' + (invested === null ? "N/A" : cash(invested)) + '<small>' + investedLabel + '</small></div><div class="' + (pnl !== null && pnl < 0 ? "negative" : "positive") + '">' + (pnl === null ? "P&amp;L N/A" : cash(pnl)) + '<small>Position realized P&amp;L (not period P&amp;L)</small></div><div class="member-time"><strong>' + esc(relative(time)) + '</strong><small>' + esc(dateText(time)) + '</small></div></div>';
+  }).join("");
+  output += "</div>";
+  if (state.rows.length > 100) output += '<button class="link-button" onclick="toggleClosedMarkets(\'' + esc(wallet) + '\')">' + (showAll ? "Show first 100 ↑" : "View all " + state.rows.length.toLocaleString() + " loaded rows →") + "</button>";
+  if (state.loading) output += '<div class="loading">Loading next page…</div>';
+  else if (state.error) output += '<div class="error">More history could not be loaded: ' + esc(state.error) + '</div><button class="link-button" onclick="loadMoreClosedPositionHistory(\'' + esc(wallet) + '\')">Retry next page →</button>';
+  else if (state.hasMore) output += '<button class="link-button" onclick="loadMoreClosedPositionHistory(\'' + esc(wallet) + '\')">Load next 1,000 closed positions →</button>';
+  container.innerHTML = output;
+}
+
+function toggleClosedMarkets(wallet) {
+  if (expandedClosedMarkets.has(wallet)) expandedClosedMarkets.delete(wallet);
+  else expandedClosedMarkets.add(wallet);
+  renderClosedPositionHistory(wallet);
+}
+
+async function fetchClosedPositionsPage(wallet, cursor) {
+  const params = new URLSearchParams({user:wallet, limit:"250", status:"CLOSED", sort_by:"TIMESTAMP", sort_direction:"DESC"});
+  if (cursor) params.set("cursor", cursor);
+  let lastError;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const response = await fetch("https://data-api.polymarket.com/v2/positions?" + params.toString(), {
+        cache:"no-store",
+        signal:AbortSignal.timeout(15000)
+      });
+      if (!response.ok) {
+        const retryAfter = Number(response.headers.get("Retry-After"));
+        if ((response.status === 429 || response.status === 503) && attempt === 0) {
+          await new Promise(resolve => setTimeout(resolve, Number.isFinite(retryAfter) && retryAfter > 0 ? Math.min(retryAfter * 1000, 5000) : 1200));
+          throw new Error("Temporary Polymarket API HTTP " + response.status + "; retrying");
+        }
+        throw new Error("Polymarket API returned HTTP " + response.status);
+      }
+      const result = await response.json();
+      if (!result || (!Array.isArray(result.data) && !Array.isArray(result))) throw new Error("Unexpected Polymarket positions response format");
+      return {
+        rows:Array.isArray(result.data) ? result.data : result,
+        nextCursor:result.pagination?.next_cursor || null,
+        hasMore:result.pagination?.has_more === true
+      };
+    } catch (error) {
+      lastError = error;
+      if (attempt === 1 || !/retrying|timeout|network|fetch/i.test(String(error?.message || error))) throw error;
+    }
+  }
+  throw lastError || new Error("Closed-position history request failed");
+}
+
+async function loadClosedPositionHistory(wallet) {
+  if (!wallet) return;
+  const existing = closedPositionState.get(wallet);
+  if (existing?.rows?.length || existing?.loading) { renderClosedPositionHistory(wallet); return; }
+  const state = existing || {rows:[], cursor:null, hasMore:true, loading:false, error:null, seen:new Set()};
+  state.loading = true;
+  state.error = null;
+  closedPositionState.set(wallet, state);
+  renderClosedPositionHistory(wallet);
+  try {
+    const page = await fetchClosedPositionsPage(wallet, null);
+    for (const position of page.rows) {
+      const key = String(position.token_id ?? position.tokenId ?? position.asset ?? ((position.condition_id ?? position.conditionId ?? "") + "|" + (position.outcome_index ?? position.outcomeIndex ?? position.outcome ?? "")));
+      if (!state.seen.has(key)) { state.seen.add(key); state.rows.push(position); }
+    }
+    state.cursor = page.nextCursor;
+    state.hasMore = page.hasMore && Boolean(page.nextCursor) && page.rows.length > 0;
+    state.error = null;
+  } catch (error) {
+    state.error = error?.name === "TimeoutError" ? "The request timed out. Retry when the API is responsive." : String(error?.message || error);
+  } finally {
+    state.loading = false;
+    renderClosedPositionHistory(wallet);
+  }
+}
+
+async function loadMoreClosedPositionHistory(wallet) {
+  const state = closedPositionState.get(wallet);
+  if (!state || state.loading || !state.hasMore || !state.cursor) return;
+  state.loading = true;
+  state.error = null;
+  renderClosedPositionHistory(wallet);
+  try {
+    const page = await fetchClosedPositionsPage(wallet, state.cursor);
+    for (const position of page.rows) {
+      const key = String(position.token_id ?? position.tokenId ?? position.asset ?? ((position.condition_id ?? position.conditionId ?? "") + "|" + (position.outcome_index ?? position.outcomeIndex ?? position.outcome ?? "")));
+      if (!state.seen.has(key)) { state.seen.add(key); state.rows.push(position); }
+    }
+    state.cursor = page.nextCursor;
+    state.hasMore = page.hasMore && Boolean(page.nextCursor) && page.rows.length > 0;
+    state.error = null;
+  } catch (error) {
+    state.error = error?.name === "TimeoutError" ? "The request timed out. Retry loading the next page." : String(error?.message || error);
+  } finally {
+    state.loading = false;
+    renderClosedPositionHistory(wallet);
+  }
+}
+
+async function loadData(forceReload = false) {
+  const requestId = ++loadSequence;
+  loading = true;
+  $("errorBox").innerHTML = "";
+  $("leadersBody").innerHTML = `<tr><td colspan="6" class="loading">Loading traders…</td></tr>`;
+  $("consensusBody").innerHTML = `<tr><td colspan="7" class="loading">Loading consensus markets…</td></tr>`;
+  $("comboList").innerHTML = `<div class="empty">Combo scanning is paused so the leaderboard and consensus dashboard can load first. Select “Load combo data” to scan trader wallets.</div>`;
+
+  try {
+    const filename = FILES[period];
+    const pagesUrl = filename + "?t=" + Date.now() + (forceReload ? "&reload=1" : "");
+    let result = null;
+    let lastError = null;
+    // The deployed Pages JSON is authoritative for the visible dashboard.
+    // Never show a newer raw-branch timestamp before Pages has the same data.
+    for (const url of [pagesUrl]) {
+      try {
+        const response = await fetch(url, {cache:"no-store", signal:AbortSignal.timeout(20000)});
+        if (!response.ok) throw new Error(`${url.split("?")[0]} returned HTTP ${response.status}`);
+        const parsed = await response.json();
+        if (!parsed || typeof parsed !== "object" || !Array.isArray(parsed.leaders) ||
+            !Number.isFinite(Date.parse(parsed.generatedAt || parsed.updatedAt || parsed.lastUpdated || ""))) {
+          throw new Error("The data file is invalid or missing its generated timestamp.");
+        }
+        result = parsed;
+        break;
+      } catch (error) { lastError = error; }
+    }
+    if (requestId !== loadSequence) return;
+    if (!result) throw lastError || new Error("Could not load dashboard data from GitHub.");
+
+
+    data = result;
+    const updated = result.updatedAt || result.generatedAt || result.lastUpdated;
+    $("updatedAt").textContent = updated ? new Date(updated).toLocaleString() : "Timestamp unavailable";
+
+    renderLeaders();
+    renderSportsLeaders();
+    // Combo discovery scans up to 1,000 wallets and makes many API calls.
+    // Keep it out of initial page load; users can start it from the combo panel.
+    loadConsensusData();
+  } catch (error) {
+    if (requestId !== loadSequence) return;
+    data = null;
+    $("updatedAt").textContent = "Unavailable";
+    $("leadersBody").innerHTML = `<tr><td colspan="4" class="empty">Could not load ${esc(FILES[period])}.</td></tr>`;
+    $("consensusBody").innerHTML = `<tr><td colspan="6" class="empty">Copy signal data unavailable.</td></tr>`;
+    $("comboList").innerHTML = `<div class="empty">Trader data unavailable, so combos cannot be loaded.</div>`;
+    const comboButton = $("loadCombosButton");
+    if (comboButton) comboButton.disabled = true;
+    $("totalPnl").textContent = "—";
+    $("totalVolume").textContent = "—";
+    $("avgWinRate").textContent = "N/A";
+    $("errorBox").innerHTML = `<div class="error"><strong>Could not load dashboard data.</strong><br>${esc(error.message)}<br>Make sure the GitHub Pages site contains ${esc(FILES[period])} at the same folder level as index.html.</div>`;
+  } finally {
+    if (requestId === loadSequence) loading = false;
+  }
+}
+
+async function loadForwardTest() {
+  try {
+    const response = await fetch("forward-test.json?t=" + Date.now(), {cache:"no-store"});
+    if (!response.ok) throw new Error("HTTP " + response.status);
+    const d = await response.json(), rows = Array.isArray(d.signals) ? d.signals : [];
+    const metrics = d.metrics || {};
+    const money = value => value == null || !Number.isFinite(Number(value)) ? "—" :
+      (Number(value) < 0 ? "-$" : "$") + Math.abs(Number(value)).toFixed(2);
+    $("paperSignals").textContent = Number(metrics.signals || 0).toLocaleString();
+    $("paperPending").textContent = Number(metrics.pending || 0).toLocaleString();
+    $("paperResolved").textContent = Number(metrics.resolved || 0).toLocaleString();
+    $("paperWinRate").textContent = metrics.winRate == null ? "N/A" : Number(metrics.winRate).toFixed(1) + "%";
+    $("paperPnl").textContent = money(metrics.paperPnl);
+    $("paperPnl").style.color = Number(metrics.paperPnl) > 0 ? "var(--green)" : Number(metrics.paperPnl) < 0 ? "var(--red)" : "var(--text)";
+    $("paperFresh").textContent = Number(metrics.freshSignals || 0).toLocaleString();
+    $("paperTestUpdated").textContent = d.generatedAt ? "Updated " + new Date(d.generatedAt).toLocaleString() : "Timestamp unavailable";
+    const categoryLabels = {sports:"Sports",crypto:"Crypto",politics:"Politics",other:"Other"};
+    const categoryRows = Object.entries(categoryLabels).map(([key,label]) => {
+      const row = metrics.byCategory?.[key] || {};
+      const resolved = Number(row.resolved || 0), wins = Number(row.wins || 0);
+      const rate = resolved ? (wins / resolved * 100).toFixed(1) + "%" : "N/A";
+      const pnl = money(row.paperPnl);
+      return "<tr><td>" + label + "</td><td>" + resolved.toLocaleString() + "</td><td>" + rate + "</td><td>" + pnl + "</td></tr>";
+    });
+    $("paperCategoryRows").innerHTML = categoryRows.join("");
+    const indexed = new Map();
+    for (const signal of rows) {
+      const condition = String(signal.conditionId || "").toLowerCase(), side = String(signal.side || "").toLowerCase();
+      if (!condition || !side) continue;
+      const key = condition + "|" + side;
+      const observations = Array.isArray(signal.exitObservations) ? signal.exitObservations : [];
+      const buys = observations.filter(t => ["BUY","SELL"].includes(String(t.side || "").toUpperCase()) &&
+        String(t.outcome || "").toLowerCase() === side).map(t => {
+          const price = num(t.price), shares = num(t.size);
+          return {...t, _price:price, _shares:shares, _cost:price !== null && shares !== null ? price*shares : null,
+            _currentPrice:num(signal.currentPrice)};
+        }).sort((a,b)=>(timestamp(b.timestamp)||0)-(timestamp(a.timestamp)||0));
+      if (buys.length) indexed.set(key, buys);
+    }
+    forwardTradesByMarket = indexed;
+    renderConsensus();
+  } catch (e) {
+    console.warn("Forward-test data unavailable", e);
+    const note = $("paperTestNote");
+    if (note) note.textContent = "Paper-test data is temporarily unavailable. No performance figures are being assumed.";
+    const stamp = $("paperTestUpdated");
+    if (stamp) stamp.textContent = "Unavailable";
+  }
+}
+loadData();
+loadForwardTest();
+renderFavoriteFeed();
+setInterval(renderFavoriteFeed, 60000);
+</script>
+</body>
+</html>
