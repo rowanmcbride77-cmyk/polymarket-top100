@@ -11,7 +11,8 @@ const MIN_WIN_RATE = 90;
 const CANDIDATES_PER_PERIOD = 500;
 const POSITION_PAGE_SIZE = 1000;
 const MAX_POSITION_PAGES = 5;
-const CONCURRENCY = 18;
+const CONCURRENCY = 6;
+const AUDIT_BATCH_SIZE = 20;
 const REQUEST_GAP_MS = 55; // stay below the public API's documented 20 req/s ceiling
 let nextRequestAt = 0;
 
@@ -289,22 +290,47 @@ const cutoffSec = Math.floor(cutoffMs / 1000);
 const nowSec = Math.floor(nowMs / 1000);
 console.log("Settlement audit: " + candidates.length + " unique wallets sourced only from the top 500 weekly and top 500 monthly Polymarket P&L leaderboards; rolling 60-day window; max " + MAX_POSITION_PAGES + " pages per lifecycle cohort.");
 
-const audits = await mapLimit(candidates, CONCURRENCY, async trader => {
-  try { return await auditWallet(trader.wallet, cutoffSec, nowSec); }
-  catch (error) {
-    console.warn("Audit failed for " + trader.wallet + ": " + error.message);
-    return { wallet: trader.wallet, positions: [], complete: false, pages: 0, rows: 0 };
+// Process wallets in bounded batches. Keeping every wallet's raw position history
+// and the complete Gamma metadata map alive together exceeded the hosted runner's
+// ~4 GB Node heap. Each batch is fully classified before its raw rows are released.
+const records = new Map();
+let completeAudits = 0;
+let incompleteAudits = 0;
+let positionsChecked = 0;
+let positionPages = 0;
+let marketMetadataConditions = 0;
+
+for (let offset = 0; offset < candidates.length; offset += AUDIT_BATCH_SIZE) {
+  const batch = candidates.slice(offset, offset + AUDIT_BATCH_SIZE);
+  console.log("Auditing wallet batch " + (Math.floor(offset / AUDIT_BATCH_SIZE) + 1) +
+    "/" + Math.ceil(candidates.length / AUDIT_BATCH_SIZE) + " (" + batch.length + " wallets).");
+  const audits = await mapLimit(batch, CONCURRENCY, async trader => {
+    try { return await auditWallet(trader.wallet, cutoffSec, nowSec); }
+    catch (error) {
+      console.warn("Audit failed for " + trader.wallet + ": " + error.message);
+      return { wallet: trader.wallet, positions: [], complete: false, pages: 0, rows: 0 };
+    }
+  });
+  const allConditions = new Set();
+  for (const audit of audits) {
+    if (audit.complete) completeAudits++;
+    else incompleteAudits++;
+    positionsChecked += audit.rows;
+    positionPages += audit.pages;
+    for (const position of audit.positions) {
+      const condition = String(position.condition_id ?? position.conditionId ?? "").toLowerCase();
+      if (condition) allConditions.add(condition);
+    }
   }
-});
-const allConditions = new Set();
-for (const audit of audits) for (const position of audit.positions) {
-  const condition = String(position.condition_id ?? position.conditionId ?? "").toLowerCase();
-  if (condition) allConditions.add(condition);
+  const marketMetadata = await fetchMarketMetadata(allConditions);
+  marketMetadataConditions += allConditions.size;
+  for (const audit of audits) {
+    records.set(audit.wallet, classifyAudit(audit, marketMetadata, cutoffMs, nowMs));
+    // Drop the large per-wallet position arrays as soon as classification is done.
+    audit.positions = [];
+  }
+  // Drop batch-scoped arrays/maps before requesting the next batch.
 }
-const marketMetadata = await fetchMarketMetadata(allConditions);
-const records = new Map(audits.map(a => [
-  a.wallet, classifyAudit(a, marketMetadata, cutoffMs, nowMs)
-]));
 
 function qualify(candidatesForPeriod) {
   return candidatesForPeriod
@@ -323,7 +349,8 @@ if (!weekLeaders.length || !monthLeaders.length) {
     ok: false, scannerVersion: "settlement-v2", startedAt,
     generatedAt: new Date().toISOString(),
     candidates: candidates.length,
-    completeAudits: audits.filter(a => a.complete).length,
+    completeAudits,
+    incompleteAudits,
     qualifiedWeek: weekLeaders.length,
     qualifiedMonth: monthLeaders.length,
     reason: "No qualified leaderboard was published. Incomplete histories are withheld."
@@ -358,11 +385,11 @@ const status = {
   ok: true, scannerVersion: "settlement-v2", startedAt, finishedAt, generatedAt: finishedAt,
   source: "Polymarket public Data API v2 leaderboard + Gamma resolved market metadata",
   windowDays: WINDOW_DAYS, minimumResolvedMarkets: MIN_MARKETS, minimumWinRate: MIN_WIN_RATE,
-  candidates: candidates.length, completeAudits: audits.filter(a => a.complete).length,
-  incompleteAudits: audits.filter(a => !a.complete).length,
-  positionsChecked: audits.reduce((s,a) => s + a.rows, 0),
-  positionPages: audits.reduce((s,a) => s + a.pages, 0),
-  marketMetadataConditions: allConditions.size,
+  candidates: candidates.length, completeAudits,
+  incompleteAudits,
+  positionsChecked,
+  positionPages,
+  marketMetadataConditions,
   weekCandidates: weekCandidates.length, monthCandidates: monthCandidates.length,
   weekQualified: weekLeaders.length, monthQualified: monthLeaders.length,
   weekConsensusSignals: weekConsensus.signals.length,
