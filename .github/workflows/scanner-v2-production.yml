@@ -131,16 +131,24 @@ jobs:
                 const traders = Array.isArray(group.traders) ? group.traders : [];
                 if (!condition || seenConditions.has(condition)) throw new Error(period + " consensus has duplicate/missing conditions");
                 seenConditions.add(condition);
+                const endMs = Date.parse(group.endDate);
                 if (!side || String(group.outcome ?? "").trim().toLowerCase() !== side ||
+                    !String(group.tokenId ?? "").trim() ||
                     group.marketMetadataVerified !== true || group.marketClosed !== false ||
+                    !["sports", "esports", "crypto"].includes(String(group.category ?? "").toLowerCase()) ||
+                    !Number.isFinite(endMs) || endMs <= generatedAt || endMs > generatedAt + 24 * 60 * 60 * 1000 ||
                     !Array.isArray(traders) || traders.length < 2 ||
                     Number(group.sameSide) !== traders.length ||
                     Number(group.qualifiedWalletCount) !== traders.length) {
                   throw new Error(period + " consensus group is not a verified single-side open-market group");
                 }
                 if (group.signalTier === "Strong Signals") {
-                  if (traders.length < 8) throw new Error(period + " strong signal has fewer than 8 distinct wallets");
+                  if (traders.length < 8 || group.signalStrength !== "strong") {
+                    throw new Error(period + " strong signal has fewer than 8 distinct wallets or incorrect strength");
+                  }
                   hasStrongSignal = true;
+                } else if (group.signalTier !== "Watchlist" || traders.length >= 8 || group.signalStrength !== "watch") {
+                  throw new Error(period + " consensus group has an invalid signal tier");
                 }
                 const traderWallets = traders.map(trader => String(trader.wallet ?? "").toLowerCase());
                 if (traderWallets.some(wallet => !/^0x[a-f0-9]{40}$/.test(wallet)) ||
@@ -162,6 +170,10 @@ jobs:
             consensusReason = String(error?.message ?? error);
           }
 
+          status.consensusPublished = publishConsensus;
+          status.consensusPreserved = !publishConsensus;
+          status.consensusPublishReason = publishConsensus ? null : consensusReason;
+          await fs.writeFile("status.json", JSON.stringify(status, null, 2) + "\n");
           await fs.appendFile(process.env.GITHUB_OUTPUT, "consensus_publish=" + String(publishConsensus) + "\n");
           console.log(publishConsensus
             ? "Validated Top 100 and both fresh, verified consensus files."
