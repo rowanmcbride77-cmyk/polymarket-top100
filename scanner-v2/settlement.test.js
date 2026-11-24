@@ -1,8 +1,16 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildSettlementRecord, classifySettledPosition, qualifiesForTop100 } from "./settlement.js";
+import { buildSettlementRecord, classifySettledPosition, qualifiesForTop100, DEFAULT_QUALIFICATION } from "./settlement.js";
 
 const nowMs = Date.parse("2026-11-18T12:00:00.000Z");
+
+test("defaults qualification to 10 resolved markets in a 60-day window at 90 percent", () => {
+  assert.deepEqual(DEFAULT_QUALIFICATION, {
+    minimumWinRate: 90,
+    minimumResolvedMarkets: 10,
+    windowDays: 60
+  });
+});
 const position = (condition, token, status = "REDEEMABLE") => ({
   condition_id: condition, token_id: token, status, realized_pnl: 9999
 });

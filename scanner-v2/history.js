@@ -159,13 +159,13 @@ export function reconstructHeldAtResolution(activity, resolutionIndex, options =
 
 /**
  * Complete all-time activity is required to reconstruct pre-window inventory:
- * a token bought before the 30-day scoring window may still be held at a
+ * a token bought before the 60-day scoring window may still be held at a
  * resolution that occurred inside the window.
  */
 export async function getWalletSettlementRecord(wallet, options = {}) {
   const nowMs = Number(options.nowMs ?? Date.now());
   const nowSeconds = Math.floor(nowMs / 1000);
-  const windowDays = options.windowDays ?? 30;
+  const windowDays = options.windowDays ?? 60;
   const cutoffSeconds = Math.floor((nowMs - windowDays * 24 * 60 * 60 * 1000) / 1000);
   const fetchPages = options.fetchAllPages ?? fetchAllPages;
 

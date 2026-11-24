@@ -9,7 +9,7 @@
 export const DEFAULT_QUALIFICATION = Object.freeze({
   minimumWinRate: 90,
   minimumResolvedMarkets: 10,
-  windowDays: 30
+  windowDays: 60
 });
 
 const numberOrNull = value => {

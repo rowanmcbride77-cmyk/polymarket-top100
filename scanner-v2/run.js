@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 const DATA = "https://data-api.polymarket.com";
 const GAMMA = "https://gamma-api.polymarket.com";
 const startedAt = new Date().toISOString();
-const WINDOW_DAYS = 30;
+const WINDOW_DAYS = 60;
 const MIN_MARKETS = 10;
 const MIN_WIN_RATE = 90;
 const CANDIDATES_PER_PERIOD = 500;
@@ -237,11 +237,11 @@ function classifyAudit(audit, markets, cutoffMs, nowMs) {
     }
     if (index < 0 || index >= outcomes.length) { unclassified++; continue; }
 
-    // A CLOSED position sold before actual market resolution is an early exit,
-    // not a settlement prediction. REDEEMABLE cohorts represent held-to-settlement.
+    // Include early exits when the market later resolves inside the scoring
+    // window: score the trader's selected side against the final market outcome.
+    // This measures directional market accuracy, not the trader's realized P&L.
     if (cohort === "CLOSED" && (lastEvent === null || lastEvent < resolvedAt)) {
       earlyExitPositions++;
-      continue;
     }
     if (!settled.has(condition)) settled.set(condition, { winner, indexes: new Set() });
     settled.get(condition).indexes.add(index);
@@ -266,7 +266,7 @@ function classifyAudit(audit, markets, cutoffMs, nowMs) {
     positionsChecked: audit.rows,
     positionsPages: audit.pages,
     unclassifiedPositions: unclassified,
-    recordBasis: "Verified Gamma settlement outcomes only; pre-resolution exits excluded; held redeemable positions included; hedged markets excluded."
+    recordBasis: "Verified Gamma final outcomes; early-exited positions included when the market later resolves inside the window; this is directional accuracy, not realized close P&L; hedged markets excluded."
   };
 }
 
@@ -285,7 +285,7 @@ const cutoffMs = Date.now() - WINDOW_DAYS * 86400000;
 const nowMs = Date.now();
 const cutoffSec = Math.floor(cutoffMs / 1000);
 const nowSec = Math.floor(nowMs / 1000);
-console.log("Settlement audit: " + candidates.length + " unique candidates; rolling 30-day window; max " + MAX_POSITION_PAGES + " pages per lifecycle cohort.");
+console.log("Settlement audit: " + candidates.length + " unique candidates; rolling 60-day window; max " + MAX_POSITION_PAGES + " pages per lifecycle cohort.");
 
 const audits = await mapLimit(candidates, CONCURRENCY, async trader => {
   try { return await auditWallet(trader.wallet, cutoffSec, nowSec); }
@@ -332,7 +332,7 @@ for (const [period, leaders] of [["week", weekLeaders], ["month", monthLeaders]]
     generatedAt: finishedAt, period,
     source: "Polymarket Data API v2 leaderboard + verified Gamma settlement outcomes",
     leaders, scannerVersion: "settlement-v2",
-    qualification: { windowDays: WINDOW_DAYS, minimumResolvedMarkets: MIN_MARKETS, minimumWinRate: MIN_WIN_RATE, earlyExitsIncluded: false }
+    qualification: { windowDays: WINDOW_DAYS, minimumResolvedMarkets: MIN_MARKETS, minimumWinRate: MIN_WIN_RATE, earlyExitsIncluded: true }
   }, null, 2) + "\n");
   await fs.writeFile("consensus-" + period + ".json", JSON.stringify({
     generatedAt: finishedAt, period,
@@ -352,7 +352,7 @@ const status = {
   marketMetadataConditions: allConditions.length,
   weekCandidates: weekCandidates.length, monthCandidates: monthCandidates.length,
   weekQualified: weekLeaders.length, monthQualified: monthLeaders.length,
-  earlyExitsExcluded: true
+  earlyExitsExcluded: false
 };
 await fs.writeFile("status.json", JSON.stringify(status, null, 2) + "\n");
 await fs.writeFile("settlement-audit-status.json", JSON.stringify(status, null, 2) + "\n");
