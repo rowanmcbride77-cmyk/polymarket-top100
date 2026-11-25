@@ -339,7 +339,7 @@ const finishedAt = new Date().toISOString();
 for (const [period, leaders, consensusResult] of [["week", weekLeaders, weekConsensus], ["month", monthLeaders, monthConsensus]]) {
   await fs.writeFile(period + ".json", JSON.stringify({
     generatedAt: finishedAt, period,
-    source: "Polymarket Data API v2 leaderboard + verified token payouts and condition resolution finality",
+    source: "Polymarket Data API v2 leaderboard + /v2/tokens verified final token payouts + /v2/resolutions condition resolution finality",
     leaders, scannerVersion: "settlement-v2",
     qualification: { windowDays: WINDOW_DAYS, minimumResolvedMarkets: MIN_MARKETS, minimumWinRate: MIN_WIN_RATE, earlyExitsIncluded: false, settlementBasis: "Verified token payout and condition resolution time; pre-resolution exits excluded." }
   }, null, 2) + "\n");
