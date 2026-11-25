@@ -14,14 +14,16 @@ const POSITION_PAGE_SIZE = 1000;
 const MAX_POSITION_PAGES = 5;
 const CONCURRENCY = 12;
 const AUDIT_BATCH_SIZE = 30; // larger bounded batches reduce per-batch overhead without returning to unsafe 50+ batches
-const REQUEST_GAP_MS = 52; // ~19.2 requests/sec, below the public API's 20 req/s ceiling
-let nextRequestAt = 0;
+const POSITION_REQUEST_GAP_MS = 52; // ~19.2 requests/sec, below /v2/positions' 20 req/s ceiling
+const METADATA_REQUEST_GAP_MS = 13; // ~76.9 requests/sec, below the 80 req/s token/resolution ceiling
+const nextRequestAt = { positions: 0, metadata: 0 };
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
-async function requestSlot() {
+async function requestSlot(pool = "positions") {
   const now = Date.now();
-  const at = Math.max(now, nextRequestAt);
-  nextRequestAt = at + REQUEST_GAP_MS;
+  const gap = pool === "metadata" ? METADATA_REQUEST_GAP_MS : POSITION_REQUEST_GAP_MS;
+  const at = Math.max(now, nextRequestAt[pool]);
+  nextRequestAt[pool] = at + gap;
   if (at > now) await sleep(at - now);
 }
 function retryDelay(response, attempt) {
@@ -34,11 +36,11 @@ function retryDelay(response, attempt) {
   }
   return Math.min(15000, 700 * (2 ** attempt));
 }
-async function getJson(url) {
+async function getJson(url, pool = "positions") {
   let last;
   for (let attempt = 0; attempt < 5; attempt++) {
     try {
-      await requestSlot();
+      await requestSlot(pool);
       const response = await fetch(url, {
         headers: { Accept: "application/json", "User-Agent": "PolymarketSettlementScanner/2.0" },
         signal: AbortSignal.timeout(25000)
@@ -64,9 +66,9 @@ async function requestDataApi(path, params = {}) {
   for (const [key, value] of Object.entries(params)) {
     if (value !== undefined && value !== null && value !== "") url.searchParams.set(key, String(value));
   }
-  // Reuse the scanner's global request pacing and retry policy for the
-  // settlement-resolution endpoints as well.
-  return getJson(url.toString());
+  // Token and resolution routes have a separate, higher documented allowance
+  // than the heavy positions route; pace them independently.
+  return getJson(url.toString(), "metadata");
 }
 function rowsOf(payload) {
   if (Array.isArray(payload)) return payload;
@@ -100,7 +102,7 @@ async function getLeaderboard(period) {
       category: "overall", time_period: period, sort_by: "PNL", limit: "50"
     });
     if (cursor) q.set("cursor", cursor);
-    const payload = await getJson(DATA + "/v2/leaderboard?" + q);
+    const payload = await getJson(DATA + "/v2/leaderboard?" + q, "metadata");
     const pageRows = rowsOf(payload);
     all.push(...pageRows);
     const next = payload?.pagination?.next_cursor;
@@ -243,15 +245,19 @@ for (let offset = 0; offset < candidates.length; offset += AUDIT_BATCH_SIZE) {
     }
   });
   const allConditions = new Set();
+  const allTokenIds = new Set();
   for (const audit of audits) {
     positionsChecked += audit.rows;
     positionPages += audit.pages;
     for (const position of audit.positions) {
       const condition = String(position.condition_id ?? position.conditionId ?? "").toLowerCase();
+      const tokenId = String(position.token_id ?? position.tokenId ?? "").toLowerCase();
       if (condition) allConditions.add(condition);
+      if (tokenId) allTokenIds.add(tokenId);
     }
   }
   const resolutionIndex = await fetchTokenResolutionIndex([...allConditions], {
+    tokenIds: [...allTokenIds],
     request: requestDataApi,
     resolutionBatchConcurrency: 12
   });
