@@ -253,7 +253,7 @@ for (let offset = 0; offset < candidates.length; offset += AUDIT_BATCH_SIZE) {
   }
   const resolutionIndex = await fetchTokenResolutionIndex([...allConditions], {
     request: requestDataApi,
-    resolutionBatchConcurrency: 4
+    resolutionBatchConcurrency: 12
   });
   resolutionConditionLookups += allConditions.size;
   for (const audit of audits) {
