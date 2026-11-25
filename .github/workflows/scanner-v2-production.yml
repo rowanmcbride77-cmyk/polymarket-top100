@@ -26,7 +26,7 @@ concurrency:
 jobs:
   refresh:
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 360
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -60,15 +60,15 @@ jobs:
                 !finite(wins) || !finite(losses) || !finite(resolved) || !finite(rate) ||
                 resolved !== wins + losses || resolved < 10 || rate < 90 ||
                 !close(rate, wins / resolved * 100) || !hasSettlementBasis(row)) {
-              throw new Error(label + " is not a complete verified 60-day settlement record");
+              throw new Error(label + " is not a complete verified 30-day settlement record");
             }
           };
 
           const status = await read("status.json");
           if (status.ok !== true || status.scannerVersion !== "settlement-v2") throw new Error("Scanner status failed");
-          if (status.windowDays !== 60 || status.minimumResolvedMarkets !== 10 ||
+          if (status.windowDays !== 30 || status.minimumResolvedMarkets !== 10 ||
               status.minimumWinRate !== 90 || status.consensusBuiltFromQualifiedTradersOnly !== true) {
-            throw new Error("Scanner did not use the required 60-day / 90% / 10-market qualification.");
+            throw new Error("Scanner did not use the required 30-day / 90% / 10-market qualification.");
           }
           if (status.earlyExitsExcluded !== true || status.earlyExitRealizedPnlPublished !== false ||
               !String(status.settlementVerification ?? "").includes("finalPrice") ||
@@ -85,7 +85,7 @@ jobs:
           for (const period of ["week", "month"]) {
             const data = await read(period + ".json");
             if (data.generatedAt !== status.generatedAt) throw new Error(period + ".json timestamp does not match status.json");
-            if (data.scannerVersion !== "settlement-v2" || data.qualification?.windowDays !== 60 ||
+            if (data.scannerVersion !== "settlement-v2" || data.qualification?.windowDays !== 30 ||
                 data.qualification?.minimumResolvedMarkets !== 10 || data.qualification?.minimumWinRate !== 90 ||
                 data.qualification?.earlyExitsIncluded !== false) {
               throw new Error(period + ".json does not use the required verified-settlement rules");
@@ -115,7 +115,7 @@ jobs:
             for (const period of ["week", "month"]) {
               const data = await read("consensus-" + period + ".json");
               if (data.generatedAt !== status.generatedAt ||
-                  data.qualificationWindowDays !== 60 ||
+                  data.qualificationWindowDays !== 30 ||
                   data.minimumResolvedMarkets !== 10 ||
                   !Array.isArray(data.consensus) ||
                   Number(data.diagnostics?.signals) !== data.consensus.length ||
