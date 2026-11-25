@@ -192,6 +192,10 @@ jobs:
             echo "Skipping consensus files so existing published consensus is preserved."
           fi
           git commit -m "Publish settlement-qualified Polymarket Top 100" || echo "No data changes"
+          # Rebase the generated data commit on the latest main so unrelated
+          # dashboard/test commits made during a long scan do not block publishing.
+          git fetch origin main
+          git rebase origin/main
           git push origin HEAD:main
       - name: Request GitHub Pages build
         env:
