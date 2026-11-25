@@ -11,6 +11,7 @@ on:
       - "scanner-v2/consensus.js"
       - "scanner-v2/resolution-data.js"
       - "scanner-v2/gamma-api.js"
+      - ".github/workflows/scanner-v2-production.yml"
   workflow_dispatch:
   schedule:
     - cron: "17 */6 * * *"
@@ -190,6 +191,7 @@ jobs:
             git add consensus-week.json consensus-month.json
           else
             echo "Skipping consensus files so existing published consensus is preserved."
+            git restore --source=HEAD --staged --worktree -- consensus-week.json consensus-month.json
           fi
           git commit -m "Publish settlement-qualified Polymarket Top 100" || echo "No data changes"
           # Rebase the generated data commit on the latest main so unrelated
