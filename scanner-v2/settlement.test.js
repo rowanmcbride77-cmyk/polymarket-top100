@@ -59,19 +59,19 @@ test("does not count unresolved tokens or missing resolution metadata", () => {
   assert.equal(record.complete, false);
 });
 
-test("excludes results outside the rolling window", () => {
+test("excludes results outside the rolling 60-day window", () => {
   const record = buildSettlementRecord(
     [position("c1", "t1")],
     [resolution("c1", "t1", 1, "2026-10-01T12:00:00.000Z")],
-    { nowMs, windowDays: 30, historyComplete: true }
+    { nowMs, windowDays: 60, historyComplete: true }
   );
   assert.equal(record.resolvedMarkets, 0);
   assert.equal(record.diagnostics.outsideWindowExcluded, 1);
 });
 
-test("requires 90 percent and at least 10 verified settlements", () => {
-  assert.equal(qualifiesForTop100({ complete: true, winRate: 90, resolvedMarkets: 10 }), true);
+test("requires 90 percent and at least 5 verified settlements", () => {
+  assert.equal(qualifiesForTop100({ complete: true, winRate: 90, resolvedMarkets: 5 }), true);
   assert.equal(qualifiesForTop100({ complete: true, winRate: 89.99, resolvedMarkets: 100 }), false);
-  assert.equal(qualifiesForTop100({ complete: true, winRate: 100, resolvedMarkets: 9 }), false);
+  assert.equal(qualifiesForTop100({ complete: true, winRate: 100, resolvedMarkets: 4 }), false);
   assert.equal(qualifiesForTop100({ complete: false, winRate: 100, resolvedMarkets: 100 }), false);
 });
