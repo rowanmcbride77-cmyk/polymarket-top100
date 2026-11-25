@@ -34,19 +34,20 @@ export async function fetchTokenResolutionIndex(conditionIds, options = {}) {
   const resolutionRows = [];
 
   const concurrency = options.resolutionBatchConcurrency ?? 4;
-  const tokenBatches = await mapLimit(chunks(uniqueConditions, 10), concurrency, async batch => {
+  // Append each response as it arrives. Avoid spread/flat over large histories:
+  // a single wallet batch can return hundreds of thousands of token rows, which
+  // exceeds V8's maximum argument count for Array.push(...rows).
+  await mapLimit(chunks(uniqueConditions, 10), concurrency, async batch => {
     const payload = await request("/v2/tokens", { condition: batch.join(",") }, options);
     if (!Array.isArray(payload.data)) throw new Error("Expected token data[] from /v2/tokens");
-    return payload.data;
+    for (const row of payload.data) tokenRows.push(row);
   });
-  tokenRows.push(...tokenBatches.flat());
 
-  const resolutionBatches = await mapLimit(chunks(uniqueConditions, 20), concurrency, async batch => {
+  await mapLimit(chunks(uniqueConditions, 20), concurrency, async batch => {
     const payload = await request("/v2/resolutions", { condition: batch.join(",") }, options);
     if (!Array.isArray(payload.data)) throw new Error("Expected resolution data[] from /v2/resolutions");
-    return payload.data;
+    for (const row of payload.data) resolutionRows.push(row);
   });
-  resolutionRows.push(...resolutionBatches.flat());
 
   const finalityByCondition = new Map(
     resolutionRows.map(row => [key(row.conditionId ?? row.condition_id), row])
