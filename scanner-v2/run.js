@@ -109,13 +109,13 @@ async function getLeaderboard(period) {
     cursor = next;
   }
   const unique = new Map();
-  for (const row of all) {
+  for (const [index, row] of all.entries()) {
     const wallet = String(row.proxy_wallet ?? row.proxyWallet ?? row.user_id ?? row.userId ?? "").toLowerCase();
     const pnl = n(row.pnl ?? row.profit);
     if (!/^0x[a-f0-9]{40}$/.test(wallet) || pnl === null || unique.has(wallet)) continue;
     unique.set(wallet, {
       wallet,
-      leaderboardRank: all.indexOf(row) + 1,
+      leaderboardRank: index + 1,
       name: row.user_name ?? row.userName ?? row.username ?? row.name ?? "Polymarket Trader",
       pnl,
       selectedPeriodPnl: pnl,
@@ -219,6 +219,7 @@ const nowMs = Date.now();
 const cutoffSec = Math.floor(cutoffMs / 1000);
 const nowSec = Math.floor(nowMs / 1000);
 console.log("Settlement audit: " + candidates.length + " unique wallets selected from the top 1,000 weekly and top 1,000 monthly Polymarket P&L leaderboards by best leaderboard rank; rolling 30-day window; max " + MAX_POSITION_PAGES + " pages per lifecycle cohort.");
+console.log("Qualification pool: weekly=" + selectedWeekCandidates.length + ", monthly=" + selectedMonthCandidates.length + "; audit batches=" + Math.ceil(candidates.length / AUDIT_BATCH_SIZE) + ".");
 
 // Settlement W/L come only from /v2/tokens finalPrice joined to /v2/resolutions status/resolvedAt.\n// Process wallets in bounded batches. Keeping every wallet's raw position history
 // and the complete settlement-resolution map alive together exceeded the hosted runner's
