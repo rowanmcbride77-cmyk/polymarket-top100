@@ -62,7 +62,7 @@ test("does not count unresolved tokens or missing resolution metadata", () => {
 test("excludes results outside the rolling 60-day window", () => {
   const record = buildSettlementRecord(
     [position("c1", "t1")],
-    [resolution("c1", "t1", 1, "2026-10-01T12:00:00.000Z")],
+    [resolution("c1", "t1", 1, "2026-09-01T12:00:00.000Z")],
     { nowMs, windowDays: 60, historyComplete: true }
   );
   assert.equal(record.resolvedMarkets, 0);
