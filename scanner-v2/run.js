@@ -12,9 +12,9 @@ const MIN_WIN_RATE = 90;
 const CANDIDATES_PER_PERIOD = 1000;
 const POSITION_PAGE_SIZE = 1000;
 const MAX_POSITION_PAGES = 5;
-const CONCURRENCY = 6;
+const CONCURRENCY = 12;
 const AUDIT_BATCH_SIZE = 20;
-const REQUEST_GAP_MS = 55; // stay below the public API's documented 20 req/s ceiling
+const REQUEST_GAP_MS = 52; // ~19.2 requests/sec, below the public API's 20 req/s ceiling
 let nextRequestAt = 0;
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
