@@ -24,7 +24,7 @@ function isSettlementQualified(trader) {
   return trader?.recordComplete === true &&
     trader?.settlementRecordComplete === true &&
     wins !== null && losses !== null && resolved !== null &&
-    resolved === wins + losses && resolved >= 10 &&
+    resolved === wins + losses && resolved >= 5 &&
     rate !== null && rate >= 90 &&
     Math.abs(rate - wins / resolved * 100) <= 1e-6 &&
     basis.includes("settlement-only") && basis.includes("excluded");
