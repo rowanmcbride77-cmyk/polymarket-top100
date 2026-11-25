@@ -28,15 +28,17 @@ test("does not mark token final when condition resolution is not final", async (
   assert.equal(index.get("t").resolved, false);
 });
 
-test("chunks token and resolution queries at their documented limits", async () => {
+test("uses 50-token lookup batches and 20-condition resolution batches", async () => {
   const calls = [];
   const conditions = Array.from({ length: 21 }, (_, i) => `c${i}`);
+  const tokenIds = Array.from({ length: 101 }, (_, i) => `t${i}`);
   const request = async (path, params) => {
-    calls.push({ path, count: params.condition.split(",").length });
+    calls.push({ path, count: (params.token_id ?? params.condition).split(",").length, key: params.token_id ? "token_id" : "condition" });
     return { data: [] };
   };
-  await fetchTokenResolutionIndex(conditions, { request });
-  assert.deepEqual(calls.filter(x => x.path === "/v2/tokens").map(x => x.count), [10, 10, 1]);
+  await fetchTokenResolutionIndex(conditions, { tokenIds, request });
+  assert.deepEqual(calls.filter(x => x.path === "/v2/tokens").map(x => x.count), [50, 50, 1]);
+  assert.ok(calls.filter(x => x.path === "/v2/tokens").every(x => x.key === "token_id"));
   assert.deepEqual(calls.filter(x => x.path === "/v2/resolutions").map(x => x.count), [20, 1]);
 });
 
@@ -59,13 +61,12 @@ test("fetches token and resolution batches concurrently", async () => {
 test("handles large token-resolution responses without argument-spread overflow", async () => {
   const conditions = Array.from({ length: 2000 }, (_, i) => `c${i}`);
   const request = async (path, params) => {
-    const batch = params.condition.split(",");
+    const batch = (params.token_id ?? params.condition).split(",");
     if (path === "/v2/tokens") {
-      const conditionId = batch[0];
       return {
-        data: Array.from({ length: 1000 }, (_, i) => ({
-          tokenId: conditionId + "-" + i,
-          conditionId,
+        data: batch.map(tokenId => ({
+          tokenId,
+          conditionId: "condition-" + tokenId,
           resolved: true,
           finalPrice: 1
         }))
@@ -79,8 +80,9 @@ test("handles large token-resolution responses without argument-spread overflow"
       }))
     };
   };
-  const index = await fetchTokenResolutionIndex(conditions, { request });
+  const tokenIds = Array.from({ length: 200000 }, (_, i) => "t" + i);
+  const index = await fetchTokenResolutionIndex(conditions, { tokenIds, request });
   assert.equal(index.size, 200000);
-  assert.equal(index.get("c0-999").resolved, true);
-  assert.equal(index.get("c1990-0").resolved, true);
+  assert.equal(index.get("t999").resolved, true);
+  assert.equal(index.get("t199999").resolved, true);
 });
