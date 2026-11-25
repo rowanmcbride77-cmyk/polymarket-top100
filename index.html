@@ -565,7 +565,16 @@ async function loadConsensusData() {
     if (!loaded) throw lastError || new Error(filename + " is not available yet.");
     consensusData = loaded;
     renderConsensus();
-    $("consensusPeriod").textContent = `Strong Signals: 90%+ 60-day settlement accuracy · ${Number(consensusData?.minimumResolvedMarkets) || 10}+ resolved markets · early exits excluded`;
+    let status = null;
+    try {
+      const statusResponse = await fetch("status.json?t=" + Date.now(), {cache:"no-store", signal:AbortSignal.timeout(10000)});
+      if (statusResponse.ok) status = await statusResponse.json();
+    } catch {}
+    const consensusTime = loaded.generatedAt ? new Date(loaded.generatedAt).toLocaleString() : "unknown time";
+    const consensusIsFresh = status?.consensusPublished === true && loaded.generatedAt === status.generatedAt;
+    $("consensusPeriod").textContent = consensusIsFresh
+      ? `Fresh Strong Signals: 90%+ 60-day settlement accuracy · ${Number(consensusData?.minimumResolvedMarkets) || 10}+ resolved markets · early exits excluded · Updated ${consensusTime}`
+      : `Showing last published consensus from ${consensusTime}; latest scan did not publish a new verified consensus.`;
   } catch (error) {
     consensusData = {consensus:[]};
     $("consensusBody").innerHTML = `<tr><td colspan="7" class="empty">${esc(error.message)}</td></tr>`;
