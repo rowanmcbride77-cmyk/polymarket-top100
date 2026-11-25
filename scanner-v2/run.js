@@ -6,10 +6,10 @@ import { fetchTokenResolutionIndex } from "./resolution-data.js";
 
 const DATA = "https://data-api.polymarket.com";
 const startedAt = new Date().toISOString();
-const WINDOW_DAYS = 60;
+const WINDOW_DAYS = 30;
 const MIN_MARKETS = 10;
 const MIN_WIN_RATE = 90;
-const CANDIDATES_PER_PERIOD = 500;
+const CANDIDATES_PER_PERIOD = 1000;
 const POSITION_PAGE_SIZE = 1000;
 const MAX_POSITION_PAGES = 5;
 const CONCURRENCY = 6;
@@ -95,7 +95,7 @@ async function getLeaderboard(period) {
   const all = [];
   let cursor = null;
   const seen = new Set();
-  for (let page = 0; page < 10 && all.length < CANDIDATES_PER_PERIOD; page++) {
+  for (let page = 0; page < 20 && all.length < CANDIDATES_PER_PERIOD; page++) {
     const q = new URLSearchParams({
       category: "overall", time_period: period, sort_by: "PNL", limit: "50"
     });
@@ -115,6 +115,7 @@ async function getLeaderboard(period) {
     if (!/^0x[a-f0-9]{40}$/.test(wallet) || pnl === null || unique.has(wallet)) continue;
     unique.set(wallet, {
       wallet,
+      leaderboardRank: all.indexOf(row) + 1,
       name: row.user_name ?? row.userName ?? row.username ?? row.name ?? "Polymarket Trader",
       pnl,
       selectedPeriodPnl: pnl,
@@ -198,14 +199,26 @@ if (!weekCandidates.length || !monthCandidates.length) throw new Error("Polymark
 const candidateByWallet = new Map();
 for (const row of [...weekCandidates, ...monthCandidates]) {
   const prior = candidateByWallet.get(row.wallet) || {};
-  candidateByWallet.set(row.wallet, { ...prior, ...row });
+  candidateByWallet.set(row.wallet, {
+    ...prior,
+    ...row,
+    bestLeaderboardRank: Math.min(prior.bestLeaderboardRank ?? Infinity, row.leaderboardRank ?? Infinity)
+  });
 }
-const candidates = [...candidateByWallet.values()];
+const candidates = [...candidateByWallet.values()]
+  .sort((a, b) => a.bestLeaderboardRank - b.bestLeaderboardRank || b.pnl - a.pnl)
+  .slice(0, 1000);
+if (candidates.length !== 1000) {
+  throw new Error(`Expected 1,000 unique Polymarket leaderboard wallets; received ${candidates.length}. Refusing to publish a smaller sample.`);
+}
+const selectedWallets = new Set(candidates.map(row => row.wallet));
+const selectedWeekCandidates = weekCandidates.filter(row => selectedWallets.has(row.wallet));
+const selectedMonthCandidates = monthCandidates.filter(row => selectedWallets.has(row.wallet));
 const cutoffMs = Date.now() - WINDOW_DAYS * 86400000;
 const nowMs = Date.now();
 const cutoffSec = Math.floor(cutoffMs / 1000);
 const nowSec = Math.floor(nowMs / 1000);
-console.log("Settlement audit: " + candidates.length + " unique wallets sourced only from the top 500 weekly and top 500 monthly Polymarket P&L leaderboards; rolling 60-day window; max " + MAX_POSITION_PAGES + " pages per lifecycle cohort.");
+console.log("Settlement audit: " + candidates.length + " unique wallets selected from the top 1,000 weekly and top 1,000 monthly Polymarket P&L leaderboards by best leaderboard rank; rolling 30-day window; max " + MAX_POSITION_PAGES + " pages per lifecycle cohort.");
 
 // Settlement W/L come only from /v2/tokens finalPrice joined to /v2/resolutions status/resolvedAt.\n// Process wallets in bounded batches. Keeping every wallet's raw position history
 // and the complete settlement-resolution map alive together exceeded the hosted runner's
@@ -293,8 +306,8 @@ function qualify(candidatesForPeriod) {
     .slice(0, 100)
     .map((row, index) => ({ ...row, rank: index + 1, period: row.period }));
 }
-const weekLeaders = qualify(weekCandidates);
-const monthLeaders = qualify(monthCandidates);
+const weekLeaders = qualify(selectedWeekCandidates);
+const monthLeaders = qualify(selectedMonthCandidates);
 if (!weekLeaders.length || !monthLeaders.length) {
   const summary = {
     ok: false, scannerVersion: "settlement-v2", startedAt,
