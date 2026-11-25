@@ -30,18 +30,28 @@ async function mapLimit(items, limit, worker) {
 export async function fetchTokenResolutionIndex(conditionIds, options = {}) {
   const request = options.request ?? requestJson;
   const uniqueConditions = [...new Set((conditionIds ?? []).map(key).filter(Boolean))];
+  const uniqueTokenIds = [...new Set((options.tokenIds ?? []).map(key).filter(Boolean))];
   const tokenRows = [];
   const resolutionRows = [];
 
   const concurrency = options.resolutionBatchConcurrency ?? 4;
-  // Append each response as it arrives. Avoid spread/flat over large histories:
-  // a single wallet batch can return hundreds of thousands of token rows, which
-  // exceeds V8's maximum argument count for Array.push(...rows).
-  await mapLimit(chunks(uniqueConditions, 10), concurrency, async batch => {
-    const payload = await request("/v2/tokens", { condition: batch.join(",") }, options);
-    if (!Array.isArray(payload.data)) throw new Error("Expected token data[] from /v2/tokens");
-    for (const row of payload.data) tokenRows.push(row);
-  });
+  // We only need payout facts for tokens actually held by these wallets.
+  // /v2/tokens accepts up to 50 token_id values per request, versus 10 conditions
+  // when expanding every token in each market.
+  if (uniqueTokenIds.length) {
+    await mapLimit(chunks(uniqueTokenIds, 50), concurrency, async batch => {
+      const payload = await request("/v2/tokens", { token_id: batch.join(",") }, options);
+      if (!Array.isArray(payload.data)) throw new Error("Expected token data[] from /v2/tokens");
+      for (const row of payload.data) tokenRows.push(row);
+    });
+  } else {
+    // Backwards-compatible condition expansion for callers without token IDs.
+    await mapLimit(chunks(uniqueConditions, 10), concurrency, async batch => {
+      const payload = await request("/v2/tokens", { condition: batch.join(",") }, options);
+      if (!Array.isArray(payload.data)) throw new Error("Expected token data[] from /v2/tokens");
+      for (const row of payload.data) tokenRows.push(row);
+    });
+  }
 
   await mapLimit(chunks(uniqueConditions, 20), concurrency, async batch => {
     const payload = await request("/v2/resolutions", { condition: batch.join(",") }, options);
