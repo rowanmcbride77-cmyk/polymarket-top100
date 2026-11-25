@@ -208,10 +208,9 @@ for (const row of [...weekCandidates, ...monthCandidates]) {
   });
 }
 const candidates = [...candidateByWallet.values()]
-  .sort((a, b) => a.bestLeaderboardRank - b.bestLeaderboardRank || b.pnl - a.pnl)
-  .slice(0, 1000);
-if (candidates.length !== 1000) {
-  throw new Error(`Expected 1,000 unique Polymarket leaderboard wallets; received ${candidates.length}. Refusing to publish a smaller sample.`);
+  .sort((a, b) => a.bestLeaderboardRank - b.bestLeaderboardRank || b.pnl - a.pnl);
+if (candidates.length < 1000) {
+  throw new Error(`Expected at least 1,000 unique Polymarket leaderboard wallets; received ${candidates.length}. Refusing to publish a smaller sample.`);
 }
 const selectedWallets = new Set(candidates.map(row => row.wallet));
 const selectedWeekCandidates = weekCandidates.filter(row => selectedWallets.has(row.wallet));
@@ -220,7 +219,7 @@ const cutoffMs = Date.now() - WINDOW_DAYS * 86400000;
 const nowMs = Date.now();
 const cutoffSec = Math.floor(cutoffMs / 1000);
 const nowSec = Math.floor(nowMs / 1000);
-console.log("Settlement audit: " + candidates.length + " unique wallets selected from the top 1,000 weekly and top 1,000 monthly Polymarket P&L leaderboards by best leaderboard rank; rolling 60-day window; max " + MAX_POSITION_PAGES + " pages per lifecycle cohort.");
+console.log("Settlement audit: " + candidates.length + " unique wallets selected from ALL wallets returned by the top 1,000 weekly and top 1,000 monthly Polymarket P&L leaderboards after deduplication; rolling 60-day window; max " + MAX_POSITION_PAGES + " pages per lifecycle cohort.");
 console.log("Qualification pool: weekly=" + selectedWeekCandidates.length + ", monthly=" + selectedMonthCandidates.length + "; audit batches=" + Math.ceil(candidates.length / AUDIT_BATCH_SIZE) + ".");
 
 // Settlement W/L come only from /v2/tokens finalPrice joined to /v2/resolutions status/resolvedAt.\n// Process wallets in bounded batches. Keeping every wallet's raw position history
