@@ -6,8 +6,8 @@ import { fetchTokenResolutionIndex } from "./resolution-data.js";
 
 const DATA = "https://data-api.polymarket.com";
 const startedAt = new Date().toISOString();
-const WINDOW_DAYS = 30;
-const MIN_MARKETS = 10;
+const WINDOW_DAYS = 60;
+const MIN_MARKETS = 5;
 const MIN_WIN_RATE = 90;
 const CANDIDATES_PER_PERIOD = 1000;
 const POSITION_PAGE_SIZE = 1000;
@@ -220,7 +220,7 @@ const cutoffMs = Date.now() - WINDOW_DAYS * 86400000;
 const nowMs = Date.now();
 const cutoffSec = Math.floor(cutoffMs / 1000);
 const nowSec = Math.floor(nowMs / 1000);
-console.log("Settlement audit: " + candidates.length + " unique wallets selected from the top 1,000 weekly and top 1,000 monthly Polymarket P&L leaderboards by best leaderboard rank; rolling 30-day window; max " + MAX_POSITION_PAGES + " pages per lifecycle cohort.");
+console.log("Settlement audit: " + candidates.length + " unique wallets selected from the top 1,000 weekly and top 1,000 monthly Polymarket P&L leaderboards by best leaderboard rank; rolling 60-day window; max " + MAX_POSITION_PAGES + " pages per lifecycle cohort.");
 console.log("Qualification pool: weekly=" + selectedWeekCandidates.length + ", monthly=" + selectedMonthCandidates.length + "; audit batches=" + Math.ceil(candidates.length / AUDIT_BATCH_SIZE) + ".");
 
 // Settlement W/L come only from /v2/tokens finalPrice joined to /v2/resolutions status/resolvedAt.\n// Process wallets in bounded batches. Keeping every wallet's raw position history
