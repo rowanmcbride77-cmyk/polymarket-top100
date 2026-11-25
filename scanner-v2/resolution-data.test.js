@@ -66,7 +66,7 @@ test("handles large token-resolution responses without argument-spread overflow"
       return {
         data: batch.map(tokenId => ({
           tokenId,
-          conditionId: "condition-" + tokenId,
+          conditionId: "c0",
           resolved: true,
           finalPrice: 1
         }))
