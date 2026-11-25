@@ -13,7 +13,7 @@ const CANDIDATES_PER_PERIOD = 1000;
 const POSITION_PAGE_SIZE = 1000;
 const MAX_POSITION_PAGES = 5;
 const CONCURRENCY = 12;
-const AUDIT_BATCH_SIZE = 20;
+const AUDIT_BATCH_SIZE = 30; // larger bounded batches reduce per-batch overhead without returning to unsafe 50+ batches
 const REQUEST_GAP_MS = 52; // ~19.2 requests/sec, below the public API's 20 req/s ceiling
 let nextRequestAt = 0;
 
